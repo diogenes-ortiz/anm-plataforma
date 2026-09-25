@@ -65,15 +65,15 @@
       const lv = Game.level(Game.xpOf(m.id));
       const tasks = Ops.openTasks().filter(t=>t.assigneeId===m.id).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
-      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${esc(App.ROLES[m.role]||m.role)}${m.joinedAt?'':' · <span style="color:var(--yellow)">invitación pendiente</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
+      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
         <div class="grid g3 small" style="gap:8px;margin-bottom:14px"><div><div class="b">${lv.xp}</div><div class="xs faint">XP</div></div><div><div class="b">${tasks}</div><div class="xs faint">tareas</div></div><div><div class="b">🔥 ${Game.streak(m.id)}</div><div class="xs faint">racha</div></div></div>
         <div class="xs muted" style="margin-bottom:14px">${clients.length?'Cuentas: '+clients.map(c=>esc(c.name)).join(', '):'Sin cuentas asignadas'}</div>
-        ${admin?`<div class="row wrap"><button class="btn sm p" onclick="Team.share('${m.id}')">🔗 Link de acceso</button><button class="btn sm g" onclick="Team.edit('${m.id}')">✎ Editar</button></div>`:''}</div>`;
+        ${admin?`<div class="row wrap">${m.passHash?'':`<button class="btn sm p" onclick="Team.share('${m.id}')">🔗 Mandar acceso</button>`}<button class="btn sm g" onclick="Team.edit('${m.id}')">✎ Editar</button>${m.passHash&&m.id!==App.me().id?`<button class="btn sm g" onclick="Team.resetPass('${m.id}')">🔑 Resetear contraseña</button>`:''}</div>`:''}</div>`;
     }).join('');
     return { title:'Equipo', crumb:'Invitá a colaborar', html:`
-      <div class="toolbar"><div class="small muted grow">Cada persona entra con su link personal. Los roles definen qué ve cada uno: <b>Socio/a</b> (dueños: todo + Finanzas, invitan y asignan tareas a cualquiera), <b>Equipo</b> (Operaciones + Crecimiento; se asigna tareas a sí mismo), <b>Invitado/a</b> (solo Operaciones, ideal freelancers). Finanzas no aparece para quien no es socio.</div>
-      ${admin?'<button class="btn p" onclick="Team.edit()">＋ Invitar persona</button>':''}</div>
+      <div class="toolbar"><div class="small muted grow">Cada persona entra con su nombre y contraseña. Los socios pueden cargar perfiles antes de que la persona entre (para ya asignarle tareas) y mandarle su acceso: la primera vez crea su contraseña. Los roles definen qué ve cada uno: <b>Socio/a</b> (dueños: todo + Finanzas, invitan y asignan tareas a cualquiera), <b>Equipo</b> (Operaciones + Crecimiento; se asigna tareas a sí mismo), <b>Invitado/a</b> (solo Operaciones, ideal freelancers). Finanzas no aparece para quien no es socio.</div>
+      ${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
       <div class="grid g-auto">${cards}</div>` };
   });
 
@@ -83,7 +83,7 @@
     return { title:'Ajustes', crumb:'', html:`<div class="grid g2">
       <div class="card"><div class="card-h"><h3>Mi perfil</h3></div>
         <div class="row" style="margin-bottom:16px">${UI.avatar(me,'lg')}<div><div class="b">${esc(me.name)}</div><div class="xs faint">${esc(App.ROLES[me.role])}</div></div></div>
-        <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn g" onclick="App.toggleTheme()">◐ Modo claro / oscuro</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
+        <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn g" onclick="App.changePassword()">🔑 Cambiar contraseña</button><button class="btn g" onclick="App.toggleTheme()">◐ Modo claro / oscuro</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
       <div class="card"><div class="card-h"><h3>Unidades de negocio</h3>${admin?'<span class="grow"></span><button class="btn xs g" onclick="Team.editUnits()">Editar</button>':''}</div>
         <div class="row wrap">${App.unitTags(App.units().map(u=>u.id))}</div>
         <p class="xs faint" style="margin-top:12px">Sirven para filtrar Operaciones y Crecimiento (Social Media, Pauta, Branding, Web…).</p></div>
@@ -92,7 +92,7 @@
         <div class="row wrap"><button class="btn g" onclick="Store.syncNow().then(()=>UI.toast('Sincronizado','☁️'))">⟳ Sincronizar ahora</button><button class="btn g" onclick="UI.download('anm-plataforma-'+UI.today()+'.json', Store.exportAll())">⇣ Descargar respaldo</button>
         ${admin?'<label class="btn g" style="cursor:pointer">⇡ Restaurar respaldo<input type="file" accept=".json" style="display:none" onchange="Team.restore(this)"></label>':''}</div></div>
       <div class="card"><div class="card-h"><h3>🔒 Sobre la seguridad</h3></div>
-        <p class="small muted">Finanzas pide contraseña y solo aparece para los socios. Los links de invitación identifican a cada persona para asignar tareas y XP.</p>
+        <p class="small muted">Cada persona entra con su nombre y contraseña (se guarda cifrada, nunca en texto). Finanzas pide además su propia contraseña y solo aparece para los socios.</p>
         <p class="small muted" style="margin-top:8px">Importante: hoy la base de datos usa una clave pública, así que la protección es “de uso” (evita miradas casuales), no bancaria. Para blindarlo el próximo paso es activar el login con email de Supabase y reglas de acceso por rol.</p></div>
     </div>` };
   });
@@ -103,7 +103,7 @@
       const m = id ? App.member(id) : { role:'equipo', color:UI.COLORS[App.members().length % UI.COLORS.length], units:[] };
       const admin = App.isAdmin();
       const adminsLeft = App.members().filter(x=>x.role==='admin' && x.id!==id).length;
-      UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Invitar persona', values:m, fields:[
+      UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
         { k:'name', label:'Nombre', req:true },
         { k:'email', label:'Email', type:'email', half:true }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
         ...(admin && !self ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES) }] : []),
@@ -114,13 +114,13 @@
       onSubmit:v=>{
         if(id && m.role==='admin' && v.role && v.role!=='admin' && !adminsLeft){ UI.toast('Tiene que quedar al menos un socio','⚠️'); return false; }
         const r = Store.upsert('team','members',{ ...m, ...v, invite:m.invite||App.newInvite() });
-        if(!id){ Game.log('member_invited', `Invitó a ${v.name}`, { icon:'👋' }); setTimeout(()=>Team.share(r.id), 50); }
+        if(!id){ Game.log('member_invited', `Sumó a ${v.name} al equipo`, { icon:'👋' }); UI.toast(`${v.name} ya está cargado: le podés asignar tareas`,'👤'); setTimeout(()=>{ if(confirm(`¿Le mandás ahora el acceso a ${v.name}?\n\n(Podés hacerlo después desde su tarjeta con “Mandar acceso”.)`)) Team.share(r.id); }, 60); }
         App.render();
       } });
     },
     share(id){
       const m = App.member(id), link = App.inviteLink(m);
-      const msg = `¡Hola ${m.name.split(' ')[0]}! Te sumo a la plataforma de ANM 🚀\nEntrá desde acá (es tu acceso personal, no lo compartas):\n${link}`;
+      const msg = `¡Hola ${m.name.split(' ')[0]}! Te sumo a la plataforma de ANM 🚀\nEntrá desde este link y creá tu contraseña (es tu acceso personal, no lo compartas):\n${link}\n\nDespués entrás siempre con tu nombre y tu contraseña. Si te lo pide, tu código es: ${m.invite}`;
       UI.modal(`<h2>🔗 Acceso de ${esc(m.name)}<button class="icon-btn x" data-close>✕</button></h2>
         <div class="fld"><label>Link personal</label><input class="inp" readonly value="${esc(link)}" onclick="this.select()"></div>
         <div class="fld"><label>Código</label><div class="b" style="font-size:22px;letter-spacing:4px">${esc(m.invite)}</div></div>
@@ -128,6 +128,12 @@
           <a class="btn g" target="_blank" href="${esc(UI.waLink(msg, m.phone))}">Enviar por WhatsApp</a>
           <a class="btn g" href="${esc(UI.mailLink(m.email, 'Tu acceso a la plataforma ANM', msg))}">Enviar por email</a></div>
         <div class="mfoot"><button class="btn d sm" onclick="Team.regen('${id}')" style="margin-right:auto">Regenerar código</button><button class="btn g" data-close>Listo</button></div>`);
+    },
+    resetPass(id){
+      const m = App.member(id);
+      if(!confirm(`¿Resetear la contraseña de ${m.name}?\n\nVa a tener que crear una nueva con un código de acceso que le mandes.`)) return;
+      Store.upsert('team','members',{ id, passHash:null, passSalt:null, invite:App.newInvite() });
+      Team.share(id);
     },
     regen(id){
       if(!confirm('El link anterior deja de funcionar para entrar desde un dispositivo nuevo. ¿Seguimos?')) return;

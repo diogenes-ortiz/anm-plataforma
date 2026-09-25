@@ -42,8 +42,12 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 - *Cierre del mes*: preguntas mensuales (cobros, saldo real, imprevistos, cambios, ánimo…) editables, con racha de meses cerrados.
 - La primera vez se crea la contraseña y se muestra un **código de recuperación**: guardalo. Se bloquea sola a los 20 minutos sin uso.
 
-## Equipo e invitaciones
-El primero que entra crea su perfil de socio. Desde **Equipo** se invita a cada persona y se le manda su link personal (WhatsApp/email). Roles: *Socio/a* (dueños — Dio y Santi: todo + Finanzas, invitan y asignan tareas a cualquiera), *Equipo* (Operaciones + Crecimiento; se asigna tareas a sí mismo), *Invitado/a* (solo Operaciones). Finanzas no aparece para quien no es socio.
+## Acceso y equipo
+- Cada persona entra con **su nombre y contraseña** (se guarda cifrada con SHA-256 y sal propia, nunca en texto).
+- El primero que entra crea su perfil de **socio** con contraseña.
+- Los socios cargan perfiles desde **Equipo → Agregar persona** aunque la persona todavía no haya entrado, y ya le pueden asignar tareas. Después le mandan el acceso (link o código): la primera vez crea su contraseña.
+- Si alguien se olvida la contraseña, un socio la resetea desde su tarjeta en Equipo.
+- Roles: *Socio/a* (dueños: todo + Finanzas, cargan personas y asignan tareas a cualquiera), *Equipo* (Operaciones + Crecimiento; se asigna tareas a sí mismo), *Invitado/a* (solo Operaciones). Finanzas no aparece para quien no es socio y además pide su propia contraseña.
 
 ## Datos
 Todo vive en la tabla `anm_state` de Supabase (la misma de siempre): `main` = Finanzas (sin cambios de formato), `ops`, `growth`, `team` = plataforma. Varias personas pueden editar a la vez: los cambios se fusionan registro por registro y se sincronizan cada ~20 s. Hay respaldo descargable en Ajustes.

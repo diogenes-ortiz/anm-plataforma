@@ -54,7 +54,9 @@
 
     render(){
       const me = this.me();
+      if(joinPending){ if(App.member(joinPending)?.passHash) joinPending = null; else { renderGate(joinPending, true); return; } }
       if(!me){ renderGate(); return; }
+      if(!me.passHash){ renderGate(me.id, true); return; }   // perfiles viejos: ya entraron, solo crean contraseña
       document.body.classList.remove('gated');
       $('#app').style.display = '';
       $('#gate').style.display = 'none';
@@ -102,52 +104,112 @@
   App.newInvite = newInvite;
   App.inviteLink = m => location.href.split('#')[0].split('?')[0] + '?join=' + m.invite;
 
-  function renderGate(){
+  // Contraseñas: se guarda solo un hash (SHA-256 con sal propia de cada perfil)
+  async function hashPass(salt, pass){
+    const txt = salt + '|' + pass;
+    if(window.crypto?.subtle){ const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+    let h = 5381; for(const c of txt) h = (h*33) ^ c.charCodeAt(0); return 'djb'+(h>>>0).toString(16);
+  }
+  const newSalt = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+  async function setPassword(id, pass){ const salt = newSalt(); Store.upsert('team','members',{ id, passSalt:salt, passHash:await hashPass(salt, pass) }); }
+  App.setPassword = setPassword;
+  const validPass = (a, b) => { if((a||'').length<6){ UI.toast('La contraseña tiene que tener al menos 6 caracteres','⚠️'); return false; } if(a!==b){ UI.toast('Las contraseñas no coinciden','⚠️'); return false; } return true; };
+
+  const gateBox = inner => `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Studio · Plataforma</div></div></div>${inner}</div>`;
+  const enter = e => { if(e.key==='Enter') e.target.closest('.mbox').querySelector('.btn.p')?.click(); };
+
+  function renderGate(pending, codeOk){
     $('#app').style.display = 'none';
     const g = $('#gate'); g.style.display = '';
     const members = App.members();
+    // Primera vez: se crea el primer socio
     if(!members.length){
-      g.innerHTML = `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Studio · Plataforma</div></div></div>
-        <h2>¡Bienvenido/a! 👋</h2><p class="muted" style="margin-bottom:18px">Creá tu perfil. Vas a entrar como socio/a: podés invitar al equipo, asignar tareas y ver Finanzas.</p>
-        <div class="fld"><label>Tu nombre</label><input class="inp" id="g-name" placeholder="Ej: Dio"></div>
-        <div class="fld"><label>Email</label><input class="inp" id="g-email" type="email" placeholder="opcional"></div>
+      g.innerHTML = gateBox(`<h2>¡Bienvenido/a! 👋</h2><p class="muted" style="margin-bottom:18px">Creá tu perfil de socio/a: vas a poder cargar al equipo, asignar tareas y ver Finanzas.</p>
+        <div class="fld"><label>Nombre y apellido</label><input class="inp" id="g-name" placeholder="Ej: Diogenes Ortiz"></div>
+        <div class="frow"><div class="fld"><label>Contraseña</label><input class="inp" id="g-p1" type="password" autocomplete="new-password"></div><div class="fld"><label>Repetila</label><input class="inp" id="g-p2" type="password" autocomplete="new-password"></div></div>
         ${Store.status==='error'?'<div class="alert warn"><div class="ai">⚠️</div><div class="ad">No hay conexión con la base de datos. Si tu equipo ya usa la plataforma, esperá a tener conexión antes de crear un perfil nuevo.</div></div>':''}
-        <button class="btn p" style="width:100%;justify-content:center" onclick="App.createFirst()">Empezar</button></div>`;
+        <button class="btn p" style="width:100%;justify-content:center" onclick="App.createFirst()">Empezar</button>`);
+      g.querySelectorAll('input').forEach(i=>i.onkeydown = enter);
       return;
     }
-    g.innerHTML = `<div class="mbox"><h2>¿Quién sos?</h2>
-      <p class="muted small" style="margin-bottom:16px">Elegí tu perfil e ingresá tu código de invitación (está en el link que te pasaron).</p>
-      <div class="fld"><label>Perfil</label><select class="inp" id="g-member">${members.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>
-      <div class="fld"><label>Código de invitación</label><input class="inp" id="g-code" placeholder="Ej: K3F9QZ" style="text-transform:uppercase"></div>
-      <button class="btn p" style="width:100%;justify-content:center" onclick="App.claim()">Entrar</button>
-      <p class="xs faint" style="margin-top:14px">¿No tenés código? Pedile a un socio el link desde “Equipo e invitaciones”.</p></div>`;
+    // Perfil sin contraseña todavía: la crea con el código que le pasó un socio
+    if(pending){
+      const m = App.member(pending);
+      g.innerHTML = gateBox(`<h2>Hola, ${esc(m.name.split(' ')[0])} 👋</h2><p class="muted" style="margin-bottom:18px">Es tu primera vez. Creá tu contraseña para entrar de ahora en más.</p>
+        ${codeOk?'':`<div class="fld"><label>Código de invitación</label><input class="inp" id="g-code" placeholder="Te lo pasa un socio (ej: K3F9QZ)" style="text-transform:uppercase"></div>`}
+        <div class="frow"><div class="fld"><label>Nueva contraseña</label><input class="inp" id="g-p1" type="password" autocomplete="new-password"></div><div class="fld"><label>Repetila</label><input class="inp" id="g-p2" type="password" autocomplete="new-password"></div></div>
+        <button class="btn p" style="width:100%;justify-content:center" onclick="App.firstPassword('${m.id}', ${codeOk?'true':'false'})">Crear contraseña y entrar</button>
+        <button class="btn g" style="width:100%;justify-content:center;margin-top:8px" onclick="App.cancelFirst()">← Volver</button>`);
+      g.querySelectorAll('input').forEach(i=>i.onkeydown = enter);
+      setTimeout(()=>g.querySelector('input')?.focus(), 30);
+      return;
+    }
+    g.innerHTML = gateBox(`<h2>Ingresá</h2>
+      <div class="fld"><label>Tu nombre</label><input class="inp" id="g-name" list="g-names" placeholder="Ej: Diogenes Ortiz" autocomplete="username"><datalist id="g-names">${members.map(m=>`<option value="${esc(m.name)}">`).join('')}</datalist></div>
+      <div class="fld"><label>Contraseña</label><input class="inp" id="g-pass" type="password" autocomplete="current-password"></div>
+      <button class="btn p" style="width:100%;justify-content:center" onclick="App.login()">Entrar</button>
+      <p class="xs faint" style="margin-top:14px">¿Primera vez? Escribí tu nombre y tocá Entrar: te va a pedir el código que te pasó un socio para crear tu contraseña.</p>`);
+    g.querySelectorAll('input').forEach(i=>i.onkeydown = enter);
+    setTimeout(()=>$('#g-name')?.focus(), 30);
   }
 
-  App.createFirst = ()=>{
+  App.createFirst = async ()=>{
     const name = $('#g-name').value.trim(); if(!name) return UI.toast('Ingresá tu nombre','⚠️');
-    const m = Store.upsert('team','members',{ name, email:$('#g-email').value.trim(), role:'admin', units:[], color:UI.COLORS[0], invite:newInvite(), joinedAt:new Date().toISOString() });
+    if(!validPass($('#g-p1').value, $('#g-p2').value)) return;
+    const m = Store.upsert('team','members',{ name, role:'admin', units:[], color:UI.COLORS[0], invite:newInvite(), joinedAt:new Date().toISOString() });
+    await setPassword(m.id, $('#g-p1').value);
     localStorage.setItem('anm_me', m.id);
     Game.log('joined', `${name} creó la plataforma`, { icon:'🎉' });
     UI.confetti(); App.render();
   };
-  App.claim = ()=>{
-    const m = App.member($('#g-member').value), code = $('#g-code').value.trim().toUpperCase();
-    if(!m || m.invite!==code) return UI.toast('El código no coincide','⛔');
-    localStorage.setItem('anm_me', m.id); App.render();
+  App.login = async ()=>{
+    const q = norm($('#g-name').value), pass = $('#g-pass').value;
+    if(!q) return UI.toast('Escribí tu nombre','⚠️');
+    const ms = App.members();
+    const m = ms.find(x=>norm(x.name)===q) || (ms.filter(x=>norm(x.name).split(' ')[0]===q).length===1 ? ms.find(x=>norm(x.name).split(' ')[0]===q) : null);
+    if(!m) return UI.toast('No encontré ese nombre. Pedile a un socio que te cargue en “Equipo”.','🔍');
+    if(!m.passHash) return renderGate(m.id);
+    if(await hashPass(m.passSalt, pass)!==m.passHash){ $('#g-pass').value=''; $('#g-pass').style.borderColor='var(--red)'; return UI.toast('Contraseña incorrecta','⛔'); }
+    localStorage.setItem('anm_me', m.id);
+    UI.toast(`Hola, ${m.name.split(' ')[0]}`,'👋'); App.render();
   };
+  App.firstPassword = async (id, codeOk)=>{
+    const m = App.member(id); if(!m) return App.render();
+    if(!codeOk && $('#g-code').value.trim().toUpperCase()!==m.invite) return UI.toast('El código no coincide. Pedíselo a un socio.','⛔');
+    if(!validPass($('#g-p1').value, $('#g-p2').value)) return;
+    await setPassword(id, $('#g-p1').value);
+    joinPending = null;
+    localStorage.setItem('anm_me', id);
+    if(!m.joinedAt){ Store.upsert('team','members',{ id, joinedAt:new Date().toISOString() }); Game.log('joined', `${m.name} se sumó al equipo`, { icon:'🎉' }); UI.confetti(); }
+    App.render();
+  };
+  App.cancelFirst = ()=>{ joinPending = null; localStorage.removeItem('anm_me'); App.render(); };
   App.logout = ()=>{ if(confirm('¿Cerrar sesión en este navegador?')){ localStorage.removeItem('anm_me'); App.render(); } };
+  App.changePassword = ()=>{
+    const me = App.me();
+    UI.form({ title:'🔑 Cambiar contraseña', submit:'Guardar', fields:[
+      ...(me.passHash ? [{ k:'cur', label:'Contraseña actual', type:'password' }] : []),
+      { k:'p1', label:'Nueva contraseña', type:'password', half:true }, { k:'p2', label:'Repetila', type:'password', half:true },
+    ], onSubmit:v=>{ (async()=>{
+        if(me.passHash && await hashPass(me.passSalt, v.cur)!==me.passHash) return UI.toast('La contraseña actual no es correcta','⛔');
+        if(!validPass(v.p1, v.p2)) return;
+        await setPassword(me.id, v.p1); UI.toast('Contraseña actualizada','🔑');
+      })(); } });
+  };
 
+  // Link de invitación: lleva directo a crear la contraseña (o al login si ya la tiene)
   function handleJoin(){
     const code = new URLSearchParams(location.search).get('join');
     if(!code) return;
     const m = App.members().find(x=>x.invite===code.toUpperCase());
     history.replaceState(null,'',location.pathname+location.hash);
     if(!m) return UI.toast('El link de invitación no es válido o fue regenerado','⛔');
-    const first = !m.joinedAt;
-    localStorage.setItem('anm_me', m.id);
-    if(first){ Store.upsert('team','members',{ id:m.id, joinedAt:new Date().toISOString() }); Game.log('joined', `${m.name} se sumó al equipo`, { icon:'🎉' }); UI.confetti(); }
-    else UI.toast(`Hola de nuevo, ${m.name}`,'👋');
+    if(m.passHash){ if(!App.me()) UI.toast(`${m.name.split(' ')[0]}, ya tenés contraseña: ingresá con tu nombre`,'🔑'); return; }
+    localStorage.removeItem('anm_me');
+    joinPending = m.id;
   }
+  let joinPending = null;
 
   // ── Notificaciones ───────────────────────────────────────────────────────────
   App.openNotifications = ()=>{
