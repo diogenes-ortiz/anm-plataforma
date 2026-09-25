@@ -21,6 +21,11 @@
     member(id){ return Store.get('team','members',id); },
     me(){ return this.member(localStorage.getItem('anm_me')); },
     isAdmin(){ return this.me()?.role==='admin'; },
+    // Dueño principal: quien creó la plataforma. Es el único que crea o modifica socios.
+    owner(){ const ms = this.members(); return ms.find(m=>m.owner) || ms.filter(m=>m.role==='admin').sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''))[0]; },
+    isOwner(){ const me = this.me(); return !!me && this.owner()?.id===me.id; },
+    // ¿Puedo gestionar (editar rol, resetear, quitar) a esta persona?
+    canManage(m){ return this.isAdmin() && (m.role!=='admin' || this.isOwner()); },
     canGrowth(){ return this.me() && this.me().role!=='invitado'; },
     units(){ return Store.setting('units', DEFAULT_UNITS); },
     unit(id){ return this.units().find(u=>u.id===id) || { id, label:id, color:'#7a7a8c' }; },
@@ -157,7 +162,8 @@
   App.createFirst = async ()=>{
     const name = $('#g-name').value.trim(); if(!name) return UI.toast('Ingresá tu nombre','⚠️');
     if(!validPass($('#g-p1').value, $('#g-p2').value)) return;
-    const m = Store.upsert('team','members',{ name, role:'admin', units:[], color:UI.COLORS[0], invite:newInvite(), joinedAt:new Date().toISOString() });
+    if(Store.status!=='synced') return UI.toast('Sin conexión con la base de datos: no se puede crear el perfil todavía. Reintentá en unos segundos.','⚠️');
+    const m = Store.upsert('team','members',{ name, role:'admin', owner:true, units:[], color:UI.COLORS[0], invite:newInvite(), joinedAt:new Date().toISOString() });
     await setPassword(m.id, $('#g-p1').value);
     localStorage.setItem('anm_me', m.id);
     Game.log('joined', `${name} creó la plataforma`, { icon:'🎉' });
@@ -168,7 +174,7 @@
     if(!q) return UI.toast('Escribí tu nombre','⚠️');
     const ms = App.members();
     const m = ms.find(x=>norm(x.name)===q) || (ms.filter(x=>norm(x.name).split(' ')[0]===q).length===1 ? ms.find(x=>norm(x.name).split(' ')[0]===q) : null);
-    if(!m) return UI.toast('No encontré ese nombre. Pedile a un socio que te cargue en “Equipo”.','🔍');
+    if(!m) return UI.toast('Ese nombre no está en la lista del equipo. Solo pueden entrar las personas que cargó un socio.','⛔');
     if(!m.passHash) return renderGate(m.id);
     if(await hashPass(m.passSalt, pass)!==m.passHash){ $('#g-pass').value=''; $('#g-pass').style.borderColor='var(--red)'; return UI.toast('Contraseña incorrecta','⛔'); }
     localStorage.setItem('anm_me', m.id);

@@ -47,6 +47,8 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 - El primero que entra crea su perfil de **socio** con contraseña.
 - Los socios cargan perfiles desde **Equipo → Agregar persona** aunque la persona todavía no haya entrado, y ya le pueden asignar tareas. Después le mandan el acceso (link o código): la primera vez crea su contraseña.
 - Si alguien se olvida la contraseña, un socio la resetea desde su tarjeta en Equipo.
+- Solo pueden entrar las personas cargadas en la lista del equipo.
+- 👑 El **dueño principal** (quien creó la plataforma) es el único que puede crear socios o modificar/resetear a otro socio.
 - Roles: *Socio/a* (dueños: todo + Finanzas, cargan personas y asignan tareas a cualquiera), *Equipo* (Operaciones + Crecimiento; se asigna tareas a sí mismo), *Invitado/a* (solo Operaciones). Finanzas no aparece para quien no es socio y además pide su propia contraseña.
 
 ## Datos

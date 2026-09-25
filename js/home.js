@@ -65,14 +65,14 @@
       const lv = Game.level(Game.xpOf(m.id));
       const tasks = Ops.openTasks().filter(t=>t.assigneeId===m.id).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
-      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
+      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
         <div class="grid g3 small" style="gap:8px;margin-bottom:14px"><div><div class="b">${lv.xp}</div><div class="xs faint">XP</div></div><div><div class="b">${tasks}</div><div class="xs faint">tareas</div></div><div><div class="b">🔥 ${Game.streak(m.id)}</div><div class="xs faint">racha</div></div></div>
         <div class="xs muted" style="margin-bottom:14px">${clients.length?'Cuentas: '+clients.map(c=>esc(c.name)).join(', '):'Sin cuentas asignadas'}</div>
-        ${admin?`<div class="row wrap">${m.passHash?'':`<button class="btn sm p" onclick="Team.share('${m.id}')">🔗 Mandar acceso</button>`}<button class="btn sm g" onclick="Team.edit('${m.id}')">✎ Editar</button>${m.passHash&&m.id!==App.me().id?`<button class="btn sm g" onclick="Team.resetPass('${m.id}')">🔑 Resetear contraseña</button>`:''}</div>`:''}</div>`;
+        ${App.canManage(m)||m.id===App.me().id?`<div class="row wrap">${m.passHash||!App.canManage(m)?'':`<button class="btn sm p" onclick="Team.share('${m.id}')">🔗 Mandar acceso</button>`}<button class="btn sm g" onclick="Team.edit('${m.id}', ${m.id===App.me().id})">✎ Editar</button>${m.passHash&&m.id!==App.me().id&&App.canManage(m)?`<button class="btn sm g" onclick="Team.resetPass('${m.id}')">🔑 Resetear contraseña</button>`:''}</div>`:''}</div>`;
     }).join('');
     return { title:'Equipo', crumb:'Invitá a colaborar', html:`
-      <div class="toolbar"><div class="small muted grow">Cada persona entra con su nombre y contraseña. Los socios pueden cargar perfiles antes de que la persona entre (para ya asignarle tareas) y mandarle su acceso: la primera vez crea su contraseña. Los roles definen qué ve cada uno: <b>Socio/a</b> (dueños: todo + Finanzas, invitan y asignan tareas a cualquiera), <b>Equipo</b> (Operaciones + Crecimiento; se asigna tareas a sí mismo), <b>Invitado/a</b> (solo Operaciones, ideal freelancers). Finanzas no aparece para quien no es socio.</div>
+      <div class="toolbar"><div class="small muted grow">Cada persona entra con su nombre y contraseña. Solo pueden entrar las personas de esta lista. Los socios cargan perfiles antes de que la persona entre (para ya asignarle tareas) y mandarle su acceso: la primera vez crea su contraseña. Los roles definen qué ve cada uno: <b>Socio/a</b> (dueños: todo + Finanzas, cargan gente y asignan tareas; solo el 👑 dueño principal crea socios), <b>Equipo</b> (Operaciones + Crecimiento; se asigna tareas a sí mismo), <b>Invitado/a</b> (solo Operaciones, ideal freelancers). Finanzas no aparece para quien no es socio.</div>
       ${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
       <div class="grid g-auto">${cards}</div>` };
   });
@@ -106,13 +106,15 @@
       UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
         { k:'name', label:'Nombre', req:true },
         { k:'email', label:'Email', type:'email', half:true }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
-        ...(admin && !self ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES) }] : []),
+        ...(admin && !self && (!id || App.canManage(m)) ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES).filter(([k])=>k!=='admin' || App.isOwner()), hint:App.isOwner()?'':'Solo el dueño principal puede crear socios.' }] : []),
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
         { k:'color', label:'Color', type:'color', half:true },
       ],
-      danger: id && admin && id!==App.me().id ? { label:'Quitar del equipo', confirm:`¿Quitar a ${m.name}? Su historial se conserva, pero ya no podrá entrar.`, fn:()=>{ Store.remove('team','members',id); App.render(); } } : null,
+      danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', confirm:`¿Quitar a ${m.name}? Su historial se conserva, pero ya no podrá entrar.`, fn:()=>{ Store.remove('team','members',id); App.render(); } } : null,
       onSubmit:v=>{
         if(id && m.role==='admin' && v.role && v.role!=='admin' && !adminsLeft){ UI.toast('Tiene que quedar al menos un socio','⚠️'); return false; }
+        if(v.role==='admin' && m.role!=='admin' && !App.isOwner()){ UI.toast('Solo el dueño principal puede crear socios','⛔'); return false; }
+        if(id && App.owner()?.id===id && v.role && v.role!=='admin'){ UI.toast('El dueño principal siempre es socio','⚠️'); return false; }
         const r = Store.upsert('team','members',{ ...m, ...v, invite:m.invite||App.newInvite() });
         if(!id){ Game.log('member_invited', `Sumó a ${v.name} al equipo`, { icon:'👋' }); UI.toast(`${v.name} ya está cargado: le podés asignar tareas`,'👤'); setTimeout(()=>{ if(confirm(`¿Le mandás ahora el acceso a ${v.name}?\n\n(Podés hacerlo después desde su tarjeta con “Mandar acceso”.)`)) Team.share(r.id); }, 60); }
         App.render();
@@ -131,6 +133,7 @@
     },
     resetPass(id){
       const m = App.member(id);
+      if(!App.canManage(m)) return UI.toast('Solo el dueño principal puede resetear la contraseña de un socio','⛔');
       if(!confirm(`¿Resetear la contraseña de ${m.name}?\n\nVa a tener que crear una nueva con un código de acceso que le mandes.`)) return;
       Store.upsert('team','members',{ id, passHash:null, passSalt:null, invite:App.newInvite() });
       Team.share(id);
