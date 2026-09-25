@@ -7,7 +7,8 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 | Archivo | Qué es |
 |---|---|
 | `index.html` | Plataforma: Inicio, Operaciones, Crecimiento, Equipo, Ajustes |
-| `finanzas.html` | Finanzas (la app de siempre) + contraseña, Análisis y Cierre del mes |
+| `finanzas.html` + `js/fin.js` | Finanzas simple: Actualidad, Proyecciones y Cierre del mes |
+| `finanzas-completa.html` | Finanzas completa (la app anterior), accesible desde ⚙ |
 | `css/app.css` | Estilos de la plataforma (modo oscuro/claro) |
 | `js/store.js` | Datos en Supabase con sincronización colaborativa |
 | `js/app.js` | Acceso, roles, invitaciones, navegación, alertas manuales |
@@ -37,9 +38,11 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 - *Etapas*: Queremos contactar → Contactado → Reunión → **🖼️ Armando la PPT** (crea sola la tarea “Armar PPT” con un brief listo para Canva/Slides y guarda el link) → PPT presentada → Negociación → **🏆 Pasó a cliente** (se crea automáticamente en Operaciones con su tarea de onboarding).
 - Pipeline arrastrable, base de contactos (CSV), ex clientes con fecha de recontacto, plantillas editables y métricas (respuesta, cierre, embudo, fuentes).
 
-**Finanzas** (solo socios, con contraseña) — todo lo de antes, más:
-- *Análisis y comparativas*: período (mes, 3/6/12 meses, año, todo, personalizado) comparado con el período anterior o el mismo del año anterior; KPIs con variación, gráfico, ingresos por servicio, concentración de clientes, tabla mes a mes y conclusiones automáticas.
-- *Cierre del mes*: preguntas mensuales (cobros, saldo real, imprevistos, cambios, ánimo…) editables, con racha de meses cerrados.
+**Finanzas** (solo socios, con contraseña) — 3 pestañas:
+- *📊 Actualidad*: cuánto ganamos ese mes con cada cliente (mensual + puntuales, % del mes, si pagó o cuánto le falta), los gastos del mes (equipo, fijos, extras, costo de proyectos), ganancia y reparto entre socios. Se navega mes a mes.
+- *🔭 Proyecciones*: próximos 12 meses con los retainers vigentes, proyectos agendados y costos fijos; cierre de año estimado vs. meta y simulador “¿y si sumamos un cliente de $X?”.
+- *✅ Cierre del mes*: al entrar, si hay un mes sin cerrar (el anterior, o el actual desde el día 25) la app te lleva sola. 4 pasos: qué clientes estuvieron y por cuánto (y si pagaron o cuánto les queda), proyectos puntuales, gastos, y resumen con **lo que le queda pagar a cada cliente**. Al cerrar, pregunta si los montos distintos son el nuevo valor mensual y actualiza la base.
+- ⚙: backup / restaurar (compatible con la app anterior), meta anual, contraseña, y la **vista completa** anterior (`finanzas-completa.html`) para editar todo con detalle.
 - La primera vez se crea la contraseña y se muestra un **código de recuperación**: guardalo. Se bloquea sola a los 20 minutos sin uso.
 
 ## Acceso y equipo
