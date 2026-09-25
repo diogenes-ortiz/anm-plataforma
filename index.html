@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANM Studio · Plataforma</title>
+<meta name="theme-color" content="#101013">
+<link rel="icon" href="logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="gate" class="gate" style="display:none"></div>
+
+<div id="app" style="display:none">
+  <aside class="sidebar">
+    <div class="brand"><img src="logo.jpg" alt=""><div><div class="brand-t">ANM</div><div class="brand-s">Content Studio</div></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="me-card" id="me" onclick="App.go('#/ajustes')"></div>
+  </aside>
+  <div class="sb-over" onclick="App.closeSidebar()"></div>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="hamb" onclick="App.openSidebar()" aria-label="Menú">☰</button>
+      <div class="grow"><div class="crumb" id="crumb"></div><h1 id="title"></h1></div>
+      <span class="sync hide-m" id="sync">—</span>
+      <button class="icon-btn" onclick="App.openNotifications()" title="Avisos" aria-label="Avisos">🔔</button>
+      <button class="btn p" onclick="App.quickAdd()">＋ <span class="hide-m">Crear</span></button>
+    </header>
+    <section class="page" id="page"></section>
+  </main>
+</div>
+
+<div class="mo" id="modal"></div>
+<div class="toasts" id="toasts"></div>
+
+<script src="js/config.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/store.js"></script>
+<script src="js/game.js"></script>
+<script src="js/app.js"></script>
+<script src="js/ops.js"></script>
+<script src="js/prospects-hunter.js"></script>
+<script src="js/growth.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>
