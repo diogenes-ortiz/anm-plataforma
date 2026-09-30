@@ -55,6 +55,9 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 - 👑 El **dueño principal** (quien creó la plataforma) es el único que puede crear socios o modificar/resetear a otro socio.
 - Roles: *Socio/a* (dueños: todo + Finanzas, cargan personas y asignan tareas a cualquiera), *Equipo* (Operaciones + Crecimiento; se asigna tareas a sí mismo), *Invitado/a* (solo Operaciones). Finanzas no aparece para quien no es socio y además pide su propia contraseña.
 
+## Recordatorios por mail
+`apps-script/Recordatorios.gs` corre en Google Apps Script con el Gmail de un socio: resumen diario a las 8 h (tareas vencidas / de hoy / próximas, reuniones, seguimientos del CRM; a los socios además clientes en riesgo, sin actualizar y tareas vencidas del equipo) y cada hora los avisos nuevos de la plataforma. Instrucciones de instalación arriba del archivo. Cada persona necesita su email cargado y puede desactivar los mails desde su perfil.
+
 ## Datos
 Todo vive en la tabla `anm_state` de Supabase (la misma de siempre): `main` = Finanzas (sin cambios de formato), `ops`, `growth`, `team` = plataforma. Varias personas pueden editar a la vez: los cambios se fusionan registro por registro y se sincronizan cada ~20 s. Hay respaldo descargable en Ajustes.
 

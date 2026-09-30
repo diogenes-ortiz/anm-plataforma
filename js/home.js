@@ -66,7 +66,7 @@
       const lv = Game.level(Game.xpOf(m.id));
       const tasks = Ops.openTasks().filter(t=>t.assigneeId===m.id).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
-      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
+      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin email</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
         <div class="grid g3 small" style="gap:8px;margin-bottom:14px"><div><div class="b">${lv.xp}</div><div class="xs faint">XP</div></div><div><div class="b">${tasks}</div><div class="xs faint">tareas</div></div><div><div class="b">🔥 ${Game.streak(m.id)}</div><div class="xs faint">racha</div></div></div>
         <div class="xs muted" style="margin-bottom:14px">${clients.length?'Cuentas: '+clients.map(c=>esc(c.name)).join(', '):'Sin cuentas asignadas'}</div>
@@ -92,6 +92,11 @@
         <p class="small muted" style="margin-bottom:14px">Todo se guarda en la nube (Supabase) y se sincroniza entre el equipo cada ~20 segundos. También queda una copia en este navegador por si se corta internet.</p>
         <div class="row wrap"><button class="btn g" onclick="Store.syncNow().then(()=>UI.toast('Sincronizado','☁️'))">⟳ Sincronizar ahora</button><button class="btn g" onclick="UI.download('anm-plataforma-'+UI.today()+'.json', Store.exportAll())">⇣ Descargar respaldo</button>
         ${admin?'<label class="btn g" style="cursor:pointer">⇡ Restaurar respaldo<input type="file" accept=".json" style="display:none" onchange="Team.restore(this)"></label>':''}</div></div>
+      <div class="card"><div class="card-h"><h3>📧 Recordatorios por mail</h3></div>
+        <p class="small muted" style="margin-bottom:10px">Todos los días a las 8 h cada persona recibe su resumen (tareas vencidas, de hoy y próximas, reuniones y seguimientos) y cada hora los avisos nuevos (tareas asignadas, alertas). Salen desde el Gmail de un socio con Google Apps Script.</p>
+        <div class="small" style="margin-bottom:10px">Tus mails: <b>${me.email?(me.emailReminders===false?'desactivados':'activados · '+esc(me.email)):'<span style="color:var(--orange)">falta cargar tu email</span>'}</b> <a href="#" onclick="Team.edit('${me.id}', true);return false">cambiar</a></div>
+        ${admin?(()=>{ const sin = App.members().filter(x=>!x.email); return sin.length?`<div class="alert warn" style="margin:0"><div class="ai">⚠️</div><div class="ad">Sin email cargado (no reciben mails): ${sin.map(x=>esc(x.name)).join(', ')}</div></div>`:'<div class="small" style="color:var(--green)">✓ Todo el equipo tiene email cargado.</div>'; })():''}
+        ${admin?`<p class="xs faint" style="margin-top:10px">Instalación: <a href="https://github.com/diogenes-ortiz/anm-plataforma/blob/main/apps-script/Recordatorios.gs" target="_blank">apps-script/Recordatorios.gs</a> (instrucciones arriba del archivo).</p>`:''}</div>
       <div class="card"><div class="card-h"><h3>🔒 Sobre la seguridad</h3></div>
         <p class="small muted">Cada persona entra con su nombre y contraseña (se guarda cifrada, nunca en texto). Finanzas pide además su propia contraseña y solo aparece para los socios.</p>
         <p class="small muted" style="margin-top:8px">Importante: hoy la base de datos usa una clave pública, así que la protección es “de uso” (evita miradas casuales), no bancaria. Para blindarlo el próximo paso es activar el login con email de Supabase y reglas de acceso por rol.</p></div>
@@ -101,7 +106,8 @@
   // ── Acciones de equipo ──────────────────────────────────────────────────────
   const Team = {
     edit(id, self){
-      const m = id ? App.member(id) : { role:'equipo', color:UI.COLORS[App.members().length % UI.COLORS.length], units:[] };
+      const m0 = id ? App.member(id) : { role:'equipo', color:UI.COLORS[App.members().length % UI.COLORS.length], units:[] };
+      const m = { ...m0, emailReminders: m0.emailReminders!==false };
       const admin = App.isAdmin();
       const adminsLeft = App.members().filter(x=>x.role==='admin' && x.id!==id).length;
       UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
@@ -110,6 +116,7 @@
         ...(admin && !self && (!id || App.canManage(m)) ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES).filter(([k])=>k!=='admin' || App.isOwner()), hint:App.isOwner()?'':'Solo el dueño principal puede crear socios.' }] : []),
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
         { k:'color', label:'Color', type:'color', half:true },
+        { k:'emailReminders', label:'Mails', type:'check', text:'Recibir recordatorios y avisos por mail', default:true, half:true },
       ],
       danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', confirm:`¿Quitar a ${m.name}? Su historial se conserva, pero ya no podrá entrar.`, fn:()=>{ Store.remove('team','members',id); App.render(); } } : null,
       onSubmit:v=>{
