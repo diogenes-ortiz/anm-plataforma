@@ -7,7 +7,10 @@
   const HEALTH = { ok:['En curso','🟢'], atencion:['Atención','🟡'], riesgo:['En riesgo','🔴'] };
   const TASK_ST = [['todo','Por hacer'],['doing','En curso'],['review','En revisión / cliente'],['done','Hecho']];
   const PRIO = [['media','Media'],['alta','Alta 🔥'],['baja','Baja']];
-  const CAL_ST = [['planificar','Por planificar'],['borrador','En armado'],['enviado','Enviado al cliente'],['aprobado','Aprobado ✓'],['en_curso','En publicación'],['cerrado','Cerrado']];
+  const CAL_ST = [['planificar','Sin empezar'],['borrador','Creándose'],['enviado','Enviado para corregir'],['correcciones','Con correcciones'],['aprobado','Aprobado ✓'],['en_curso','En publicación'],['cerrado','Cerrado']];
+  const REP_ST = [['pendiente','Sin empezar'],['armando','Creándose'],['enviado','Enviado para revisar'],['corregir','Con correcciones'],['presentado','Presentado ✓']];
+  const REP_OK = ['presentado'];
+  const REP_UNITS = ['social','pauta','contenido'];
   const CAL_OK = ['aprobado','en_curso','cerrado'];
   const FORMATS = [['post','Post'],['carrusel','Carrusel'],['reel','Reel / video'],['story','Story'],['campana','Campaña de pauta'],['entrega','Entrega (branding/web)'],['otro','Otro']];
   const CONTENT_ST = [['idea','Idea'],['produccion','En producción'],['revision','En revisión'],['aprobado','Aprobado'],['publicado','Publicado']];
@@ -25,6 +28,15 @@
   const overdueTasks = () => openTasks().filter(t=>t.due && t.due<UI.today());
   const needsCal = c => (c.units||[]).some(u=>CAL_UNITS.includes(u));
   const calRec = (cid, month) => Store.get('ops','calendars', cid+'_'+month);
+  const repRec = (cid, month) => Store.get('ops','reports', cid+'_'+month);
+  const needsRep = c => (c.units||[]).some(u=>REP_UNITS.includes(u));
+  const prevYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return UI.ym(d); };
+  // Fechas clave de cada cliente: el día del mes en que se entrega el calendario (del mes siguiente) y el reporte (del mes anterior)
+  const dayIn = (ym, day) => { const [y,m] = ym.split('-').map(Number); return `${ym}-${UI.pad(Math.min(+day||1, new Date(y,m,0).getDate()))}`; };
+  const calDue = (c, ym=UI.ym()) => dayIn(ym, c.calendarDay||25);
+  const repDue = (c, ym=UI.ym()) => dayIn(ym, c.reportDay||5);
+  const dueTag = (date, ok) => { if(ok) return `<span class="tag t-green">${UI.fdate(date,{abs:true})}</span>`; const d = UI.diffDays(UI.today(), date);
+    return `<span class="tag ${d<0?'t-red':d<=3?'t-yellow':''}">${d<0?'venció ':''}${UI.fdate(date,{abs:true})}</span>`; };
   const nextYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()+1); return UI.ym(d); };
   const unitOk = rec => App.matchUnit(rec.units || rec.unit || (rec.clientId ? client(rec.clientId)?.units : null) || []);
 
@@ -57,8 +69,12 @@
       if(needsCal(c)){
         const cur = calRec(c.id, UI.ym())?.stage;
         if(!CAL_OK.includes(cur)) push({ key:`cal:${c.id}:${UI.ym()}`, cid:c.id||"", level:'danger', icon:'🗓️', title:`${c.name}: calendario de ${UI.MONTHS[new Date().getMonth()]} sin aprobar`, desc:`Estado: ${label(CAL_ST, cur||'planificar')}.`, link:'#/ops/calendario', to:c.ownerId });
-        if(day>=20){ const nx = calRec(c.id, nextYm())?.stage;
-          if(!CAL_OK.includes(nx)) push({ key:`caln:${c.id}:${nextYm()}`, cid:c.id||"", level:'warn', icon:'🗓️', title:`${c.name}: armar calendario de ${UI.ymLabel(nextYm())}`, desc:`Estado: ${label(CAL_ST, nx||'planificar')}. Ideal tenerlo aprobado antes de fin de mes.`, link:'#/ops/calendario', to:c.ownerId }); }
+        const nx = calRec(c.id, nextYm())?.stage, cd = calDue(c), dd = UI.diffDays(t, cd);
+        if(!CAL_OK.includes(nx) && dd<=5) push({ key:`caln:${c.id}:${nextYm()}`, cid:c.id||"", level:dd<0?'danger':'warn', icon:'🗓️', title:`${c.name}: calendario de ${UI.ymLabel(nextYm())} ${dd<0?'atrasado':'se entrega '+UI.fdate(cd).toLowerCase()}`, desc:`Estado: ${label(CAL_ST, nx||'planificar')} · fecha de entrega ${UI.fdate(cd,{abs:true})}.`, link, to:c.ownerId });
+      }
+      if(needsRep(c)){
+        const st = repRec(c.id, prevYm())?.stage, rd = repDue(c), dr = UI.diffDays(t, rd);
+        if(!REP_OK.includes(st) && dr<=3) push({ key:`rep:${c.id}:${prevYm()}`, cid:c.id||"", level:dr<0?'danger':'warn', icon:'📊', title:`${c.name}: reporte de ${UI.ymLabel(prevYm())} ${dr<0?'atrasado':'se presenta '+UI.fdate(rd).toLowerCase()}`, desc:`Estado: ${label(REP_ST, st||'pendiente')} · fecha ${UI.fdate(rd,{abs:true})}.`, link, to:c.ownerId });
       }
     });
     overdueTasks().filter(unitOk).forEach(tk=>{
@@ -150,7 +166,8 @@
       <div class="row wrap xs b" style="gap:8px">
         <span style="color:${staleCol}">⟳ ${u?UI.ago(u.at):'nunca'}</span>
         <span class="tag">${tasks.length} tarea${tasks.length!==1?'s':''}</span>${over?`<span class="tag t-red">${over} vencida${over>1?'s':''}</span>`:''}
-        ${cal?`<span class="tag ${CAL_OK.includes(cal)?'t-green':'t-yellow'}">🗓️ ${label(CAL_ST,cal)}</span>`:''}
+        ${needsCal(c)?(()=>{ const st = calRec(c.id,nextYm())?.stage||'planificar'; return `<span class="tag ${CAL_OK.includes(st)?'t-green':'t-yellow'}" title="Calendario de ${UI.ymLabel(nextYm())}">🗓️ ${label(CAL_ST,st)}</span>`; })():''}
+        ${needsRep(c)?(()=>{ const st = repRec(c.id,prevYm())?.stage||'pendiente'; return `<span class="tag ${REP_OK.includes(st)?'t-green':'t-yellow'}" title="Reporte de ${UI.ymLabel(prevYm())}">📊 ${label(REP_ST,st)}</span>`; })():''}
         ${nextMeet?`<span class="tag t-blue">🤝 ${UI.fdate(nextMeet.date.slice(0,10))}</span>`:''}
         <span class="grow"></span><button class="btn xs p" onclick="event.stopPropagation();Ops.updateClient('${c.id}')">Actualizar</button>
       </div></div>`;
@@ -166,8 +183,16 @@
     const meets = S('meetings').filter(m=>m.clientId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     const content = S('content').filter(p=>p.clientId===id && p.date>=UI.addDays(UI.today(),-7)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,12);
     const owner = App.member(c.ownerId);
-    const calStep = m => { const st = calRec(id,m)?.stage||'planificar'; return `<div class="row" style="justify-content:space-between;margin-bottom:10px"><span class="b small">${UI.ymLabel(m)}</span>
-      <select class="inp sm" onchange="Ops.setCal('${id}','${m}',this.value)">${CAL_ST.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select></div>`; };
+    const delivRow = (icon, name, date, st, opts, okList, fn, rec, kind, month) => `<div class="li" style="flex-wrap:wrap;gap:10px">
+      <span style="font-size:20px">${icon}</span><div class="grow" style="min-width:180px"><div class="b small">${name}</div><div class="xs faint">Fecha: ${dueTag(date, okList.includes(st))}</div></div>
+      <select class="inp sm" style="${okList.includes(st)?'border-color:var(--green)':st==='enviado'||st==='correcciones'||st==='corregir'?'border-color:var(--yellow)':''}" onchange="${fn}">${opts.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select>
+      <input class="inp sm" style="width:190px" placeholder="Link (Drive, Canva…)" value="${esc(rec?.link||'')}" onchange="Ops.setDelivLink('${kind}','${id}','${month}',this.value)">${rec?.link?`<a class="btn xs g" href="${esc(rec.link)}" target="_blank">Abrir ↗</a>`:''}</div>`;
+    const deliverables = (needsCal(c)||needsRep(c)) ? `<div class="card" style="margin-bottom:18px;border-color:color-mix(in srgb,var(--blue) 35%,transparent)"><div class="card-h"><h3>📦 Entregables del mes</h3><span class="grow"></span>
+        <span class="xs faint">Calendario: día ${c.calendarDay||25} · Reporte: día ${c.reportDay||5}</span><button class="btn xs g" onclick="Ops.editClient('${id}')">Cambiar fechas</button></div><div class="list">
+      ${needsCal(c) && !CAL_OK.includes(calRec(id,UI.ym())?.stage) ? delivRow('🗓️', `Calendario de ${UI.ymLabel(UI.ym())} <span class="tag t-red">atrasado</span>`, calDue(c, prevYm()), calRec(id,UI.ym())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${UI.ym()}',this.value)`, calRec(id,UI.ym()), 'cal', UI.ym()) : ''}
+      ${needsCal(c) ? delivRow('🗓️', `Calendario de ${UI.ymLabel(nextYm())}`, calDue(c), calRec(id,nextYm())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${nextYm()}',this.value)`, calRec(id,nextYm()), 'cal', nextYm()) : ''}
+      ${needsRep(c) ? delivRow('📊', `Reporte de ${UI.ymLabel(prevYm())}`, repDue(c), repRec(id,prevYm())?.stage||'pendiente', REP_ST, REP_OK, `Ops.setRep('${id}','${prevYm()}',this.value)`, repRec(id,prevYm()), 'rep', prevYm()) : ''}
+      </div></div>` : '';
     const html = `
       <div class="row" style="margin-bottom:20px"><button class="btn g sm" onclick="Ops.setClient('')">← Todos los clientes</button></div>
       <div class="hero" style="margin-bottom:22px">
@@ -177,6 +202,7 @@
         <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button>
           <div class="row"><button class="btn g sm" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Tarea</button><button class="btn g sm" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋ Reunión</button><button class="btn g sm" onclick="Ops.editClient('${id}')">✎</button></div></div>
       </div>
+      ${deliverables}
       <div class="grid g3">
         <div class="span2 col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>Estado actual</h3><span class="grow"></span><span class="sub">${ups[0]?UI.ago(ups[0].at):''}</span></div>
@@ -187,7 +213,6 @@
             ${ups.length?`<div class="tl">${ups.slice(0,25).map(u=>`<div class="tl-i ${u.health||'ok'}"><div class="when">${UI.fdate(u.at.slice(0,10),{abs:true})} · ${esc(App.member(u.by)?.name||'')}</div><div class="small prewrap">${esc(u.text)}</div>${u.nextStep?`<div class="xs muted">→ ${esc(u.nextStep)}</div>`:''}</div>`).join('')}</div>`:'<div class="empty">Sin historial</div>'}</div>
         </div>
         <div class="col" style="gap:18px">
-          ${needsCal(c)?`<div class="card"><div class="card-h"><h3>🗓️ Calendario de contenidos</h3></div>${calStep(UI.ym())}${calStep(nextYm())}</div>`:''}
           <div class="card"><div class="card-h"><h3>Reuniones</h3><span class="grow"></span><button class="btn xs g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋</button></div>
             ${meets.length?`<div class="list">${meets.slice(0,8).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones</div>'}</div>
           <div class="card"><div class="card-h"><h3>Próximo contenido</h3><span class="grow"></span><button class="btn xs g" onclick="Ops.editContent(null,{clientId:'${id}'})">＋</button></div>
@@ -275,11 +300,11 @@
 
   function setTaskStatus(id, st){
     const t = Store.get('ops','tasks',id); if(!t || t.status===st) return;
-    const wasDone = t.status==='done', before = t.assigneeId ? Game.xpOf(t.assigneeId) : 0;
+    const wasDone = t.status==='done', before = t.assigneeId ? Game.perf(t.assigneeId).pct : null;
     Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null });
     if(st==='done' && !wasDone){
-      const who = App.member(t.assigneeId), n = who ? Game.xpOf(who.id) : 0;
-      Game.log('task_done', `Tarea completada: ${t.title}${who?` · ${who.id===App.me().id?'llevás':who.name.split(' ')[0]+' lleva'} ${n} realizada${n!==1?'s':''}`:''}`, { icon:'✅', ref:id });
+      const who = App.member(t.assigneeId), pf = who ? Game.perf(who.id) : null;
+      Game.log('task_done', `Tarea completada: ${t.title}${pf&&pf.pct!=null?` · ${who.id===App.me().id?'vas':who.name.split(' ')[0]+' va'} ${pf.resolved}/${pf.assigned} este mes`:''}`, { icon:'✅', ref:id });
       if(who) Game.celebrate(who.id, before);
     }
     App.render();
@@ -301,28 +326,39 @@
         ...meets.filter(x=>x.date.slice(0,10)===ds).map(x=>`<div class="ev" style="border-color:var(--purple)" onclick="event.stopPropagation();Ops.viewMeeting('${x.id}')">🤝 ${esc(UI.time(x.date))} ${esc(x.title)}</div>`),
         ...content.filter(p=>p.date===ds).map(p=>{ const c=client(p.clientId), u=App.unit(p.unit||(c?.units||[])[0]); return `<div class="ev" style="border-color:${u.color}" title="${esc(label(CONTENT_ST,p.status))}" onclick="event.stopPropagation();Ops.editContent('${p.id}')"><span style="color:${CONTENT_COL[p.status]}">●</span> ${esc(c?.name||'')}: ${esc(p.title)}</div>`; }),
         ...tasks.filter(t=>t.due===ds).map(t=>`<div class="ev" style="border-color:var(--text3)" onclick="event.stopPropagation();Ops.editTask('${t.id}')">☐ ${esc(t.title)}</div>`),
+        ...activeClients().filter(c=>cm(c.id) && App.matchUnit(c.units||[])).flatMap(c=>[
+          ...(needsCal(c) && calDue(c, ds.slice(0,7))===ds ? [`<div class="ev" style="border-color:var(--blue);background:var(--blue-d)" onclick="event.stopPropagation();App.go('#/ops/cliente/${c.id}')">🗓️ Entrega calendario · ${esc(c.name)}</div>`] : []),
+          ...(needsRep(c) && repDue(c, ds.slice(0,7))===ds ? [`<div class="ev" style="border-color:var(--teal);background:var(--teal-d)" onclick="event.stopPropagation();App.go('#/ops/cliente/${c.id}')">📊 Reporte · ${esc(c.name)}</div>`] : []),
+        ]),
       ];
       const shown = evs.slice(0,4).join('') + (evs.length>4?`<div class="ev more">+${evs.length-4} más</div>`:'');
       grid += `<div class="d ${d.getMonth()!==m-1?'out':''} ${ds===UI.today()?'today':''}" onclick="Ops.editContent(null,{date:'${ds}'${curClient()?`,clientId:'${curClient()}'`:''}})"><div class="n">${d.getDate()}</div>${shown}</div>`;
     }
-    const calClients = activeClients().filter(needsCal).filter(c=>App.matchUnit(c.units||[])).filter(c=>cm(c.id));
+    const calClients = activeClients().filter(c=>needsCal(c)||needsRep(c)).filter(c=>App.matchUnit(c.units||[])).filter(c=>cm(c.id));
     const monthCnt = content.filter(p=>p.date?.startsWith(calCursor));
     const html = `<div class="toolbar"><button class="btn g sm" onclick="Ops.calMove(-1)">‹</button><div class="b" style="font-size:17px;min-width:170px;text-align:center">${UI.ymLabel(calCursor)}</div><button class="btn g sm" onclick="Ops.calMove(1)">›</button>
         <button class="btn g sm" onclick="Ops.calMove(0)">Hoy</button><span class="grow"></span>
         <button class="btn p" onclick="Ops.editContent()">＋ Contenido</button></div>
       <div class="row wrap xs b muted" style="margin-bottom:12px;gap:14px">${CONTENT_ST.map(([k,l])=>`<span><span style="color:${CONTENT_COL[k]}">●</span> ${l} (${monthCnt.filter(p=>p.status===k).length})</span>`).join('')}<span>🤝 Reunión</span><span>☐ Tarea</span></div>
       <div class="cal">${grid}</div>
-      <div class="sec-t">Estado de los calendarios · ${UI.ymLabel(calCursor)}</div>
-      ${calClients.length?`<div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Cliente</th><th>Estado</th><th class="hide-m">Piezas cargadas</th><th class="hide-m">Aprobadas / publicadas</th><th>Responsable</th></tr></thead><tbody>
+      <div class="sec-t">Entregables · calendario de ${UI.ymLabel(calCursor)} y reporte de ${UI.ymLabel(UI.ym(new Date(+calCursor.slice(0,4), +calCursor.slice(5)-2, 1)))}</div>
+      ${calClients.length?`<div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Cliente</th><th>Calendario</th><th>Reporte</th><th class="hide-m">Piezas cargadas</th><th class="hide-m">Aprobadas / publicadas</th><th>Responsable</th></tr></thead><tbody>
         ${calClients.map(c=>{ const st = calRec(c.id,calCursor)?.stage||'planificar'; const ps = monthCnt.filter(p=>p.clientId===c.id); const ok = ps.filter(p=>['aprobado','publicado'].includes(p.status)).length;
           return `<tr><td class="b"><a href="#/ops/cliente/${c.id}" style="color:inherit;text-decoration:none">${esc(c.name)}</a></td>
-          <td><select class="inp sm" onchange="Ops.setCal('${c.id}','${calCursor}',this.value)" style="${CAL_OK.includes(st)?'border-color:var(--green)':''}">${CAL_ST.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select></td>
+          <td><select class="inp sm" onchange="Ops.setCal('${c.id}','${calCursor}',this.value)" style="${CAL_OK.includes(st)?'border-color:var(--green)':''}">${CAL_ST.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select><div class="xs faint" style="margin-top:3px">entrega ${UI.fdate(dayIn(UI.ym(new Date(+calCursor.slice(0,4), +calCursor.slice(5)-2, 1)), c.calendarDay||25),{abs:true})}</div></td>
+          <td>${needsRep(c)?(()=>{ const rm = UI.ym(new Date(+calCursor.slice(0,4), +calCursor.slice(5)-2, 1)), rs = repRec(c.id, rm)?.stage||'pendiente'; return `<select class="inp sm" onchange="Ops.setRep('${c.id}','${rm}',this.value)" style="${REP_OK.includes(rs)?'border-color:var(--green)':''}">${REP_ST.map(([k,l])=>`<option value="${k}" ${k===rs?'selected':''}>${l}</option>`).join('')}</select><div class="xs faint" style="margin-top:3px">se presenta ${UI.fdate(dayIn(calCursor.slice(0,7)===UI.ym()?UI.ym():calCursor, c.reportDay||5),{abs:true})}</div>`; })():'<span class="faint">—</span>'}</td>
           <td class="hide-m">${ps.length}</td><td class="hide-m"><div class="row"><div class="bar grow" style="max-width:120px"><div style="width:${ps.length?ok/ps.length*100:0}%;background:var(--green)"></div></div><span class="xs">${ok}/${ps.length}</span></div></td>
           <td>${UI.avatar(App.member(c.ownerId),'sm')}</td></tr>`; }).join('')}</tbody></table></div>`
         : '<div class="card empty small">Los clientes con unidad Social Media o Producción de contenido aparecen acá para seguir su calendario mensual.</div>'}`;
     return { html };
   }
 
+  function setRep(cid, month, stage){
+    const prev = repRec(cid, month)?.stage;
+    Store.upsert('ops','reports',{ id:cid+'_'+month, clientId:cid, month, stage });
+    if(REP_OK.includes(stage) && !REP_OK.includes(prev)) Game.log('report_done', `Reporte presentado: ${clientName(cid)} (${UI.ymLabel(month)})`, { icon:'📊' });
+    App.render();
+  }
   function setCal(cid, month, stage){
     const prev = calRec(cid, month)?.stage;
     Store.upsert('ops','calendars',{ id:cid+'_'+month, clientId:cid, month, stage });
@@ -435,7 +471,8 @@
     setClient(v){ setCF(v); if(location.hash.startsWith('#/ops')) App.render(); else App.go('#/ops'); window.scrollTo(0,0); },
     setClientFilter(v){ Ops.setClient(v); },
     calMove(n){ if(!n){ calCursor = UI.ym(); } else { const [y,m] = calCursor.split('-').map(Number); calCursor = UI.ym(new Date(y, m-1+n, 1)); } App.render(); },
-    setCal,
+    setCal, setRep,
+    setDelivLink(kind, cid, month, link){ Store.upsert('ops', kind==='rep'?'reports':'calendars', { id:cid+'_'+month, clientId:cid, month, link }); App.render(); },
 
     editClient(id){
       const c = id ? client(id) : {};
@@ -447,6 +484,8 @@
         { k:'teamIds', label:'Equipo que trabaja la cuenta', type:'multi', options:App.members().map(m=>[m.id,m.name]) },
         { k:'contactName', label:'Contacto del cliente', half:true }, { k:'contactPhone', label:'WhatsApp', half:true, placeholder:'54911…' },
         { k:'contactEmail', label:'Email', type:'email', half:true }, { k:'link', label:'Link a carpeta / Drive', half:true },
+        { k:'calendarDay', label:'Día de entrega del calendario', type:'number', half:true, default:25, hint:'Día del mes en que se entrega el calendario del mes siguiente' },
+        { k:'reportDay', label:'Día del reporte', type:'number', half:true, default:5, hint:'Día del mes en que se presenta el reporte del mes anterior' },
         { k:'notes', label:'Notas (accesos, tono de marca, particularidades)', type:'textarea', rows:3 },
       ],
       danger: id ? (c.active===false ? { label:'Reactivar', fn:()=>{ Store.upsert('ops','clients',{ id, active:true }); App.render(); } }
@@ -533,7 +572,7 @@
         const st = action==='done' ? 'done' : value; if(!st) return;
         let changed = 0; const before = {};
         ids.forEach(id=>{ const t = Store.get('ops','tasks',id); if(t.status===st) return;
-          if(st==='done' && t.assigneeId && !(t.assigneeId in before)) before[t.assigneeId] = Game.xpOf(t.assigneeId);
+          if(st==='done' && t.assigneeId && !(t.assigneeId in before)) before[t.assigneeId] = Game.perf(t.assigneeId).pct;
           Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null }); changed++; });
         if(st==='done' && changed){ Game.log('task_done', `${changed} tarea${changed!==1?'s':''} completada${changed!==1?'s':''}`, { icon:'✅' }); Object.keys(before).forEach(m=>Game.celebrate(m, before[m])); }
         else UI.toast(`${n} tarea${s} → ${label(TASK_ST,st)}`,'✓');

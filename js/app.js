@@ -96,10 +96,10 @@
       <div class="nav-s">Equipo</div>
       ${item('#/equipo','◑','Equipo e invitaciones','equipo')}
       ${item('#/ajustes','⚙','Ajustes','ajustes')}`;
-    const lv = Game.level(Game.xpOf(me.id));
+    const pf = Game.perf(me.id);
     $('#me').innerHTML = `${UI.avatar(me)}<div class="grow"><div class="b ellip">${esc(me.name)}</div>
-      <div class="xs faint b">Nv ${lv.n} · ${esc(lv.name)} · ✅ ${lv.done}</div>
-      <div class="xpbar" style="height:5px;margin-top:5px"><div style="width:${lv.pct}%"></div></div></div>`;
+      <div class="xs faint b"><span style="color:${pf.color}">${esc(pf.label)}</span>${pf.pct!=null?` · ${pf.resolved}/${pf.assigned} resueltas`:''}</div>
+      <div class="xpbar" style="height:5px;margin-top:5px"><div style="width:${pf.pct??0}%;background:${pf.color}"></div></div></div>`;
   }
   App.closeSidebar = ()=>{ $('.sidebar').classList.remove('open'); $('.sb-over').classList.remove('open'); };
   App.openSidebar = ()=>{ $('.sidebar').classList.add('open'); $('.sb-over').classList.add('open'); };

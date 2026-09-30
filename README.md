@@ -21,9 +21,10 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 
 ## Secciones
 
-**Inicio** — nivel por **tareas realizadas** (10 niveles: Arrancando 0 → Mito ANM 300), tareas hechas en la semana, % a tiempo, ranking semanal por tareas hechas, tu foco del día (tareas, reuniones, seguimientos), alertas, misiones de la semana, ranking, insignias y actividad del equipo.
+**Inicio** — **cómo venís este mes**: tareas resueltas sobre asignadas (Excelente ≥90%, Muy bien ≥75%, Bien ≥60%, A mejorar ≥40%, Atrasado/a), cómo viene el equipo, hechas en la semana, % a tiempo, tu foco del día (tareas, reuniones, seguimientos), alertas, misiones de la semana, ranking, insignias y actividad del equipo.
 
 **Operaciones** — filtro por unidad de negocio (Social Media, Pauta, Branding, Web… editables en Ajustes) y **barra de clientes**: elegís un cliente (o “Internas”) y todas las pestañas muestran solo lo suyo; lo que crees queda asignado a ese cliente.
+- *Entregables*: cada cliente tiene su **día de calendario** (se entrega el del mes siguiente) y **día de reporte** (se presenta el del mes anterior). Arriba de su ficha se ve el estado de cada uno (sin empezar, creándose, enviado para corregir, con correcciones, aprobado/presentado) con link; aparecen en el calendario y generan alertas si se atrasan.
 - *Seguimiento*: tarjeta por cliente con semáforo (🟢/🟡/🔴), “en qué estamos”, próximo paso, días desde la última actualización. Historial completo en la ficha del cliente.
 - *Tareas*: tablero arrastrable o lista agrupada (vencidas, hoy, esta semana…).
 - *Selección múltiple*: en Tareas, “☑ Seleccionar” permite elegir varias (o todas) y marcarlas hechas, cambiar estado, asignar, cambiar fecha o prioridad, avisar a los responsables o eliminarlas juntas.

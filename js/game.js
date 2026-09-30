@@ -24,12 +24,25 @@
     const ts = doneTasks(memberId).filter(t=>t.due && t.doneAt);
     return ts.length ? Math.round(ts.filter(t=>t.doneAt.slice(0,10)<=t.due).length/ts.length*100) : null;
   }
-  // Festeja si la persona subió de nivel (se llama con la cantidad que tenía antes)
-  function celebrate(memberId, before){
-    const lv = level(doneTasks(memberId).length);
-    if(lv.n>level(before).n){
+  // ── Cómo venís: tareas resueltas / tareas asignadas en el mes ─────────────────
+  // Cuentan las tareas asignadas a la persona que vencían este mes (hasta hoy) y las que resolvió este mes.
+  const monthStart = () => UI.ym()+'-01';
+  const SCALE = [[90,'Excelente','var(--green)'],[75,'Muy bien','var(--teal)'],[60,'Bien','var(--blue-l)'],[40,'A mejorar','var(--yellow)'],[0,'Atrasado/a','var(--red)']];
+  function perf(memberId, from=monthStart(), to=UI.today()){
+    const ts = Store.all('ops','tasks').filter(t=>t.assigneeId===memberId);
+    const rel = ts.filter(t=>(t.due && t.due>=from && t.due<=to) || (t.status==='done' && (t.doneAt||'').slice(0,10)>=from));
+    const res = rel.filter(t=>t.status==='done');
+    const pct = rel.length ? Math.round(res.length/rel.length*100) : null;
+    const sc = pct==null ? [null,'Sin tareas vencidas','var(--text3)'] : SCALE.find(x=>pct>=x[0]);
+    return { assigned:rel.length, resolved:res.length, pct, label:sc[1], color:sc[2], pending:ts.filter(t=>t.status!=='done').length,
+      overdue:ts.filter(t=>t.status!=='done' && t.due && t.due<to).length };
+  }
+  // Festeja cuando alguien llega a "Excelente" en el mes (se llama con el % que tenía antes)
+  function celebrate(memberId, beforePct){
+    const p = perf(memberId);
+    if(p.pct>=90 && (beforePct==null || beforePct<90) && p.assigned>=3){
       const mine = memberId===App.me()?.id, who = App.member(memberId)?.name.split(' ')[0];
-      UI.confetti(); setTimeout(()=>UI.toast(mine ? `¡Subiste a nivel ${lv.n}: ${lv.name}!` : `${who} subió a nivel ${lv.n}: ${lv.name}`,'🎉'), 400);
+      UI.confetti(); setTimeout(()=>UI.toast(mine ? '¡Estás en Excelente este mes!' : `${who} está en Excelente este mes`,'🎉'), 400);
     }
   }
 
@@ -62,12 +75,12 @@
     { id:'touch25', e:'🤝', n:'Networker', d:'25 interacciones con contactos', ok:m=>count(m,'interaction')>=25 },
     { id:'won', e:'🏆', n:'Cerrador', d:'Ganar un cliente nuevo', ok:m=>count(m,'lead_won')>=1 },
     { id:'streak5', e:'🔥', n:'En llamas', d:'Racha de 5 días', ok:m=>streak(m)>=5 },
-    { id:'lvl5', e:'⭐', n:'Senior', d:'Llegar a nivel 4', ok:m=>level(xpOf(m)).n>=4 },
+    { id:'excelente', e:'⭐', n:'Excelente', d:'Mes con 90% o más de tareas resueltas (mín. 5)', ok:m=>{ const p = perf(m); return p.assigned>=5 && p.pct>=90; } },
     { id:'closer', e:'💰', n:'Cierre prolijo', d:'Cerrar un mes de finanzas', ok:m=>count(m,'finance_close')>=1 },
   ];
 
   function leaderboard(since){
-    return App.members().map(m=>({ m, xp:xpOf(m.id, since), total:xpOf(m.id) })).sort((a,b)=>b.xp-a.xp || b.total-a.total);
+    return App.members().map(m=>({ m, p:perf(m.id), xp:xpOf(m.id, since), total:xpOf(m.id) })).sort((a,b)=>((b.p.pct??-1)-(a.p.pct??-1)) || b.p.resolved-a.p.resolved);
   }
 
   // Registra una acción (y devuelve el XP ganado)
@@ -107,5 +120,5 @@
     return list;
   }
 
-  window.Game = { XP, LEVELS, level, xpOf, onTime, celebrate, doneTasks, streak, BADGES, leaderboard, log, missions, weekStart };
+  window.Game = { XP, LEVELS, level, xpOf, onTime, celebrate, perf, SCALE, doneTasks, streak, BADGES, leaderboard, log, missions, weekStart };
 })();
