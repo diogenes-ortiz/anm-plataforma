@@ -1,29 +1,43 @@
 // ─── GAMIFICACIÓN ─────────────────────────────────────────────────────────────
-// Toda acción importante queda en el log de actividad (team.activity) con XP.
-// Niveles, rachas, insignias y ranking se calculan a partir de ese log.
+// El NIVEL de cada persona sale de las tareas realizadas (asignadas a ella y marcadas como hechas).
+// El log de actividad (team.activity) alimenta el feed, las rachas y las insignias.
 (function(){
   const XP = {
     task_done:10, task_ontime:5, client_update:8, meeting:5, minuta:15, content:3, content_published:5,
     calendar_approved:20, lead:5, lead_advance:10, lead_won:100, interaction:5,
     alert_sent:3, member_invited:10, joined:20, finance_close:50,
   };
+  // Tareas realizadas necesarias para cada nivel
   const LEVELS = [
-    [0,'Trainee'],[100,'Junior'],[250,'Semi Senior'],[500,'Senior'],[900,'Lead'],
-    [1400,'Head'],[2100,'Director/a'],[3000,'Estratega'],[4200,'Leyenda ANM'],[6000,'Mito ANM'],
+    [0,'Arrancando'],[5,'En marcha'],[15,'Constante'],[30,'Resolutivo/a'],[50,'Máquina'],
+    [80,'Imparable'],[120,'Referente'],[170,'Crack'],[230,'Leyenda ANM'],[300,'Mito ANM'],
   ];
 
-  function level(xp){
-    let i = 0; while(i<LEVELS.length-1 && xp>=LEVELS[i+1][0]) i++;
+  function level(done){
+    let i = 0; while(i<LEVELS.length-1 && done>=LEVELS[i+1][0]) i++;
     const cur = LEVELS[i][0], next = LEVELS[i+1]?.[0];
-    return { n:i+1, name:LEVELS[i][1], xp, cur, next, pct: next ? Math.round((xp-cur)/(next-cur)*100) : 100, toNext: next ? next-xp : 0 };
+    return { n:i+1, name:LEVELS[i][1], done, xp:done, cur, next, pct: next ? Math.round((done-cur)/(next-cur)*100) : 100, toNext: next ? next-done : 0 };
+  }
+  // Tareas realizadas por una persona (desde una fecha, opcional)
+  const doneTasks = (memberId, since) => Store.all('ops','tasks').filter(t=>t.status==='done' && t.assigneeId===memberId && (!since || (t.doneAt||'').slice(0,10)>=since));
+  function onTime(memberId){
+    const ts = doneTasks(memberId).filter(t=>t.due && t.doneAt);
+    return ts.length ? Math.round(ts.filter(t=>t.doneAt.slice(0,10)<=t.due).length/ts.length*100) : null;
+  }
+  // Festeja si la persona subió de nivel (se llama con la cantidad que tenía antes)
+  function celebrate(memberId, before){
+    const lv = level(doneTasks(memberId).length);
+    if(lv.n>level(before).n){
+      const mine = memberId===App.me()?.id, who = App.member(memberId)?.name.split(' ')[0];
+      UI.confetti(); setTimeout(()=>UI.toast(mine ? `¡Subiste a nivel ${lv.n}: ${lv.name}!` : `${who} subió a nivel ${lv.n}: ${lv.name}`,'🎉'), 400);
+    }
   }
 
   const acts = () => Store.all('team','activity');
   const weekStart = () => { const d = new Date(); const w = (d.getDay()+6)%7; d.setDate(d.getDate()-w); return UI.ymd(d); };
 
-  function xpOf(memberId, since){
-    return acts().filter(a=>a.by===memberId && (!since || a.at.slice(0,10)>=since)).reduce((s,a)=>s+(a.xp||0),0);
-  }
+  // (se mantiene el nombre por compatibilidad: ahora devuelve tareas realizadas)
+  function xpOf(memberId, since){ return doneTasks(memberId, since).length; }
 
   // Días seguidos con actividad (cuenta hoy o, si hoy no hubo, desde ayer)
   function streak(memberId){
@@ -38,8 +52,9 @@
 
   const BADGES = [
     { id:'first', e:'🌱', n:'Primer paso', d:'Registrar tu primera acción', ok:m=>acts().some(a=>a.by===m) },
-    { id:'tasks10', e:'✅', n:'Resolutivo', d:'Completar 10 tareas', ok:m=>count(m,'task_done')>=10 },
-    { id:'tasks50', e:'🚀', n:'Máquina', d:'Completar 50 tareas', ok:m=>count(m,'task_done')>=50 },
+    { id:'tasks10', e:'✅', n:'Resolutivo', d:'Completar 10 tareas', ok:m=>xpOf(m)>=10 },
+    { id:'tasks50', e:'🚀', n:'Máquina', d:'Completar 50 tareas', ok:m=>xpOf(m)>=50 },
+    { id:'ontime', e:'⏱️', n:'Puntual', d:'90% de tareas a tiempo (mín. 10)', ok:m=>doneTasks(m).filter(t=>t.due).length>=10 && onTime(m)>=90 },
     { id:'minutas5', e:'📝', n:'Minutero', d:'Cargar 5 minutas', ok:m=>count(m,'minuta')>=5 },
     { id:'updates20', e:'📡', n:'Radar', d:'20 actualizaciones de clientes', ok:m=>count(m,'client_update')>=20 },
     { id:'cal', e:'🗓️', n:'Calendarista', d:'Aprobar 3 calendarios de contenido', ok:m=>count(m,'calendar_approved')>=3 },
@@ -52,22 +67,19 @@
   ];
 
   function leaderboard(since){
-    return App.members().map(m=>({ m, xp:xpOf(m.id, since) })).sort((a,b)=>b.xp-a.xp);
+    return App.members().map(m=>({ m, xp:xpOf(m.id, since), total:xpOf(m.id) })).sort((a,b)=>b.xp-a.xp || b.total-a.total);
   }
 
   // Registra una acción (y devuelve el XP ganado)
   function log(type, text, extra={}){
     const me = App.me(); if(!me) return 0;
     const xp = extra.xp ?? XP[type] ?? 0;
-    const beforeLvl = level(xpOf(me.id)).n;
     const beforeBadges = BADGES.filter(b=>b.ok(me.id)).map(b=>b.id);
     Store.upsert('team','activity',{ type, text, by:me.id, at:new Date().toISOString(), xp, ref:extra.ref||null });
     // Mantener el log acotado (los más viejos se descartan)
     const all = Store.all('team','activity');
     if(all.length>1500) all.sort((a,b)=>a.at.localeCompare(b.at)).slice(0, all.length-1500).forEach(a=>Store.remove('team','activity',a.id));
-    if(!extra.silent) UI.toast(text, extra.icon||'✨', xp||null);
-    const lv = level(xpOf(me.id));
-    if(lv.n>beforeLvl){ UI.confetti(); setTimeout(()=>UI.toast(`¡Subiste a nivel ${lv.n}: ${lv.name}!`,'🎉'), 400); }
+    if(!extra.silent) UI.toast(text, extra.icon||'✨');
     BADGES.filter(b=>b.ok(me.id) && !beforeBadges.includes(b.id)).forEach(b=>{ UI.confetti(40); setTimeout(()=>UI.toast(`Nueva insignia: ${b.n}`, b.e), 700); });
     return xp;
   }
@@ -82,7 +94,7 @@
     const noMin = meetings.filter(m=>!m.minuta).length;
     const overdue = Ops.overdueTasks().length;
     const touches = acts().filter(a=>['interaction','lead','lead_advance'].includes(a.type) && inWeek(a.at)).length;
-    const done = acts().filter(a=>a.type==='task_done' && inWeek(a.at)).length;
+    const done = Store.all('ops','tasks').filter(t=>t.status==='done' && inWeek(t.doneAt)).length;
     const list = [
       { e:'📡', t:'Seguimiento al día', d: stale ? `${stale} cliente${stale>1?'s':''} sin actualizar hace +7 días` : 'Todos los clientes actualizados esta semana', p: clients.length ? (clients.length-stale)/clients.length : 1 },
       { e:'📝', t:'Minutas completas', d: meetings.length ? (noMin ? `${noMin} reunión${noMin>1?'es':''} sin minuta` : 'Todas las reuniones tienen minuta') : 'Sin reuniones esta semana (todavía)', p: meetings.length ? (meetings.length-noMin)/meetings.length : 1 },
@@ -95,5 +107,5 @@
     return list;
   }
 
-  window.Game = { XP, LEVELS, level, xpOf, streak, BADGES, leaderboard, log, missions, weekStart };
+  window.Game = { XP, LEVELS, level, xpOf, onTime, celebrate, doneTasks, streak, BADGES, leaderboard, log, missions, weekStart };
 })();

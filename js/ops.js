@@ -275,11 +275,12 @@
 
   function setTaskStatus(id, st){
     const t = Store.get('ops','tasks',id); if(!t || t.status===st) return;
-    const wasDone = t.status==='done';
+    const wasDone = t.status==='done', before = t.assigneeId ? Game.xpOf(t.assigneeId) : 0;
     Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null });
     if(st==='done' && !wasDone){
-      const ontime = !t.due || t.due>=UI.today();
-      Game.log('task_done', `Tarea completada: ${t.title}`, { xp:Game.XP.task_done+(ontime?Game.XP.task_ontime:0), icon:'✅', ref:id });
+      const who = App.member(t.assigneeId), n = who ? Game.xpOf(who.id) : 0;
+      Game.log('task_done', `Tarea completada: ${t.title}${who?` · ${who.id===App.me().id?'llevás':who.name.split(' ')[0]+' lleva'} ${n} realizada${n!==1?'s':''}`:''}`, { icon:'✅', ref:id });
+      if(who) Game.celebrate(who.id, before);
     }
     App.render();
   }
@@ -530,11 +531,12 @@
       const n = ids.length, s = n!==1?'s':'';
       if(action==='done' || action==='status'){
         const st = action==='done' ? 'done' : value; if(!st) return;
-        let xp = 0;
+        let changed = 0; const before = {};
         ids.forEach(id=>{ const t = Store.get('ops','tasks',id); if(t.status===st) return;
-          Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null });
-          if(st==='done') xp += Game.XP.task_done + (!t.due || t.due>=UI.today() ? Game.XP.task_ontime : 0); });
-        if(xp) Game.log('task_done', `${n} tarea${s} completada${s}`, { xp, icon:'✅' }); else UI.toast(`${n} tarea${s} → ${label(TASK_ST,st)}`,'✓');
+          if(st==='done' && t.assigneeId && !(t.assigneeId in before)) before[t.assigneeId] = Game.xpOf(t.assigneeId);
+          Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null }); changed++; });
+        if(st==='done' && changed){ Game.log('task_done', `${changed} tarea${changed!==1?'s':''} completada${changed!==1?'s':''}`, { icon:'✅' }); Object.keys(before).forEach(m=>Game.celebrate(m, before[m])); }
+        else UI.toast(`${n} tarea${s} → ${label(TASK_ST,st)}`,'✓');
       }
       if(action==='assign' && value){
         ids.forEach(id=>Store.upsert('ops','tasks',{ id, assigneeId:value }));

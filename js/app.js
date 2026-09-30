@@ -98,7 +98,7 @@
       ${item('#/ajustes','⚙','Ajustes','ajustes')}`;
     const lv = Game.level(Game.xpOf(me.id));
     $('#me').innerHTML = `${UI.avatar(me)}<div class="grow"><div class="b ellip">${esc(me.name)}</div>
-      <div class="xs faint b">Nv ${lv.n} · ${esc(lv.name)} · 🔥${Game.streak(me.id)}</div>
+      <div class="xs faint b">Nv ${lv.n} · ${esc(lv.name)} · ✅ ${lv.done}</div>
       <div class="xpbar" style="height:5px;margin-top:5px"><div style="width:${lv.pct}%"></div></div></div>`;
   }
   App.closeSidebar = ()=>{ $('.sidebar').classList.remove('open'); $('.sb-over').classList.remove('open'); };
