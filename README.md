@@ -61,6 +61,9 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 ## Recordatorios por mail
 `apps-script/Recordatorios.gs` corre en Google Apps Script con el Gmail de un socio: resumen diario a las 8 h (tareas vencidas / de hoy / próximas, reuniones, seguimientos del CRM; a los socios además clientes en riesgo, sin actualizar y tareas vencidas del equipo) y cada hora los avisos nuevos de la plataforma. Instrucciones de instalación arriba del archivo. Cada persona necesita su email cargado y puede desactivar los mails desde su perfil.
 
+## Publicar cambios
+Antes de cada commit que toque `css/` o `js/`, correr `sh tools/bump-version.sh`: agrega `?v=` a los archivos y actualiza `version.json`, así los navegadores bajan la versión nueva (y las pestañas abiertas muestran “Hay una versión nueva · Actualizar”).
+
 ## Datos
 Todo vive en la tabla `anm_state` de Supabase (la misma de siempre): `main` = Finanzas (sin cambios de formato), `ops`, `growth`, `team` = plataforma. Varias personas pueden editar a la vez: los cambios se fusionan registro por registro y se sincronizan cada ~20 s. Hay respaldo descargable en Ajustes.
 

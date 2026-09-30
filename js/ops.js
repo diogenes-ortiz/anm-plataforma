@@ -208,7 +208,7 @@
           <div class="card"><div class="card-h"><h3>Estado actual</h3><span class="grow"></span><span class="sub">${ups[0]?UI.ago(ups[0].at):''}</span></div>
             <div class="prewrap">${esc(c.status||'Sin actualizaciones todavía.')}</div>
             ${c.nextStep?`<div class="alert info" style="margin:14px 0 0"><div class="ai">⏭️</div><div><div class="at">${esc(c.nextStep)}</div><div class="ad">${c.nextStepDate?UI.fdate(c.nextStepDate,{abs:true}):'Sin fecha'}</div></div></div>`:''}</div>
-          <div class="card"><div class="card-h"><h3>Tareas</h3><span class="sub">${tasks.filter(t=>t.status!=='done').length} abiertas</span></div>${taskList(tasks.slice(0,15), true)}</div>
+          <div class="card"><div class="card-h"><h3>Tareas</h3><span class="sub">${tasks.filter(t=>t.status!=='done').length} abiertas</span><span class="grow"></span>${tasks.length?`<button class="btn xs g" onclick="Ops.selectHere()">☑ Seleccionar varias</button>`:''}</div>${taskList(tasks.slice(0,15), true)}</div>
           <div class="card"><div class="card-h"><h3>Historial de seguimiento</h3></div>
             ${ups.length?`<div class="tl">${ups.slice(0,25).map(u=>`<div class="tl-i ${u.health||'ok'}"><div class="when">${UI.fdate(u.at.slice(0,10),{abs:true})} · ${esc(App.member(u.by)?.name||'')}</div><div class="small prewrap">${esc(u.text)}</div>${u.nextStep?`<div class="xs muted">→ ${esc(u.nextStep)}</div>`:''}</div>`).join('')}</div>`:'<div class="empty">Sin historial</div>'}</div>
         </div>
@@ -258,6 +258,7 @@
       <select class="inp sm" onchange="Ops.bulk('status',this.value)"><option value="">Estado…</option>${TASK_ST.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
       <select class="inp sm" onchange="Ops.bulk('assign',this.value)"><option value="">Asignar a…</option>${opts.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select>
       <input class="inp sm" type="date" title="Cambiar fecha" onchange="Ops.bulk('due',this.value)">
+      <select class="inp sm" onchange="Ops.bulk('client',this.value)"><option value="">Mover a cliente…</option><option value="__int">— Interna —</option>${activeClients().map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <select class="inp sm" onchange="Ops.bulk('priority',this.value)"><option value="">Prioridad…</option>${PRIO.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
       <button class="btn xs g" onclick="Ops.bulk('alert')">📣 Avisar</button>
       <button class="btn xs d" onclick="Ops.bulk('delete')">🗑 Eliminar</button>`:'<span class="xs faint">Tocá las tareas para elegirlas</span>'}
@@ -555,6 +556,7 @@
       UI.toast(`${al.length} alerta${al.length!==1?'s':''} descargada${al.length!==1?'s':''}`,'⇣');
     },
     selMode(on){ selMode = !!on; sel.clear(); App.render(); },
+    selectHere(){ selMode = true; sel.clear(); taskMode = 'list'; App.go('#/ops/tareas'); },
     pick(id){ sel.has(id) ? sel.delete(id) : sel.add(id); App.render(); },
     pickAll(){ const all = visibleTasks.length && visibleTasks.every(id=>sel.has(id)); sel.clear(); if(!all) visibleTasks.forEach(id=>sel.add(id)); App.render(); },
     pickGroup(ids){ const list = ids.split(',').filter(Boolean), all = list.every(id=>sel.has(id)); list.forEach(id=>all ? sel.delete(id) : sel.add(id)); App.render(); },
@@ -584,6 +586,7 @@
         else UI.toast(`${n} tarea${s} asignada${s} a ${who.name.split(' ')[0]}`,'👤');
       }
       if(action==='due' && value){ ids.forEach(id=>Store.upsert('ops','tasks',{ id, due:value })); UI.toast(`Nueva fecha para ${n} tarea${s}: ${UI.fdate(value,{abs:true})}`,'📅'); }
+      if(action==='client' && value){ const cid = value==='__int' ? '' : value; ids.forEach(id=>Store.upsert('ops','tasks',{ id, clientId:cid })); UI.toast(`${n} tarea${s} movida${s} a ${cid?clientName(cid):'Internas'}`,'↪'); }
       if(action==='priority' && value){ ids.forEach(id=>Store.upsert('ops','tasks',{ id, priority:value })); UI.toast(`Prioridad actualizada en ${n} tarea${s}`,'🔥'); }
       if(action==='alert'){
         const by = {}; ids.map(id=>Store.get('ops','tasks',id)).filter(t=>t.status!=='done' && t.assigneeId && t.assigneeId!==me.id).forEach(t=>(by[t.assigneeId] = by[t.assigneeId]||[]).push(t));
@@ -632,9 +635,9 @@
         <div class="card" style="padding:16px 18px"><div class="row" style="margin-bottom:8px"><div class="xs faint b grow" style="letter-spacing:1px">✅ TAREAS BAJADAS (${tasks.length})</div><button class="btn xs g" onclick="UI.close();Ops.editTask(null,{clientId:'${m.clientId||''}',meetingId:'${id}'})">＋ Tarea</button></div>
           ${tasks.length?`<div class="list">${tasks.map(t=>`<div class="li" style="flex-wrap:wrap">
             <input type="checkbox" ${t.status==='done'?'checked':''} onchange="Ops.toggleTask('${t.id}');Ops.viewMeeting('${id}')" style="width:18px;height:18px">
-            <div class="grow" style="min-width:200px"><div class="small b" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${esc(t.title)}</div>${t.alertedTo&&t.alertedTo===t.assigneeId?'<div class="xs" style="color:var(--green)">✓ avisada</div>':''}</div>
+            <div class="grow" style="min-width:220px"><input class="inp sm" style="width:100%;font-weight:700;${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}" value="${esc(t.title)}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{title:this.value})">${t.alertedTo&&t.alertedTo===t.assigneeId?'<div class="xs" style="color:var(--green);margin-top:2px">✓ avisada</div>':''}</div>
             <select class="inp sm" onchange="Ops.assignFromMeeting('${t.id}','${id}',{assigneeId:this.value})">${[['','— Sin asignar —'],...opts.filter(o=>o[0])].map(([v,l])=>`<option value="${v}" ${t.assigneeId===v?'selected':''}>${esc(l)}</option>`).join('')}${t.assigneeId&&!opts.some(o=>o[0]===t.assigneeId)?`<option selected>${esc(App.member(t.assigneeId)?.name||'—')}</option>`:''}</select>
-            <input class="inp sm" type="date" value="${t.due||''}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{due:this.value})"></div>`).join('')}</div>`:'<div class="small faint">Todavía no hay tareas de esta reunión.</div>'}
+            <input class="inp sm" type="date" value="${t.due||''}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{due:this.value})"><button class="icon-btn" title="Eliminar tarea" onclick="if(confirm('¿Eliminar esta tarea?')){Store.remove('ops','tasks','${t.id}');Ops.viewMeeting('${id}')}">🗑</button></div>`).join('')}</div>`:'<div class="small faint">Todavía no hay tareas de esta reunión.</div>'}
           ${loose.length?`<div class="xs faint b" style="margin:12px 0 6px">ACUERDOS SIN TAREA</div>${loose.map(a=>`<div class="li"><div class="grow small">${esc(a.text)}</div><button class="btn xs g" onclick="Ops.actionToTask('${id}','${a.id}',true);Ops.viewMeeting('${id}')">→ Tarea</button></div>`).join('')}`:''}</div>
         <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="Ops.copyMeeting('${id}')">📋 Copiar resumen (WhatsApp)</button><button class="btn g" onclick="UI.close();Ops.editMeeting('${id}')">✎ Editar</button>
           <button class="btn p" onclick="Ops.alertMeeting('${id}')">📣 Mandar alertas de tareas asignadas${pending?` (${pending})`:''}</button></div>`, true);
@@ -708,33 +711,45 @@
     importMinuta(id){
       const m = (window.ANM_MINUTAS||[]).find(x=>x.id===id); if(!m) return;
       const cl = clientByName(m.client);
-      const who = n => memberByFirst(n)?.name || `${n||'—'} (no está cargada → queda para vos)`;
-      const box = UI.modal(`<h2>📥 ${esc(m.title)}<button class="icon-btn x" data-close>✕</button></h2>
+      const members = App.members();
+      const taskRow = (t={}, i) => { const as = memberByFirst(t.who)?.id || t.assigneeId || '';
+        return `<div class="li im-row" style="flex-wrap:wrap;gap:8px"><input type="checkbox" checked class="im-on" style="width:18px;height:18px">
+          <input class="inp sm im-text grow" style="min-width:240px" value="${esc(t.text||'')}" placeholder="Qué hay que hacer">
+          <select class="inp sm im-who"><option value="">— Sin asignar —</option>${members.map(x=>`<option value="${x.id}" ${x.id===as?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
+          <input class="inp sm im-due" type="date" value="${esc(t.due||'')}"><input type="hidden" class="im-unit" value="${esc(t.unit||'')}">
+          <button type="button" class="icon-btn" title="Quitar" onclick="this.closest('.im-row').remove()">✕</button></div>`; };
+      const box = UI.modal(`<h2>📥 Revisar minuta<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="fld"><label>Título</label><input class="inp" id="im-title" value="${esc(m.title)}"></div>
         <div class="frow"><div class="fld"><label>Cliente</label><select class="inp" id="im-client"><option value="">— Interna —</option>${activeClients().map(c=>`<option value="${c.id}" ${cl?.id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}${!cl&&m.client?`<option value="__new" selected>＋ Crear “${esc(m.client)}”</option>`:''}</select></div>
           <div class="fld"><label>Fecha</label><input class="inp" id="im-date" type="datetime-local" value="${esc(m.date)}"></div></div>
-        <div class="xs faint b" style="letter-spacing:1px;margin-bottom:6px">TAREAS QUE SE VAN A CREAR (destildá las que no)</div><div><div class="list" style="max-height:320px;overflow:auto;margin-bottom:12px">
-          ${m.tasks.map((t,i)=>`<div class="li" style="cursor:pointer" onclick="if(event.target.type!=='checkbox'){const c=this.querySelector('input');c.checked=!c.checked}"><input type="checkbox" checked data-i="${i}" style="width:18px;height:18px"><div class="grow"><div class="small b">${esc(t.text)}</div><div class="xs faint">${esc(who(t.who))} · vence ${UI.fdate(t.due,{abs:true})}</div></div></div>`).join('')}</div></div>
+        <div class="fld"><label>📝 Minuta</label><textarea class="inp" id="im-minuta" rows="10" style="line-height:1.6">${esc(m.minuta||'')}</textarea></div>
+        <div class="fld"><label>✔ Decisiones</label><textarea class="inp" id="im-dec" rows="3">${esc(m.decisiones||'')}</textarea></div>
+        <div class="xs faint b" style="letter-spacing:1px;margin:6px 0">✅ TAREAS BAJADAS — editá el texto, a quién se asigna y la fecha (destildá o ✕ las que no van)</div>
+        <div class="list" id="im-tasks">${m.tasks.map(taskRow).join('')}</div>
+        <button type="button" class="btn g sm" style="margin:8px 0 14px" id="im-add">＋ Agregar tarea</button>
         ${(m.content||[]).length?`<div class="small muted" style="margin-bottom:6px">🗓️ También se agregan al calendario: ${m.content.map(c=>`${esc(c.title)} (${UI.fdate(c.date,{abs:true})})`).join(' · ')}</div>`:''}
-        <div class="mfoot"><button class="btn d sm" id="im-skip" style="margin-right:auto">Descartar</button><button class="btn g" data-close>Cancelar</button><button class="btn p" id="im-go">Cargar minuta</button></div>`, true);
+        <div class="mfoot"><button class="btn d sm" id="im-skip" style="margin-right:auto">Descartar</button><button class="btn g" data-close>Cancelar</button>
+          <button class="btn g" id="im-go">Cargar</button><button class="btn p" id="im-go-alert">Cargar y mandar alertas</button></div>`, true);
+      box.querySelector('#im-add').onclick = ()=>{ box.querySelector('#im-tasks').insertAdjacentHTML('beforeend', taskRow({ due:UI.addDays(UI.today(),7) })); box.querySelector('#im-tasks .im-row:last-child .im-text').focus(); };
       box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(); App.render(); } };
-      box.querySelector('#im-go').onclick = ()=>{
+      const go = alert => {
         let cid = box.querySelector('#im-client').value;
+        const rows = [...box.querySelectorAll('.im-row')].filter(r=>r.querySelector('.im-on').checked).map(r=>({ text:r.querySelector('.im-text').value.trim(), assigneeId:r.querySelector('.im-who').value, due:r.querySelector('.im-due').value, unit:r.querySelector('.im-unit').value })).filter(r=>r.text);
         if(cid==='__new') cid = Store.upsert('ops','clients',{ name:m.client, units:[...new Set(m.tasks.map(t=>t.unit).filter(Boolean))].slice(0,3), health:'ok', active:true, ownerId:App.me().id }).id;
-        const chosen = [...box.querySelectorAll('input[data-i]:checked')].map(x=>m.tasks[+x.dataset.i]);
-        const date = box.querySelector('#im-date').value || m.date;
+        const title = box.querySelector('#im-title').value.trim() || m.title;
         const attendees = (m.attendees||[]).map(memberByFirst).filter(Boolean).map(x=>x.id);
-        const actions = m.tasks.map(t=>({ id:Store.uid(), text:t.text+(t.who?` @${t.who}`:''), taskId:null }));
-        chosen.forEach(t=>{
-          const a = actions[m.tasks.indexOf(t)];
-          const as = memberByFirst(t.who)?.id || App.me().id;
-          const tk = Store.upsert('ops','tasks',{ title:t.text, clientId:cid, unit:t.unit||'', assigneeId:as, due:t.due, status:'todo', priority:'media', meetingId:m.id, desc:`De la reunión: ${m.title}` });
-          a.taskId = tk.id;
-        });
+        const actions = rows.map(r=>{ const tk = Store.upsert('ops','tasks',{ title:r.text, clientId:cid, unit:r.unit||'', assigneeId:r.assigneeId, due:r.due, status:'todo', priority:'media', meetingId:m.id, desc:`De la reunión: ${title}` });
+          return { id:Store.uid(), text:r.text, taskId:tk.id }; });
         (m.content||[]).forEach(c=>Store.upsert('ops','content',{ title:c.title, clientId:cid, date:c.date, format:c.format||'post', unit:c.unit||'', status:'idea', assigneeId:App.me().id }));
-        Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:cid, type:m.type||'seguimiento', date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions, by:App.me().id });
-        Game.log('minuta', `Minuta cargada: ${m.title}`, { icon:'📝' });
-        UI.close(); UI.toast(`${chosen.length} tareas creadas. Revisá a quién quedó cada una y mandá las alertas.`,'✅'); if(cid){ setCF(cid); } App.go('#/ops/reuniones'); setTimeout(()=>Ops.viewMeeting(m.id), 60);
+        Store.upsert('ops','meetings',{ id:m.id, title, clientId:cid, type:m.type||'seguimiento', date:box.querySelector('#im-date').value || m.date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[],
+          minuta:box.querySelector('#im-minuta').value, decisiones:box.querySelector('#im-dec').value, actions, by:App.me().id });
+        Game.log('minuta', `Minuta cargada: ${title}`, { icon:'📝', silent:true });
+        UI.close(); UI.toast(`Minuta cargada con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
+        App.go('#/ops/reuniones');
+        if(alert) setTimeout(()=>Ops.alertMeeting(m.id), 80); else setTimeout(()=>Ops.viewMeeting(m.id), 80);
       };
+      box.querySelector('#im-go').onclick = ()=>go(false);
+      box.querySelector('#im-go-alert').onclick = ()=>go(true);
     },
     pendingMinutas,
 

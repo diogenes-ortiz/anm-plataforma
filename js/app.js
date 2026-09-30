@@ -265,6 +265,16 @@
     document.documentElement.dataset.theme = t; try{ localStorage.setItem('anm_theme', t); }catch(e){}
   };
 
+  // ── Versión: si se publicó algo nuevo, recargar (una vez) o avisar ────────────
+  async function checkVersion(onLoad){
+    try{
+      const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); if(!r.ok) return;
+      const { v } = await r.json(); if(!v || !window.ANM_VERSION || v===window.ANM_VERSION) return;
+      if(onLoad && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); location.reload(); return; }
+      if(!document.getElementById('upd-banner')) document.body.insertAdjacentHTML('beforeend', `<div id="upd-banner" class="toast" style="position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:950">✨ Hay una versión nueva de la plataforma <button class="btn xs p" onclick="location.reload()">Actualizar</button></div>`);
+    }catch(e){}
+  }
+
   // ── Arranque ─────────────────────────────────────────────────────────────────
   async function boot(){
     try{ const t = localStorage.getItem('anm_theme'); if(t) document.documentElement.dataset.theme = t; }catch(e){}
@@ -275,6 +285,7 @@
         const el = $('#sync'); if(el){ el.textContent = map[ev.status]; el.style.color = col[ev.status]||''; }
       }
     });
+    checkVersion(true); setInterval(()=>checkVersion(false), 5*60*1000);
     await Store.init();
     handleJoin();
     // Re-render cuando llegan cambios de otras personas (sin interrumpir si hay un modal abierto)

@@ -441,6 +441,8 @@
   document.addEventListener('DOMContentLoaded', async ()=>{
     try{ const t = localStorage.getItem('anm_theme'); if(t) document.documentElement.dataset.theme = t; }catch(e){}
     if(window.Store) Store.loadLocal();
+    try{ const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); const { v } = await r.json();
+      if(v && window.ANM_VERSION && v!==window.ANM_VERSION && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); return location.reload(); } }catch(e){}
     await load();
     FinGate.check();
   });
