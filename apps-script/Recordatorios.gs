@@ -43,15 +43,29 @@ function desinstalar() {
   Logger.log('Recordatorios desactivados.');
 }
 
-// Manda el resumen de hoy solo a la cuenta que ejecuta el script (para probar)
+// Manda el resumen de hoy solo a la cuenta que ejecuta el script (para probar).
+// Nunca falla en silencio: si algo no está listo, te manda un mail explicando qué falta.
 function probarConmigo() {
-  const yo = Session.getActiveUser().getEmail();
-  const d = datos();
-  const m = d.members.find(x => (x.email || '').toLowerCase() === yo.toLowerCase()) || d.members.find(x => x.role === 'admin');
-  if (!m) throw new Error('No encontré tu perfil. Cargá tu email en la plataforma (Equipo → Editar).');
+  const yo = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  Logger.log('Mandando la prueba a: ' + yo);
+  let d, problema = '';
+  try { d = datos(); } catch (e) { problema = 'No pude leer la base de datos de la plataforma: ' + e.message; }
+  if (problema) {
+    enviar(yo, '⚠️ ANM · Prueba de recordatorios: falta un paso', cuerpo('Casi listo', '<p>' + esc(problema) + '</p>'));
+    Logger.log('⚠️ ' + problema); return;
+  }
+  const conMail = d.members.filter(m => m.email);
+  const m = d.members.find(x => (x.email || '').toLowerCase() === yo.toLowerCase()) || d.members.find(x => x.owner) || d.members.find(x => x.role === 'admin');
+  const estado = '<p style="font-size:13px;color:#5f5f6e">Conexión con la plataforma: ✅ · Personas en el equipo: <b>' + d.members.length + '</b> · Con email cargado: <b>' + conMail.length + '</b> · Tareas: <b>' + d.tasks.length + '</b></p>';
+  if (!m) {
+    enviar(yo, '✅ ANM · La conexión funciona', cuerpo('¡La conexión funciona! 🎉', estado + '<p>Todavía no hay perfiles cargados en la plataforma. Entrá, creá tu perfil y cargá al equipo; mañana a las ' + CONFIG.HORA_RESUMEN + ' h empiezan los resúmenes.</p>'));
+    Logger.log('✅ Mail enviado (sin perfiles todavía).'); return;
+  }
   const mail = armarResumen(m, d);
-  enviar(yo, mail ? mail.asunto : 'ANM · Prueba de recordatorios', mail ? mail.html : cuerpo('¡Hola ' + nombre(m) + '!', '<p>La conexión funciona. Hoy no tenés pendientes. 🎉</p>'));
-  Logger.log('Mail de prueba enviado a ' + yo);
+  const aviso = m.email ? '' : '<p style="font-size:13px;color:#b8860b">⚠️ Tu perfil (' + esc(m.name) + ') no tiene email cargado en la plataforma: cargalo en Equipo → Editar para recibir los resúmenes automáticos.</p>';
+  enviar(yo, mail ? '[Prueba] ' + mail.asunto : '✅ ANM · La conexión funciona',
+    mail ? mail.html.replace('<h2', aviso + estado + '<h2') : cuerpo('¡La conexión funciona! 🎉', estado + aviso + '<p>Hoy no tenés pendientes. 🎉</p>'));
+  Logger.log('✅ Mail de prueba enviado a ' + yo);
 }
 
 // ── Lectura de datos (misma base que la plataforma) ─────────────────────────
