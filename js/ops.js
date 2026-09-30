@@ -33,6 +33,12 @@
     return { total:cs.length, pending:cs.filter(c=>!CAL_OK.includes(calRec(c.id,m)?.stage)).length };
   }
 
+  // ── Minutas preparadas (js/minutas.js) ────────────────────────────────────────
+  const norm = x => (x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  function pendingMinutas(){ return (window.ANM_MINUTAS||[]).filter(m=>!Store.get('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)); }
+  const memberByFirst = n => n && App.members().find(m=>norm(m.name.split(' ')[0])===norm(n));
+  const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
+
   // ── Alertas ──────────────────────────────────────────────────────────────────
   function alerts(){
     const out = [], t = UI.today(), day = new Date().getDate();
@@ -313,6 +319,7 @@
     const html = `<div class="toolbar"><div class="search grow"><input class="inp" placeholder="Buscar en reuniones y minutas…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
         <button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
+        ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">Minuta para cargar: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
         ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta suma +${Game.XP.minuta} XP y convierte los acuerdos en tareas.</div></div></div>`:''}
         <div class="card"><div class="card-h"><h3>Próximas</h3><span class="sub">${up.length}</span></div>${up.length?`<div class="list">${up.map(meetRow).join('')}</div>`:'<div class="empty small">No hay reuniones agendadas</div>'}</div>
         <div class="card"><div class="card-h"><h3>Pasadas</h3><span class="sub">${past.length}</span></div>${past.length?`<div class="list">${past.slice(0,40).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones registradas</div>'}</div>
@@ -336,6 +343,15 @@
       if(head.test(clean) && clean.length<60 && !bullet.test(l)){ inSec = true; return; }
       if(/^#+\s|:\s*$/.test(l) && !head.test(clean)){ inSec = false; }
       if((inSec && bullet.test(l)) || /\[ ?\]/.test(l)) out.push(l.replace(bullet,'').replace(/^\[ ?\]\s*/,'').trim());
+    });
+    if(out.length) return out.filter(Boolean);
+    // Sin secciones ni checkboxes: tomar mensajes de WhatsApp ("[28/9/26, 5:48 p. m.] Nombre: texto") y viñetas/párrafos sueltos
+    const wa = /^\[?\d{1,2}\/\d{1,2}\/\d{2,4},?[^\]]*\]?\s*-?\s*([^:]{2,40}):\s*(.+)$/;
+    lines.forEach(l=>{
+      const t = l.trim(); if(!t || t.length<8) return;
+      const m = t.match(wa);
+      if(m){ out.push(`${m[2].trim()} @${m[1].trim().split(' ')[0]}`); return; }
+      if(!/:\s*$/.test(t)) out.push(t.replace(bullet,'').trim());
     });
     return out.filter(Boolean);
   }
@@ -495,6 +511,41 @@
         UI.toast(`${found.length} acuerdo${found.length>1?'s':''} detectado${found.length>1?'s':''}`,'✨');
       };
     },
+
+    // Carga una minuta preparada: reunión + tareas (con responsable y fecha) + piezas de calendario
+    importMinuta(id){
+      const m = (window.ANM_MINUTAS||[]).find(x=>x.id===id); if(!m) return;
+      const cl = clientByName(m.client);
+      const who = n => memberByFirst(n)?.name || `${n||'—'} (no está cargada → queda para vos)`;
+      const box = UI.modal(`<h2>📥 ${esc(m.title)}<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="frow"><div class="fld"><label>Cliente</label><select class="inp" id="im-client"><option value="">— Interna —</option>${activeClients().map(c=>`<option value="${c.id}" ${cl?.id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}${!cl&&m.client?`<option value="__new" selected>＋ Crear “${esc(m.client)}”</option>`:''}</select></div>
+          <div class="fld"><label>Fecha</label><input class="inp" id="im-date" type="datetime-local" value="${esc(m.date)}"></div></div>
+        <div class="xs faint b" style="letter-spacing:1px;margin-bottom:6px">TAREAS QUE SE VAN A CREAR (destildá las que no)</div><div><div class="list" style="max-height:320px;overflow:auto;margin-bottom:12px">
+          ${m.tasks.map((t,i)=>`<div class="li" style="cursor:pointer" onclick="if(event.target.type!=='checkbox'){const c=this.querySelector('input');c.checked=!c.checked}"><input type="checkbox" checked data-i="${i}" style="width:18px;height:18px"><div class="grow"><div class="small b">${esc(t.text)}</div><div class="xs faint">${esc(who(t.who))} · vence ${UI.fdate(t.due,{abs:true})}</div></div></div>`).join('')}</div></div>
+        ${(m.content||[]).length?`<div class="small muted" style="margin-bottom:6px">🗓️ También se agregan al calendario: ${m.content.map(c=>`${esc(c.title)} (${UI.fdate(c.date,{abs:true})})`).join(' · ')}</div>`:''}
+        <div class="mfoot"><button class="btn d sm" id="im-skip" style="margin-right:auto">Descartar</button><button class="btn g" data-close>Cancelar</button><button class="btn p" id="im-go">Cargar minuta</button></div>`, true);
+      box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(); App.render(); } };
+      box.querySelector('#im-go').onclick = ()=>{
+        let cid = box.querySelector('#im-client').value;
+        if(cid==='__new') cid = Store.upsert('ops','clients',{ name:m.client, units:[...new Set(m.tasks.map(t=>t.unit).filter(Boolean))].slice(0,3), health:'ok', active:true, ownerId:App.me().id }).id;
+        const chosen = [...box.querySelectorAll('input[data-i]:checked')].map(x=>m.tasks[+x.dataset.i]);
+        const date = box.querySelector('#im-date').value || m.date;
+        const attendees = (m.attendees||[]).map(memberByFirst).filter(Boolean).map(x=>x.id);
+        const actions = m.tasks.map(t=>({ id:Store.uid(), text:t.text+(t.who?` @${t.who}`:''), taskId:null }));
+        chosen.forEach(t=>{
+          const a = actions[m.tasks.indexOf(t)];
+          const as = memberByFirst(t.who)?.id || App.me().id;
+          const tk = Store.upsert('ops','tasks',{ title:t.text, clientId:cid, unit:t.unit||'', assigneeId:as, due:t.due, status:'todo', priority:'media', meetingId:m.id, desc:`De la reunión: ${m.title}` });
+          a.taskId = tk.id;
+          if(as!==App.me().id) App.notify(as, `Nueva tarea de la reunión “${m.title}”: ${t.text}`, '#/ops/tareas');
+        });
+        (m.content||[]).forEach(c=>Store.upsert('ops','content',{ title:c.title, clientId:cid, date:c.date, format:c.format||'post', unit:c.unit||'', status:'idea', assigneeId:App.me().id }));
+        Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:cid, type:m.type||'seguimiento', date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions, by:App.me().id });
+        Game.log('minuta', `Minuta cargada: ${m.title}`, { icon:'📝' });
+        UI.close(); UI.toast(`${chosen.length} tareas creadas`,'✅'); if(cid){ setCF(cid); } App.go('#/ops/reuniones');
+      };
+    },
+    pendingMinutas,
 
     actionToTask(meetingId, actionId, quiet){
       const m = Store.get('ops','meetings',meetingId); if(!m) return;
