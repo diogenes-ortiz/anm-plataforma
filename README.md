@@ -28,6 +28,7 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 - *Tareas*: tablero arrastrable o lista agrupada (vencidas, hoy, esta semana…).
 - *Calendario*: piezas de contenido, reuniones y tareas en un mes + estado del calendario mensual de cada cliente (por planificar → enviado → aprobado…).
 - *Reuniones y minutas*: minuta, decisiones, temáticas (#etiquetas) y acuerdos. “✨ Detectar acuerdos” lee un resumen pegado (Read AI, Meet, etc.) y los convierte en tareas (`@Nombre` asigna, `dd/mm` pone fecha).
+- *Vista de minuta*: al abrir una reunión se ve la minuta y las decisiones arriba, y abajo las **tareas bajadas** con selector de responsable y fecha; el botón **📣 Mandar alertas de tareas asignadas** manda a cada persona la lista de sus tareas (en la plataforma y por mail). También “Copiar resumen” para WhatsApp.
 - *Minutas por chat*: se pega la minuta (texto suelto o WhatsApp) en el chat con Claude, queda ordenada en `js/minutas.js` y la plataforma muestra “📥 Minuta para cargar”: con un clic crea la reunión, las tareas (responsable y fecha) y las piezas del calendario. El botón “✨ Detectar acuerdos” también entiende mensajes de WhatsApp.
 - *Alertas*: se calculan solas (clientes sin actualizar, en riesgo, tareas vencidas, reuniones sin minuta, calendarios sin aprobar, contenido por salir sin aprobar). “Avisar” la manda en la app, por WhatsApp o email.
 

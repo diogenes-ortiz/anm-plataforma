@@ -263,7 +263,7 @@
     for(let i=0;i<cells;i++){
       const d = new Date(start); d.setDate(start.getDate()+i); const ds = UI.ymd(d);
       const evs = [
-        ...meets.filter(x=>x.date.slice(0,10)===ds).map(x=>`<div class="ev" style="border-color:var(--purple)" onclick="event.stopPropagation();Ops.editMeeting('${x.id}')">🤝 ${esc(UI.time(x.date))} ${esc(x.title)}</div>`),
+        ...meets.filter(x=>x.date.slice(0,10)===ds).map(x=>`<div class="ev" style="border-color:var(--purple)" onclick="event.stopPropagation();Ops.viewMeeting('${x.id}')">🤝 ${esc(UI.time(x.date))} ${esc(x.title)}</div>`),
         ...content.filter(p=>p.date===ds).map(p=>{ const c=client(p.clientId), u=App.unit(p.unit||(c?.units||[])[0]); return `<div class="ev" style="border-color:${u.color}" title="${esc(label(CONTENT_ST,p.status))}" onclick="event.stopPropagation();Ops.editContent('${p.id}')"><span style="color:${CONTENT_COL[p.status]}">●</span> ${esc(c?.name||'')}: ${esc(p.title)}</div>`; }),
         ...tasks.filter(t=>t.due===ds).map(t=>`<div class="ev" style="border-color:var(--text3)" onclick="event.stopPropagation();Ops.editTask('${t.id}')">☐ ${esc(t.title)}</div>`),
       ];
@@ -298,7 +298,7 @@
   // ── Reuniones y minutas ──────────────────────────────────────────────────────
   function meetRow(m){
     const past = (m.date||'').slice(0,10) < UI.today();
-    return `<div class="li click" onclick="Ops.editMeeting('${m.id}')"><div style="text-align:center;min-width:44px"><div class="b" style="font-size:17px;line-height:1">${m.date?UI.parse(m.date).getDate():'?'}</div><div class="xs faint b">${m.date?UI.MONTHS[UI.parse(m.date).getMonth()].slice(0,3).toUpperCase():''}</div></div>
+    return `<div class="li click" onclick="Ops.viewMeeting('${m.id}')"><div style="text-align:center;min-width:44px"><div class="b" style="font-size:17px;line-height:1">${m.date?UI.parse(m.date).getDate():'?'}</div><div class="xs faint b">${m.date?UI.MONTHS[UI.parse(m.date).getMonth()].slice(0,3).toUpperCase():''}</div></div>
       <div class="grow"><div class="b small ellip">${esc(m.title)}</div><div class="xs faint ellip">${esc(clientName(m.clientId))} · ${esc(label(MEET_TYPES,m.type))}${UI.time(m.date)?' · '+UI.time(m.date):''}</div>
       ${(m.topics||[]).length?`<div class="row wrap" style="gap:4px;margin-top:4px">${m.topics.map(t=>`<span class="tag xs">#${esc(t)}</span>`).join('')}</div>`:''}</div>
       ${past ? (m.minuta?'<span class="tag t-green">Minuta ✓</span>':'<span class="tag t-yellow">Sin minuta</span>') : '<span class="tag t-blue">Próxima</span>'}</div>`;
@@ -474,6 +474,55 @@
       } });
     },
 
+    // Vista de minuta: texto arriba, tareas bajadas abajo (asignables) y botón para mandar alertas
+    viewMeeting(id){
+      const m = Store.get('ops','meetings',id); if(!m) return;
+      const tasks = S('tasks').filter(t=>t.meetingId===id).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9'));
+      const loose = (m.actions||[]).filter(a=>!a.taskId || !Store.get('ops','tasks',a.taskId));
+      const opts = App.assignOpts();
+      const pending = tasks.filter(t=>t.status!=='done' && t.assigneeId && t.assigneeId!==App.me().id && t.alertedTo!==t.assigneeId).length;
+      const people = App.members().filter(x=>(m.attendees||[]).includes(x.id)).map(x=>x.name.split(' ')[0]).join(', ');
+      UI.modal(`<h2>🤝 ${esc(m.title)}<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="row wrap small muted" style="gap:10px;margin:-8px 0 16px"><span class="tag t-blue">${esc(clientName(m.clientId))}</span><span>${UI.fdate((m.date||'').slice(0,10),{abs:true})}${UI.time(m.date)?' · '+UI.time(m.date):''}</span>${people?`<span>👥 ${esc(people)}</span>`:''}${(m.topics||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join('')}${m.link?`<a href="${esc(m.link)}" target="_blank">🔗 grabación / link</a>`:''}</div>
+        <div class="card" style="padding:16px 18px;margin-bottom:12px"><div class="xs faint b" style="letter-spacing:1px;margin-bottom:8px">📝 MINUTA</div><div class="small prewrap" style="line-height:1.65">${esc(m.minuta||'Sin minuta cargada.')}</div>
+          ${m.decisiones?`<div class="xs faint b" style="letter-spacing:1px;margin:14px 0 6px">✔ DECISIONES</div><div class="small prewrap" style="line-height:1.65">${esc(m.decisiones)}</div>`:''}</div>
+        <div class="card" style="padding:16px 18px"><div class="row" style="margin-bottom:8px"><div class="xs faint b grow" style="letter-spacing:1px">✅ TAREAS BAJADAS (${tasks.length})</div><button class="btn xs g" onclick="UI.close();Ops.editTask(null,{clientId:'${m.clientId||''}',meetingId:'${id}'})">＋ Tarea</button></div>
+          ${tasks.length?`<div class="list">${tasks.map(t=>`<div class="li" style="flex-wrap:wrap">
+            <input type="checkbox" ${t.status==='done'?'checked':''} onchange="Ops.toggleTask('${t.id}');Ops.viewMeeting('${id}')" style="width:18px;height:18px">
+            <div class="grow" style="min-width:200px"><div class="small b" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${esc(t.title)}</div>${t.alertedTo&&t.alertedTo===t.assigneeId?'<div class="xs" style="color:var(--green)">✓ avisada</div>':''}</div>
+            <select class="inp sm" onchange="Ops.assignFromMeeting('${t.id}','${id}',{assigneeId:this.value})">${[['','— Sin asignar —'],...opts.filter(o=>o[0])].map(([v,l])=>`<option value="${v}" ${t.assigneeId===v?'selected':''}>${esc(l)}</option>`).join('')}${t.assigneeId&&!opts.some(o=>o[0]===t.assigneeId)?`<option selected>${esc(App.member(t.assigneeId)?.name||'—')}</option>`:''}</select>
+            <input class="inp sm" type="date" value="${t.due||''}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{due:this.value})"></div>`).join('')}</div>`:'<div class="small faint">Todavía no hay tareas de esta reunión.</div>'}
+          ${loose.length?`<div class="xs faint b" style="margin:12px 0 6px">ACUERDOS SIN TAREA</div>${loose.map(a=>`<div class="li"><div class="grow small">${esc(a.text)}</div><button class="btn xs g" onclick="Ops.actionToTask('${id}','${a.id}',true);Ops.viewMeeting('${id}')">→ Tarea</button></div>`).join('')}`:''}</div>
+        <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="Ops.copyMeeting('${id}')">📋 Copiar resumen (WhatsApp)</button><button class="btn g" onclick="UI.close();Ops.editMeeting('${id}')">✎ Editar</button>
+          <button class="btn p" onclick="Ops.alertMeeting('${id}')">📣 Mandar alertas de tareas asignadas${pending?` (${pending})`:''}</button></div>`, true);
+    },
+    assignFromMeeting(tid, mid, patch){
+      Store.upsert('ops','tasks',{ id:tid, ...patch });
+      Ops.viewMeeting(mid);
+    },
+    // Una alerta por persona con todas sus tareas de la reunión (llega en la plataforma y por mail)
+    alertMeeting(id){
+      const m = Store.get('ops','meetings',id); if(!m) return;
+      const tasks = S('tasks').filter(t=>t.meetingId===id && t.status!=='done' && t.assigneeId);
+      const by = {}; tasks.forEach(t=>{ (by[t.assigneeId] = by[t.assigneeId]||[]).push(t); });
+      const who = Object.keys(by).filter(p=>p!==App.me().id);
+      if(!who.length) return UI.toast('No hay tareas asignadas a otras personas','ℹ️');
+      const resumen = who.map(p=>`${App.member(p)?.name.split(' ')[0]} (${by[p].length})`).join(', ');
+      if(!confirm(`Voy a avisar a: ${resumen}.\n\nCada uno recibe la lista de sus tareas de “${m.title}” en la plataforma y por mail.`)) return;
+      who.forEach(p=>{
+        const list = by[p].map(t=>`• ${t.title}${t.due?` (vence ${UI.fdate(t.due,{abs:true})})`:''}`).join('\n');
+        App.notify(p, `📋 Reunión “${m.title}” (${clientName(m.clientId)}): te quedaron ${by[p].length} tarea${by[p].length>1?'s':''}:\n${list}`, '#/ops/tareas');
+        by[p].forEach(t=>Store.upsert('ops','tasks',{ id:t.id, alertedTo:t.assigneeId, alertedAt:new Date().toISOString() }));
+      });
+      Game.log('alert_sent', `Alertas de “${m.title}” enviadas a ${who.length} persona${who.length>1?'s':''}`, { icon:'📣' });
+      Ops.viewMeeting(id);
+    },
+    copyMeeting(id){
+      const m = Store.get('ops','meetings',id);
+      const tasks = S('tasks').filter(t=>t.meetingId===id);
+      UI.copy(`*${m.title}* — ${clientName(m.clientId)} · ${UI.fdate((m.date||'').slice(0,10),{abs:true})}\n\n${m.minuta||''}${m.decisiones?`\n\n*Decisiones*\n${m.decisiones}`:''}\n\n*Tareas*\n${tasks.map(t=>`• ${t.title} → ${App.member(t.assigneeId)?.name.split(' ')[0]||'sin asignar'}${t.due?` (${UI.fdate(t.due,{abs:true})})`:''}`).join('\n')}`);
+    },
+
     editMeeting(id, preset={}){
       const m = id ? Store.get('ops','meetings',id) : { type:(preset.clientId||curClient())?'seguimiento':'interna', date:UI.today()+'T10:00', attendees:[App.me().id], clientId:curClient(), ...preset };
       const actionsText = (m.actions||[]).map(a=>a.text + (a.taskId?'  ✓':'')).join('\n');
@@ -537,12 +586,11 @@
           const as = memberByFirst(t.who)?.id || App.me().id;
           const tk = Store.upsert('ops','tasks',{ title:t.text, clientId:cid, unit:t.unit||'', assigneeId:as, due:t.due, status:'todo', priority:'media', meetingId:m.id, desc:`De la reunión: ${m.title}` });
           a.taskId = tk.id;
-          if(as!==App.me().id) App.notify(as, `Nueva tarea de la reunión “${m.title}”: ${t.text}`, '#/ops/tareas');
         });
         (m.content||[]).forEach(c=>Store.upsert('ops','content',{ title:c.title, clientId:cid, date:c.date, format:c.format||'post', unit:c.unit||'', status:'idea', assigneeId:App.me().id }));
         Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:cid, type:m.type||'seguimiento', date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions, by:App.me().id });
         Game.log('minuta', `Minuta cargada: ${m.title}`, { icon:'📝' });
-        UI.close(); UI.toast(`${chosen.length} tareas creadas`,'✅'); if(cid){ setCF(cid); } App.go('#/ops/reuniones');
+        UI.close(); UI.toast(`${chosen.length} tareas creadas. Revisá a quién quedó cada una y mandá las alertas.`,'✅'); if(cid){ setCF(cid); } App.go('#/ops/reuniones'); setTimeout(()=>Ops.viewMeeting(m.id), 60);
       };
     },
     pendingMinutas,

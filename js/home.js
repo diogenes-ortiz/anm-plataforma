@@ -34,7 +34,7 @@
         <div class="span2 col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>🎯 Tu foco de hoy</h3><span class="grow"></span><a class="btn xs g" href="#/ops/tareas">Todas mis tareas</a></div>
             ${focus ? `<div class="list">
-              ${myMeet.map(m=>`<div class="li click" onclick="Ops.editMeeting('${m.id}')"><span>🤝</span><div class="grow"><div class="b small">${esc(m.title)}</div><div class="xs faint">${UI.time(m.date)} · ${esc(Ops.clientName(m.clientId))}</div></div></div>`).join('')}
+              ${myMeet.map(m=>`<div class="li click" onclick="Ops.viewMeeting('${m.id}')"><span>🤝</span><div class="grow"><div class="b small">${esc(m.title)}</div><div class="xs faint">${UI.time(m.date)} · ${esc(Ops.clientName(m.clientId))}</div></div></div>`).join('')}
               ${myTasks.map(x=>Ops.taskRow(x)).join('')}
               ${myFollow.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><span>📞</span><div class="grow"><div class="b small">Seguimiento: ${esc(l.company)}</div><div class="xs faint">${esc(l.nextAction||'')}</div></div><span class="tag ${l.nextFollowUp<t?'t-red':'t-yellow'}">${UI.fdate(l.nextFollowUp)}</span></div>`).join('')}
               ${myClients.map(c=>`<div class="li click" onclick="Ops.updateClient('${c.id}')"><span>📡</span><div class="grow"><div class="b small">Actualizar ${esc(c.name)}</div><div class="xs faint">${Ops.daysSinceUpdate(c)>=999?'Sin seguimiento todavía':Ops.daysSinceUpdate(c)+' días sin novedades'}</div></div><span class="tag t-yellow">+${Game.XP.client_update} XP</span></div>`).join('')}
