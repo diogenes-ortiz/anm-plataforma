@@ -66,7 +66,7 @@
       const lv = Game.level(Game.xpOf(m.id));
       const tasks = Ops.openTasks().filter(t=>t.assigneeId===m.id).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
-      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div><div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin email</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
+      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div>${m.title?`<div class="small muted">${esc(m.title)}</div>`:''}<div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin email</span>'}</div></div><span class="lvl" title="${esc(lv.name)}">${lv.n}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
         <div class="grid g3 small" style="gap:8px;margin-bottom:14px"><div><div class="b">${lv.xp}</div><div class="xs faint">XP</div></div><div><div class="b">${tasks}</div><div class="xs faint">tareas</div></div><div><div class="b">🔥 ${Game.streak(m.id)}</div><div class="xs faint">racha</div></div></div>
         <div class="xs muted" style="margin-bottom:14px">${clients.length?'Cuentas: '+clients.map(c=>esc(c.name)).join(', '):'Sin cuentas asignadas'}</div>
@@ -74,7 +74,7 @@
     }).join('');
     return { title:'Equipo', crumb:'Invitá a colaborar', html:`
       <div class="toolbar"><div class="small muted grow">Cada persona entra con su nombre y contraseña. Solo pueden entrar las personas de esta lista. Los socios cargan perfiles antes de que la persona entre (para ya asignarle tareas) y mandarle su acceso: la primera vez crea su contraseña. Los roles definen qué ve cada uno: <b>Socio/a</b> (dueños: todo + Finanzas, cargan gente y asignan tareas; solo el 👑 dueño principal crea socios), <b>Equipo</b> (Operaciones + Crecimiento; se asigna tareas a sí mismo), <b>Invitado/a</b> (solo Operaciones, ideal freelancers). Finanzas no aparece para quien no es socio.</div>
-      ${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
+      ${App.isOwner()&&Team.pendingSeed().length?`<button class="btn g" onclick="Team.seed()">📥 Cargar equipo (${Team.pendingSeed().length})</button>`:''}${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
       <div class="grid g-auto">${cards}</div>` };
   });
 
@@ -111,7 +111,7 @@
       const admin = App.isAdmin();
       const adminsLeft = App.members().filter(x=>x.role==='admin' && x.id!==id).length;
       UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
-        { k:'name', label:'Nombre', req:true },
+        { k:'name', label:'Nombre', req:true, half:true }, { k:'title', label:'Puesto', half:true, placeholder:'Ej: Social Media Manager' },
         { k:'email', label:'Email', type:'email', half:true }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
         ...(admin && !self && (!id || App.canManage(m)) ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES).filter(([k])=>k!=='admin' || App.isOwner()), hint:App.isOwner()?'':'Solo el dueño principal puede crear socios.' }] : []),
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
@@ -138,6 +138,24 @@
           <a class="btn g" target="_blank" href="${esc(UI.waLink(msg, m.phone))}">Enviar por WhatsApp</a>
           <a class="btn g" href="${esc(UI.mailLink(m.email, 'Tu acceso a la plataforma ANM', msg))}">Enviar por email</a></div>
         <div class="mfoot"><button class="btn d sm" onclick="Team.regen('${id}')" style="margin-right:auto">Regenerar código</button><button class="btn g" data-close>Listo</button></div>`);
+    },
+    // Equipo inicial (js/equipo-inicial.js): crea solo a quien falta, por primer nombre
+    pendingSeed(){
+      const n = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().split(' ')[0];
+      return (window.ANM_EQUIPO||[]).filter(p=>!App.members().some(m=>n(m.name)===n(p.name)) || App.members().some(m=>n(m.name)===n(p.name) && !m.title));
+    },
+    seed(){
+      const n = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().split(' ')[0];
+      const list = Team.pendingSeed();
+      if(!confirm(`Voy a cargar al equipo:\n\n${list.map(p=>`• ${p.name} — ${p.title}`).join('\n')}\n\nQuien ya exista solo recibe su puesto. Después le mandás el acceso a cada uno desde su tarjeta.`)) return;
+      let nuevos = 0;
+      list.forEach((p,i)=>{
+        const ex = App.members().find(m=>n(m.name)===n(p.name));
+        if(ex) Store.upsert('team','members',{ id:ex.id, title:ex.title||p.title });
+        else { Store.upsert('team','members',{ name:p.name, title:p.title, role:p.role, units:p.units, color:UI.COLORS[(App.members().length+i) % UI.COLORS.length], invite:App.newInvite(), emailReminders:true }); nuevos++; }
+      });
+      if(nuevos) Game.log('member_invited', `Cargó ${nuevos} personas al equipo`, { icon:'👥', xp:10*nuevos });
+      UI.toast('Equipo cargado. Falta el email de cada uno para los mails.','👥'); App.render();
     },
     resetPass(id){
       const m = App.member(id);
