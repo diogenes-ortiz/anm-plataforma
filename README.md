@@ -23,7 +23,7 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 
 **Inicio** — tu foco del día (tareas, reuniones, seguimientos), alertas, misiones de la semana, ranking, insignias y actividad del equipo.
 
-**Operaciones** — filtro por unidad de negocio (Social Media, Pauta, Branding, Web… editables en Ajustes).
+**Operaciones** — filtro por unidad de negocio (Social Media, Pauta, Branding, Web… editables en Ajustes) y **barra de clientes**: elegís un cliente (o “Internas”) y todas las pestañas muestran solo lo suyo; lo que crees queda asignado a ese cliente.
 - *Seguimiento*: tarjeta por cliente con semáforo (🟢/🟡/🔴), “en qué estamos”, próximo paso, días desde la última actualización. Historial completo en la ficha del cliente.
 - *Tareas*: tablero arrastrable o lista agrupada (vencidas, hoy, esta semana…).
 - *Calendario*: piezas de contenido, reuniones y tareas en un mes + estado del calendario mensual de cada cliente (por planificar → enviado → aprobado…).

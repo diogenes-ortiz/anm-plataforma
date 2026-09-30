@@ -39,32 +39,32 @@
     const push = a => out.push(a);
     activeClients().filter(c=>App.matchUnit(c.units||[])).forEach(c=>{
       const d = daysSinceUpdate(c), link = '#/ops/cliente/'+c.id;
-      if(d>=999) push({ level:'warn', icon:'📡', title:`${c.name}: sin seguimiento registrado`, desc:'Cargá la primera actualización de estado.', link, to:c.ownerId });
-      else if(d>14) push({ level:'danger', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Nadie registró en qué estamos hace más de dos semanas.', link, to:c.ownerId });
-      else if(d>7) push({ level:'warn', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Toca una actualización de seguimiento.', link, to:c.ownerId });
-      if(c.health==='riesgo') push({ level:'danger', icon:'🔴', title:`${c.name} está en riesgo`, desc:c.status||'Marcado en rojo en el último seguimiento.', link, to:c.ownerId });
-      else if(c.health==='atencion') push({ level:'warn', icon:'🟡', title:`${c.name} necesita atención`, desc:c.status||'', link, to:c.ownerId });
-      if(c.nextStepDate && c.nextStepDate<t) push({ level:'warn', icon:'⏭️', title:`${c.name}: próximo paso vencido`, desc:`“${c.nextStep||'Próximo paso'}” era para el ${UI.fdate(c.nextStepDate,{abs:true})}.`, link, to:c.ownerId });
+      if(d>=999) push({ cid:c.id||"", level:'warn', icon:'📡', title:`${c.name}: sin seguimiento registrado`, desc:'Cargá la primera actualización de estado.', link, to:c.ownerId });
+      else if(d>14) push({ cid:c.id||"", level:'danger', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Nadie registró en qué estamos hace más de dos semanas.', link, to:c.ownerId });
+      else if(d>7) push({ cid:c.id||"", level:'warn', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Toca una actualización de seguimiento.', link, to:c.ownerId });
+      if(c.health==='riesgo') push({ cid:c.id||"", level:'danger', icon:'🔴', title:`${c.name} está en riesgo`, desc:c.status||'Marcado en rojo en el último seguimiento.', link, to:c.ownerId });
+      else if(c.health==='atencion') push({ cid:c.id||"", level:'warn', icon:'🟡', title:`${c.name} necesita atención`, desc:c.status||'', link, to:c.ownerId });
+      if(c.nextStepDate && c.nextStepDate<t) push({ cid:c.id||"", level:'warn', icon:'⏭️', title:`${c.name}: próximo paso vencido`, desc:`“${c.nextStep||'Próximo paso'}” era para el ${UI.fdate(c.nextStepDate,{abs:true})}.`, link, to:c.ownerId });
       if(needsCal(c)){
         const cur = calRec(c.id, UI.ym())?.stage;
-        if(!CAL_OK.includes(cur)) push({ level:'danger', icon:'🗓️', title:`${c.name}: calendario de ${UI.MONTHS[new Date().getMonth()]} sin aprobar`, desc:`Estado: ${label(CAL_ST, cur||'planificar')}.`, link:'#/ops/calendario', to:c.ownerId });
+        if(!CAL_OK.includes(cur)) push({ cid:c.id||"", level:'danger', icon:'🗓️', title:`${c.name}: calendario de ${UI.MONTHS[new Date().getMonth()]} sin aprobar`, desc:`Estado: ${label(CAL_ST, cur||'planificar')}.`, link:'#/ops/calendario', to:c.ownerId });
         if(day>=20){ const nx = calRec(c.id, nextYm())?.stage;
-          if(!CAL_OK.includes(nx)) push({ level:'warn', icon:'🗓️', title:`${c.name}: armar calendario de ${UI.ymLabel(nextYm())}`, desc:`Estado: ${label(CAL_ST, nx||'planificar')}. Ideal tenerlo aprobado antes de fin de mes.`, link:'#/ops/calendario', to:c.ownerId }); }
+          if(!CAL_OK.includes(nx)) push({ cid:c.id||"", level:'warn', icon:'🗓️', title:`${c.name}: armar calendario de ${UI.ymLabel(nextYm())}`, desc:`Estado: ${label(CAL_ST, nx||'planificar')}. Ideal tenerlo aprobado antes de fin de mes.`, link:'#/ops/calendario', to:c.ownerId }); }
       }
     });
     overdueTasks().filter(unitOk).forEach(tk=>{
       const d = UI.diffDays(tk.due);
-      push({ level:d>3?'danger':'warn', icon:'⏰', title:`Tarea vencida: ${tk.title}`, desc:`${clientName(tk.clientId)} · venció ${UI.fdate(tk.due)} (${d} día${d>1?'s':''}) · ${App.member(tk.assigneeId)?.name||'sin responsable'}`, link:'#/ops/tareas', to:tk.assigneeId, taskId:tk.id });
+      push({ cid:tk.clientId||"", level:d>3?'danger':'warn', icon:'⏰', title:`Tarea vencida: ${tk.title}`, desc:`${clientName(tk.clientId)} · venció ${UI.fdate(tk.due)} (${d} día${d>1?'s':''}) · ${App.member(tk.assigneeId)?.name||'sin responsable'}`, link:'#/ops/tareas', to:tk.assigneeId, taskId:tk.id });
     });
     S('meetings').filter(unitOk).forEach(m=>{
       const d = m.date?.slice(0,10); if(!d) return;
-      if(d<t && UI.diffDays(d)<=30 && !m.minuta) push({ level:'warn', icon:'📝', title:`Falta la minuta: ${m.title}`, desc:`${clientName(m.clientId)} · ${UI.fdate(d)}`, link:'#/ops/reuniones', to:m.by, meetingId:m.id });
-      if(d===t) push({ level:'info', icon:'🤝', title:`Hoy: ${m.title}`, desc:`${UI.time(m.date)} · ${clientName(m.clientId)}`, link:'#/ops/reuniones', meetingId:m.id });
+      if(d<t && UI.diffDays(d)<=30 && !m.minuta) push({ cid:m.clientId||"", level:'warn', icon:'📝', title:`Falta la minuta: ${m.title}`, desc:`${clientName(m.clientId)} · ${UI.fdate(d)}`, link:'#/ops/reuniones', to:m.by, meetingId:m.id });
+      if(d===t) push({ cid:m.clientId||"", level:'info', icon:'🤝', title:`Hoy: ${m.title}`, desc:`${UI.time(m.date)} · ${clientName(m.clientId)}`, link:'#/ops/reuniones', meetingId:m.id });
     });
     S('content').filter(unitOk).forEach(p=>{
       if(!p.date || ['aprobado','publicado'].includes(p.status)) return;
       const d = UI.diffDays(t, p.date);
-      if(d>=0 && d<=3) push({ level:'warn', icon:'🎬', title:`${clientName(p.clientId)}: “${p.title}” sale ${UI.fdate(p.date).toLowerCase()} y no está aprobado`, desc:`Estado: ${label(CONTENT_ST,p.status)}`, link:'#/ops/calendario', to:p.assigneeId });
+      if(d>=0 && d<=3) push({ cid:p.clientId||"", level:'warn', icon:'🎬', title:`${clientName(p.clientId)}: “${p.title}” sale ${UI.fdate(p.date).toLowerCase()} y no está aprobado`, desc:`Estado: ${label(CONTENT_ST,p.status)}`, link:'#/ops/calendario', to:p.assigneeId });
     });
     const order = { danger:0, warn:1, info:2 };
     return out.sort((a,b)=>order[a.level]-order[b.level]);
@@ -74,16 +74,34 @@
 
   // ── Vista principal ──────────────────────────────────────────────────────────
   const TABS = [['seguimiento','Seguimiento'],['tareas','Tareas'],['calendario','Calendario'],['reuniones','Reuniones y minutas'],['alertas','Alertas']];
-  let search = '', taskMode = localStorage.getItem('anm_taskmode')||'board', taskWho = 'all', calCursor = UI.ym(), meetTopic = '', meetClient = '';
+  let search = '', taskMode = localStorage.getItem('anm_taskmode')||'board', taskWho = 'all', calCursor = UI.ym(), meetTopic = '';
+  // Filtro global por cliente ('' = todos, '__int' = internas, o id de cliente)
+  let cf = localStorage.getItem('anm_opsclient')||'';
+  const cm = id => !cf || (cf==='__int' ? !id : id===cf);
+  const curClient = () => cf && cf!=='__int' ? cf : '';
 
   App.route('ops', ([tab='seguimiento', id])=>{
-    if(tab==='cliente') return clientDetail(id);
-    const al = alerts().filter(a=>a.level!=='info').length;
+    if(tab==='cliente'){ setCF(id); tab = 'seguimiento'; history.replaceState(null,'','#/ops/seguimiento'); }
+    if(cf && cf!=='__int' && !client(cf)) setCF('');
+    const al = alerts().filter(a=>a.level!=='info' && cm(a.cid)).length;
     const tabs = `<div class="tabs">${TABS.map(([k,l])=>`<a href="#/ops/${k}" class="${tab===k?'active':''}">${l}${k==='alertas'&&al?`<span class="cnt">${al}</span>`:''}</a>`).join('')}</div>`;
     const views = { seguimiento:viewFollow, tareas:viewTasks, calendario:viewCalendar, reuniones:viewMeetings, alertas:viewAlerts };
-    const v = (views[tab]||viewFollow)();
-    return { title:'Operaciones', crumb:'¿En qué estamos con cada cliente?', html: tabs + `<div class="toolbar">${App.unitBar()}</div>` + v.html, after:v.after };
+    const sel = curClient() ? client(cf) : null;
+    const v = (tab==='seguimiento' && sel) ? clientDetail(cf) : (views[tab]||viewFollow)();
+    return { title: sel ? sel.name : cf==='__int' ? 'Operaciones · Internas' : 'Operaciones', crumb: sel ? 'Operaciones · Cliente' : '¿En qué estamos con cada cliente?',
+      html: `<div class="toolbar" style="margin-bottom:12px">${App.unitBar()}</div>` + clientBar() + tabs + v.html, after:v.after };
   });
+
+  function setCF(v){ cf = v||''; try{ localStorage.setItem('anm_opsclient', cf); }catch(e){} }
+  // Barra de clientes: elegís uno y todas las pestañas muestran solo lo suyo
+  function clientBar(){
+    const cs = activeClients().filter(c=>App.matchUnit(c.units||[]));
+    const al = alerts().filter(a=>a.level!=='info'); const n = id => al.filter(a=>a.cid===id).length;
+    const chip = (v, inner, extra='') => `<button class="chip ${cf===v?'on':''}" onclick="Ops.setClient('${v}')" ${extra}>${inner}</button>`;
+    return `<div class="chips scroll" style="margin-bottom:18px">${chip('', '▦ Todos los clientes')}
+      ${cs.map(c=>chip(c.id, `<span class="health h-${c.health||'ok'}" style="width:8px;height:8px;box-shadow:none"></span>${esc(c.name)}${n(c.id)?` <span class="tag t-red" style="padding:0 6px">${n(c.id)}</span>`:''}`)).join('')}
+      ${chip('__int', '🏠 Internas')}</div>`;
+  }
 
   // ── Seguimiento ──────────────────────────────────────────────────────────────
   function viewFollow(){
@@ -142,7 +160,7 @@
     const calStep = m => { const st = calRec(id,m)?.stage||'planificar'; return `<div class="row" style="justify-content:space-between;margin-bottom:10px"><span class="b small">${UI.ymLabel(m)}</span>
       <select class="inp sm" onchange="Ops.setCal('${id}','${m}',this.value)">${CAL_ST.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select></div>`; };
     const html = `
-      <div class="row" style="margin-bottom:20px"><a href="#/ops" class="btn g sm">← Clientes</a></div>
+      <div class="row" style="margin-bottom:20px"><button class="btn g sm" onclick="Ops.setClient('')">← Todos los clientes</button></div>
       <div class="hero" style="margin-bottom:22px">
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
@@ -187,7 +205,7 @@
 
   function viewTasks(){
     const me = App.me();
-    let ts = S('tasks').filter(unitOk);
+    let ts = S('tasks').filter(unitOk).filter(t=>cm(t.clientId));
     if(taskWho==='me') ts = ts.filter(t=>t.assigneeId===me.id);
     else if(taskWho!=='all') ts = ts.filter(t=>t.assigneeId===taskWho);
     if(search) ts = ts.filter(t=>(t.title+' '+clientName(t.clientId)).toLowerCase().includes(search.toLowerCase()));
@@ -232,10 +250,9 @@
     const first = new Date(y,m-1,1), startOff = (first.getDay()+6)%7, days = new Date(y,m,0).getDate();
     const start = new Date(y,m-1,1-startOff);
     const cells = Math.ceil((startOff+days)/7)*7;
-    const cf = meetClient;
-    const content = S('content').filter(unitOk).filter(p=>!cf||p.clientId===cf);
-    const tasks = S('tasks').filter(unitOk).filter(t=>t.due && t.status!=='done' && (!cf||t.clientId===cf));
-    const meets = S('meetings').filter(unitOk).filter(x=>x.date && (!cf||x.clientId===cf));
+    const content = S('content').filter(unitOk).filter(p=>cm(p.clientId));
+    const tasks = S('tasks').filter(unitOk).filter(t=>t.due && t.status!=='done' && cm(t.clientId));
+    const meets = S('meetings').filter(unitOk).filter(x=>x.date && cm(x.clientId));
     let grid = UI.DAYS.slice(1).concat('Dom').map(d=>`<div class="dh">${d}</div>`).join('');
     for(let i=0;i<cells;i++){
       const d = new Date(start); d.setDate(start.getDate()+i); const ds = UI.ymd(d);
@@ -245,13 +262,12 @@
         ...tasks.filter(t=>t.due===ds).map(t=>`<div class="ev" style="border-color:var(--text3)" onclick="event.stopPropagation();Ops.editTask('${t.id}')">☐ ${esc(t.title)}</div>`),
       ];
       const shown = evs.slice(0,4).join('') + (evs.length>4?`<div class="ev more">+${evs.length-4} más</div>`:'');
-      grid += `<div class="d ${d.getMonth()!==m-1?'out':''} ${ds===UI.today()?'today':''}" onclick="Ops.editContent(null,{date:'${ds}'${cf?`,clientId:'${cf}'`:''}})"><div class="n">${d.getDate()}</div>${shown}</div>`;
+      grid += `<div class="d ${d.getMonth()!==m-1?'out':''} ${ds===UI.today()?'today':''}" onclick="Ops.editContent(null,{date:'${ds}'${curClient()?`,clientId:'${curClient()}'`:''}})"><div class="n">${d.getDate()}</div>${shown}</div>`;
     }
-    const calClients = activeClients().filter(needsCal).filter(c=>App.matchUnit(c.units||[]));
+    const calClients = activeClients().filter(needsCal).filter(c=>App.matchUnit(c.units||[])).filter(c=>cm(c.id));
     const monthCnt = content.filter(p=>p.date?.startsWith(calCursor));
     const html = `<div class="toolbar"><button class="btn g sm" onclick="Ops.calMove(-1)">‹</button><div class="b" style="font-size:17px;min-width:170px;text-align:center">${UI.ymLabel(calCursor)}</div><button class="btn g sm" onclick="Ops.calMove(1)">›</button>
         <button class="btn g sm" onclick="Ops.calMove(0)">Hoy</button><span class="grow"></span>
-        <select class="inp sm" onchange="Ops.setClientFilter(this.value)"><option value="">Todos los clientes</option>${activeClients().map(c=>`<option value="${c.id}" ${cf===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
         <button class="btn p" onclick="Ops.editContent()">＋ Contenido</button></div>
       <div class="row wrap xs b muted" style="margin-bottom:12px;gap:14px">${CONTENT_ST.map(([k,l])=>`<span><span style="color:${CONTENT_COL[k]}">●</span> ${l} (${monthCnt.filter(p=>p.status===k).length})</span>`).join('')}<span>🤝 Reunión</span><span>☐ Tarea</span></div>
       <div class="cal">${grid}</div>
@@ -284,7 +300,7 @@
 
   function viewMeetings(){
     let ms = S('meetings').filter(unitOk);
-    if(meetClient) ms = ms.filter(m=>(m.clientId||'')===(meetClient==='__int'?'':meetClient));
+    ms = ms.filter(m=>cm(m.clientId));
     const topics = {};
     S('meetings').forEach(m=>(m.topics||[]).forEach(t=>topics[t]=(topics[t]||0)+1));
     if(meetTopic) ms = ms.filter(m=>(m.topics||[]).includes(meetTopic));
@@ -295,7 +311,6 @@
     const noMin = past.filter(m=>!m.minuta);
     const openActions = S('meetings').flatMap(m=>(m.actions||[]).filter(a=>!a.taskId).map(a=>({...a, m})));
     const html = `<div class="toolbar"><div class="search grow"><input class="inp" placeholder="Buscar en reuniones y minutas…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
-        <select class="inp sm" onchange="Ops.setClientFilter(this.value)"><option value="">Todos</option><option value="__int" ${meetClient==='__int'?'selected':''}>Internas</option>${activeClients().map(c=>`<option value="${c.id}" ${meetClient===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
         <button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
         ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta suma +${Game.XP.minuta} XP y convierte los acuerdos en tareas.</div></div></div>`:''}
@@ -335,7 +350,7 @@
 
   // ── Alertas ──────────────────────────────────────────────────────────────────
   function viewAlerts(){
-    const al = alerts();
+    const al = alerts().filter(a=>cm(a.cid));
     const sec = (lvl, t) => { const xs = al.filter(a=>a.level===lvl); return xs.length ? `<div class="sec-t">${t} · ${xs.length}</div>` + xs.map(alertRow).join('') : ''; };
     return { html: al.length ? `<div class="toolbar"><div class="small muted grow">Las alertas se calculan solas a partir del seguimiento, tareas, reuniones y calendarios. Tocá “Avisar” para mandarla a la persona responsable.</div><button class="btn g" onclick="App.sendAlert()">📣 Alerta manual</button></div>`
       + sec('danger','🔴 Urgente') + sec('warn','🟡 Para atender') + sec('info','🔵 Para hoy')
@@ -357,7 +372,8 @@
     setWho(v){ taskWho = v; App.render(); },
     setMode(v){ taskMode = v; localStorage.setItem('anm_taskmode', v); App.render(); },
     setTopic(v){ meetTopic = meetTopic===v ? '' : v; App.render(); },
-    setClientFilter(v){ meetClient = v; App.render(); },
+    setClient(v){ setCF(v); if(location.hash.startsWith('#/ops')) App.render(); else App.go('#/ops'); window.scrollTo(0,0); },
+    setClientFilter(v){ Ops.setClient(v); },
     calMove(n){ if(!n){ calCursor = UI.ym(); } else { const [y,m] = calCursor.split('-').map(Number); calCursor = UI.ym(new Date(y, m-1+n, 1)); } App.render(); },
     setCal,
 
@@ -386,6 +402,7 @@
     },
 
     updateClient(id){
+      id = id || curClient() || null;
       const cs = activeClients();
       if(!cs.length) return Ops.editClient();
       const c = id ? client(id) : null;
@@ -405,7 +422,7 @@
     },
 
     editTask(id, preset={}){
-      const t = id ? Store.get('ops','tasks',id) : { status:'todo', priority:'media', assigneeId:App.me().id, ...preset };
+      const t = id ? Store.get('ops','tasks',id) : { status:'todo', priority:'media', assigneeId:App.me().id, clientId:curClient(), ...preset };
       if(!t.unit && t.clientId) t.unit = (client(t.clientId)?.units||[])[0];
       UI.form({ title: id ? 'Tarea' : 'Nueva tarea', values:t, fields:[
         { k:'title', label:'¿Qué hay que hacer?', req:true },
@@ -425,7 +442,7 @@
     toggleTask(id){ const t = Store.get('ops','tasks',id); setTaskStatus(id, t.status==='done' ? 'todo' : 'done'); },
 
     editContent(id, preset={}){
-      const p = id ? Store.get('ops','content',id) : { status:'idea', format:'post', date:UI.today(), assigneeId:App.me().id, ...preset };
+      const p = id ? Store.get('ops','content',id) : { status:'idea', format:'post', date:UI.today(), assigneeId:App.me().id, clientId:curClient(), ...preset };
       UI.form({ title: id ? 'Pieza de contenido' : 'Nueva pieza de contenido', values:p, fields:[
         { k:'title', label:'Título / idea', req:true, placeholder:'Ej: Reel lanzamiento colección' },
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts('— Contenido propio ANM —'), half:true }, { k:'date', label:'Fecha de publicación / entrega', type:'date', req:true, half:true },
@@ -442,7 +459,7 @@
     },
 
     editMeeting(id, preset={}){
-      const m = id ? Store.get('ops','meetings',id) : { type:preset.clientId?'seguimiento':'interna', date:UI.today()+'T10:00', attendees:[App.me().id], ...preset };
+      const m = id ? Store.get('ops','meetings',id) : { type:(preset.clientId||curClient())?'seguimiento':'interna', date:UI.today()+'T10:00', attendees:[App.me().id], clientId:curClient(), ...preset };
       const actionsText = (m.actions||[]).map(a=>a.text + (a.taskId?'  ✓':'')).join('\n');
       const box = UI.form({ title: id ? '🤝 '+m.title : 'Nueva reunión', wide:true, submit: id ? 'Guardar' : 'Crear reunión', values:{ ...m, topics:(m.topics||[]).join(', '), actionsText }, fields:[
         { k:'title', label:'Título', req:true, placeholder:'Ej: Revisión mensual de resultados' },
