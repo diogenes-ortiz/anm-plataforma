@@ -47,7 +47,12 @@
 
   // ── Minutas preparadas (js/minutas.js) ────────────────────────────────────────
   const norm = x => (x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
-  function pendingMinutas(){ return (window.ANM_MINUTAS||[]).filter(m=>!Store.get('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)); }
+  function pendingMinutas(){
+    (window.ANM_MINUTAS||[]).forEach(m=>{ if(Store.get('ops','meetings',m.id)) return;
+      const ts = S('tasks').filter(t=>t.meetingId===m.id); if(!ts.length) return;
+      Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:ts[0].clientId||'', type:m.type||'seguimiento', date:m.date, attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions:ts.map(t=>({ id:Store.uid(), text:t.title, taskId:t.id })), by:App.me().id });
+    });
+    return (window.ANM_MINUTAS||[]).filter(m=>!Store.get('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)); }
   const memberByFirst = n => n && App.members().find(m=>norm(m.name.split(' ')[0])===norm(n));
   const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
 
@@ -732,22 +737,26 @@
           <button class="btn g" id="im-go">Cargar</button><button class="btn p" id="im-go-alert">Cargar y mandar alertas</button></div>`, true);
       box.querySelector('#im-add').onclick = ()=>{ box.querySelector('#im-tasks').insertAdjacentHTML('beforeend', taskRow({ due:UI.addDays(UI.today(),7) })); box.querySelector('#im-tasks .im-row:last-child .im-text').focus(); };
       box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(); App.render(); } };
-      const go = alert => {
+      const go = withAlerts => { try {
         let cid = box.querySelector('#im-client').value;
         const rows = [...box.querySelectorAll('.im-row')].filter(r=>r.querySelector('.im-on').checked).map(r=>({ text:r.querySelector('.im-text').value.trim(), assigneeId:r.querySelector('.im-who').value, due:r.querySelector('.im-due').value, unit:r.querySelector('.im-unit').value })).filter(r=>r.text);
         if(cid==='__new') cid = Store.upsert('ops','clients',{ name:m.client, units:[...new Set(m.tasks.map(t=>t.unit).filter(Boolean))].slice(0,3), health:'ok', active:true, ownerId:App.me().id }).id;
         const title = box.querySelector('#im-title').value.trim() || m.title;
         const attendees = (m.attendees||[]).map(memberByFirst).filter(Boolean).map(x=>x.id);
+        // Primero se guarda la reunión (así la minuta queda aunque algo falle después)
+        const meeting = { id:m.id, title, clientId:cid, type:m.type||'seguimiento', date:box.querySelector('#im-date').value || m.date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[],
+          minuta:box.querySelector('#im-minuta').value, decisiones:box.querySelector('#im-dec').value, actions:[], by:App.me().id };
+        Store.upsert('ops','meetings', meeting);
         const actions = rows.map(r=>{ const tk = Store.upsert('ops','tasks',{ title:r.text, clientId:cid, unit:r.unit||'', assigneeId:r.assigneeId, due:r.due, status:'todo', priority:'media', meetingId:m.id, desc:`De la reunión: ${title}` });
           return { id:Store.uid(), text:r.text, taskId:tk.id }; });
+        Store.upsert('ops','meetings',{ id:m.id, actions });
         (m.content||[]).forEach(c=>Store.upsert('ops','content',{ title:c.title, clientId:cid, date:c.date, format:c.format||'post', unit:c.unit||'', status:'idea', assigneeId:App.me().id }));
-        Store.upsert('ops','meetings',{ id:m.id, title, clientId:cid, type:m.type||'seguimiento', date:box.querySelector('#im-date').value || m.date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[],
-          minuta:box.querySelector('#im-minuta').value, decisiones:box.querySelector('#im-dec').value, actions, by:App.me().id });
+        Store.syncNow();
         Game.log('minuta', `Minuta cargada: ${title}`, { icon:'📝', silent:true });
         UI.close(); UI.toast(`Minuta cargada con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
         App.go('#/ops/reuniones');
-        if(alert) setTimeout(()=>Ops.alertMeeting(m.id), 80); else setTimeout(()=>Ops.viewMeeting(m.id), 80);
-      };
+        if(withAlerts) setTimeout(()=>Ops.alertMeeting(m.id), 80); else setTimeout(()=>Ops.viewMeeting(m.id), 80);
+      } catch(e){ console.error(e); window.alert('No se pudo cargar la minuta: '+(e.message||e)+'\n\nMandale una captura de este mensaje a Claude.'); } };
       box.querySelector('#im-go').onclick = ()=>go(false);
       box.querySelector('#im-go-alert').onclick = ()=>go(true);
     },

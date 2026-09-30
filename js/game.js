@@ -1,6 +1,6 @@
 // ─── GAMIFICACIÓN ─────────────────────────────────────────────────────────────
 // El NIVEL de cada persona sale de las tareas realizadas (asignadas a ella y marcadas como hechas).
-// El log de actividad (team.activity) alimenta el feed, las rachas y las insignias.
+// El log de actividad (team.activity) alimenta el feed y las insignias.
 (function(){
   const XP = {
     task_done:10, task_ontime:5, client_update:8, meeting:5, minuta:15, content:3, content_published:5,
@@ -74,7 +74,6 @@
     { id:'leads10', e:'🎯', n:'Cazador', d:'Cargar 10 contactos al CRM', ok:m=>count(m,'lead')>=10 },
     { id:'touch25', e:'🤝', n:'Networker', d:'25 interacciones con contactos', ok:m=>count(m,'interaction')>=25 },
     { id:'won', e:'🏆', n:'Cerrador', d:'Ganar un cliente nuevo', ok:m=>count(m,'lead_won')>=1 },
-    { id:'streak5', e:'🔥', n:'En llamas', d:'Racha de 5 días', ok:m=>streak(m)>=5 },
     { id:'excelente', e:'⭐', n:'Excelente', d:'Mes con 90% o más de tareas resueltas (mín. 5)', ok:m=>{ const p = perf(m); return p.assigned>=5 && p.pct>=90; } },
     { id:'closer', e:'💰', n:'Cierre prolijo', d:'Cerrar un mes de finanzas', ok:m=>count(m,'finance_close')>=1 },
   ];
