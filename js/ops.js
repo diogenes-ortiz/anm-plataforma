@@ -40,37 +40,40 @@
   const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
 
   // ── Alertas ──────────────────────────────────────────────────────────────────
-  function alerts(){
+  // Alertas descartadas (por todo el equipo) hasta una fecha
+  const dismissed = () => { const t = UI.today(); return new Set(S('dismissed').filter(d=>d.until>=t).map(d=>d.id)); };
+  function alerts(){ const d = dismissed(); return allAlerts().filter(a=>!a.key || !d.has(a.key)); }
+  function allAlerts(){
     const out = [], t = UI.today(), day = new Date().getDate();
     const push = a => out.push(a);
     activeClients().filter(c=>App.matchUnit(c.units||[])).forEach(c=>{
       const d = daysSinceUpdate(c), link = '#/ops/cliente/'+c.id;
-      if(d>=999) push({ cid:c.id||"", level:'warn', icon:'📡', title:`${c.name}: sin seguimiento registrado`, desc:'Cargá la primera actualización de estado.', link, to:c.ownerId });
-      else if(d>14) push({ cid:c.id||"", level:'danger', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Nadie registró en qué estamos hace más de dos semanas.', link, to:c.ownerId });
-      else if(d>7) push({ cid:c.id||"", level:'warn', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Toca una actualización de seguimiento.', link, to:c.ownerId });
-      if(c.health==='riesgo') push({ cid:c.id||"", level:'danger', icon:'🔴', title:`${c.name} está en riesgo`, desc:c.status||'Marcado en rojo en el último seguimiento.', link, to:c.ownerId });
-      else if(c.health==='atencion') push({ cid:c.id||"", level:'warn', icon:'🟡', title:`${c.name} necesita atención`, desc:c.status||'', link, to:c.ownerId });
-      if(c.nextStepDate && c.nextStepDate<t) push({ cid:c.id||"", level:'warn', icon:'⏭️', title:`${c.name}: próximo paso vencido`, desc:`“${c.nextStep||'Próximo paso'}” era para el ${UI.fdate(c.nextStepDate,{abs:true})}.`, link, to:c.ownerId });
+      if(d>=999) push({ key:`upd:${c.id}`, cid:c.id||"", level:'warn', icon:'📡', title:`${c.name}: sin seguimiento registrado`, desc:'Cargá la primera actualización de estado.', link, to:c.ownerId });
+      else if(d>14) push({ key:`upd:${c.id}`, cid:c.id||"", level:'danger', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Nadie registró en qué estamos hace más de dos semanas.', link, to:c.ownerId });
+      else if(d>7) push({ key:`upd:${c.id}`, cid:c.id||"", level:'warn', icon:'📡', title:`${c.name}: ${d} días sin actualizar`, desc:'Toca una actualización de seguimiento.', link, to:c.ownerId });
+      if(c.health==='riesgo') push({ key:`risk:${c.id}`, cid:c.id||"", level:'danger', icon:'🔴', title:`${c.name} está en riesgo`, desc:c.status||'Marcado en rojo en el último seguimiento.', link, to:c.ownerId });
+      else if(c.health==='atencion') push({ key:`att:${c.id}`, cid:c.id||"", level:'warn', icon:'🟡', title:`${c.name} necesita atención`, desc:c.status||'', link, to:c.ownerId });
+      if(c.nextStepDate && c.nextStepDate<t) push({ key:`next:${c.id}:${c.nextStepDate}`, cid:c.id||"", level:'warn', icon:'⏭️', title:`${c.name}: próximo paso vencido`, desc:`“${c.nextStep||'Próximo paso'}” era para el ${UI.fdate(c.nextStepDate,{abs:true})}.`, link, to:c.ownerId });
       if(needsCal(c)){
         const cur = calRec(c.id, UI.ym())?.stage;
-        if(!CAL_OK.includes(cur)) push({ cid:c.id||"", level:'danger', icon:'🗓️', title:`${c.name}: calendario de ${UI.MONTHS[new Date().getMonth()]} sin aprobar`, desc:`Estado: ${label(CAL_ST, cur||'planificar')}.`, link:'#/ops/calendario', to:c.ownerId });
+        if(!CAL_OK.includes(cur)) push({ key:`cal:${c.id}:${UI.ym()}`, cid:c.id||"", level:'danger', icon:'🗓️', title:`${c.name}: calendario de ${UI.MONTHS[new Date().getMonth()]} sin aprobar`, desc:`Estado: ${label(CAL_ST, cur||'planificar')}.`, link:'#/ops/calendario', to:c.ownerId });
         if(day>=20){ const nx = calRec(c.id, nextYm())?.stage;
-          if(!CAL_OK.includes(nx)) push({ cid:c.id||"", level:'warn', icon:'🗓️', title:`${c.name}: armar calendario de ${UI.ymLabel(nextYm())}`, desc:`Estado: ${label(CAL_ST, nx||'planificar')}. Ideal tenerlo aprobado antes de fin de mes.`, link:'#/ops/calendario', to:c.ownerId }); }
+          if(!CAL_OK.includes(nx)) push({ key:`caln:${c.id}:${nextYm()}`, cid:c.id||"", level:'warn', icon:'🗓️', title:`${c.name}: armar calendario de ${UI.ymLabel(nextYm())}`, desc:`Estado: ${label(CAL_ST, nx||'planificar')}. Ideal tenerlo aprobado antes de fin de mes.`, link:'#/ops/calendario', to:c.ownerId }); }
       }
     });
     overdueTasks().filter(unitOk).forEach(tk=>{
       const d = UI.diffDays(tk.due);
-      push({ cid:tk.clientId||"", level:d>3?'danger':'warn', icon:'⏰', title:`Tarea vencida: ${tk.title}`, desc:`${clientName(tk.clientId)} · venció ${UI.fdate(tk.due)} (${d} día${d>1?'s':''}) · ${App.member(tk.assigneeId)?.name||'sin responsable'}`, link:'#/ops/tareas', to:tk.assigneeId, taskId:tk.id });
+      push({ key:`task:${tk.id}:${tk.due}`, cid:tk.clientId||"", level:d>3?'danger':'warn', icon:'⏰', title:`Tarea vencida: ${tk.title}`, desc:`${clientName(tk.clientId)} · venció ${UI.fdate(tk.due)} (${d} día${d>1?'s':''}) · ${App.member(tk.assigneeId)?.name||'sin responsable'}`, link:'#/ops/tareas', to:tk.assigneeId, taskId:tk.id });
     });
     S('meetings').filter(unitOk).forEach(m=>{
       const d = m.date?.slice(0,10); if(!d) return;
-      if(d<t && UI.diffDays(d)<=30 && !m.minuta) push({ cid:m.clientId||"", level:'warn', icon:'📝', title:`Falta la minuta: ${m.title}`, desc:`${clientName(m.clientId)} · ${UI.fdate(d)}`, link:'#/ops/reuniones', to:m.by, meetingId:m.id });
-      if(d===t) push({ cid:m.clientId||"", level:'info', icon:'🤝', title:`Hoy: ${m.title}`, desc:`${UI.time(m.date)} · ${clientName(m.clientId)}`, link:'#/ops/reuniones', meetingId:m.id });
+      if(d<t && UI.diffDays(d)<=30 && !m.minuta) push({ key:`min:${m.id}`, cid:m.clientId||"", level:'warn', icon:'📝', title:`Falta la minuta: ${m.title}`, desc:`${clientName(m.clientId)} · ${UI.fdate(d)}`, link:'#/ops/reuniones', to:m.by, meetingId:m.id });
+      if(d===t) push({ key:`hoy:${m.id}`, cid:m.clientId||"", level:'info', icon:'🤝', title:`Hoy: ${m.title}`, desc:`${UI.time(m.date)} · ${clientName(m.clientId)}`, link:'#/ops/reuniones', meetingId:m.id });
     });
     S('content').filter(unitOk).forEach(p=>{
       if(!p.date || ['aprobado','publicado'].includes(p.status)) return;
       const d = UI.diffDays(t, p.date);
-      if(d>=0 && d<=3) push({ cid:p.clientId||"", level:'warn', icon:'🎬', title:`${clientName(p.clientId)}: “${p.title}” sale ${UI.fdate(p.date).toLowerCase()} y no está aprobado`, desc:`Estado: ${label(CONTENT_ST,p.status)}`, link:'#/ops/calendario', to:p.assigneeId });
+      if(d>=0 && d<=3) push({ key:`cont:${p.id}:${p.date}:${p.status}`, cid:p.clientId||"", level:'warn', icon:'🎬', title:`${clientName(p.clientId)}: “${p.title}” sale ${UI.fdate(p.date).toLowerCase()} y no está aprobado`, desc:`Estado: ${label(CONTENT_ST,p.status)}`, link:'#/ops/calendario', to:p.assigneeId });
     });
     const order = { danger:0, warn:1, info:2 };
     return out.sort((a,b)=>order[a.level]-order[b.level]);
@@ -209,6 +212,33 @@
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
 
+  // Selección múltiple de tareas
+  let selMode = false, visibleTasks = [];
+  const sel = new Set();
+  const pickCls = id => selMode && sel.has(id) ? 'picked' : '';
+  function selRow(t){
+    const over = t.status!=='done' && t.due && t.due<UI.today();
+    return `<div class="li click ${pickCls(t.id)}" onclick="Ops.pick('${t.id}')"><input type="checkbox" ${sel.has(t.id)?'checked':''} style="width:18px;height:18px;pointer-events:none">
+      <div class="grow"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div><div class="xs faint">${esc(clientName(t.clientId))} · ${esc(label(TASK_ST,t.status))}</div></div>
+      ${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(App.member(t.assigneeId),'sm')}</div>`;
+  }
+  function selBar(){
+    if(!selMode) return '';
+    const n = sel.size, opts = App.assignOpts().filter(o=>o[0]);
+    return `<div class="selbar">
+      <b>${n} seleccionada${n!==1?'s':''}</b>
+      <button class="btn xs g" onclick="Ops.pickAll()">${visibleTasks.length && visibleTasks.every(id=>sel.has(id))?'Ninguna':'Todas ('+visibleTasks.length+')'}</button>
+      ${n?`<span class="sep"></span>
+      <button class="btn xs ok" onclick="Ops.bulk('done')">✓ Hechas</button>
+      <select class="inp sm" onchange="Ops.bulk('status',this.value)"><option value="">Estado…</option>${TASK_ST.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+      <select class="inp sm" onchange="Ops.bulk('assign',this.value)"><option value="">Asignar a…</option>${opts.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select>
+      <input class="inp sm" type="date" title="Cambiar fecha" onchange="Ops.bulk('due',this.value)">
+      <select class="inp sm" onchange="Ops.bulk('priority',this.value)"><option value="">Prioridad…</option>${PRIO.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+      <button class="btn xs g" onclick="Ops.bulk('alert')">📣 Avisar</button>
+      <button class="btn xs d" onclick="Ops.bulk('delete')">🗑 Eliminar</button>`:'<span class="xs faint">Tocá las tareas para elegirlas</span>'}
+      <span class="grow"></span><button class="btn xs g" onclick="Ops.selMode(false)">✕ Salir</button></div>`;
+  }
+
   function viewTasks(){
     const me = App.me();
     let ts = S('tasks').filter(unitOk).filter(t=>cm(t.clientId));
@@ -219,24 +249,28 @@
       ${App.members().filter(m=>m.id!==me.id).map(m=>`<button class="chip ${taskWho===m.id?'on':''}" onclick="Ops.setWho('${m.id}')">${esc(m.name)}</button>`).join('')}</div>
       <span class="grow"></span><div class="search"><input class="inp" placeholder="Buscar…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
       <div class="chips"><button class="chip ${taskMode==='board'?'on':''}" onclick="Ops.setMode('board')">▦ Tablero</button><button class="chip ${taskMode==='list'?'on':''}" onclick="Ops.setMode('list')">☰ Lista</button></div>
+      <button class="chip ${selMode?'on':''}" onclick="Ops.selMode(${!selMode})">☑ Seleccionar</button>
       <button class="btn p" onclick="Ops.editTask()">＋ Tarea</button></div>`;
+    visibleTasks = [];
     if(taskMode==='list'){
       const t = UI.today(), wk = UI.addDays(t,7), open = ts.filter(x=>x.status!=='done').sort(taskSort);
       const groups = [['⏰ Vencidas',open.filter(x=>x.due&&x.due<t)],['📍 Hoy',open.filter(x=>x.due===t)],['📅 Próximos 7 días',open.filter(x=>x.due>t&&x.due<=wk)],['🔭 Más adelante',open.filter(x=>x.due>wk)],['· Sin fecha',open.filter(x=>!x.due)],
         ['✓ Hechas (últimas)', ts.filter(x=>x.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,15)]];
-      return { html: bar + groups.filter(g=>g[1].length).map(([l,g])=>`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${l}</h3><span class="sub">${g.length}</span></div>${taskList(g)}</div>`).join('') || bar+'<div class="card empty"><div class="big">🎉</div>No hay tareas</div>' };
+      groups.forEach(g=>g[1].forEach(x=>visibleTasks.push(x.id)));
+      return { html: bar + (groups.filter(g=>g[1].length).map(([l,g])=>`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${l}</h3><span class="sub">${g.length}</span>${selMode?`<span class="grow"></span><button class="btn xs g" onclick="Ops.pickGroup('${g.map(x=>x.id).join(',')}')">Elegir estas</button>`:''}</div>${selMode?`<div class="list">${g.map(selRow).join('')}</div>`:taskList(g)}</div>`).join('') || '<div class="card empty"><div class="big">🎉</div>No hay tareas</div>') + selBar() };
     }
     const lanes = TASK_ST.map(([k,l])=>{
       let items = ts.filter(t=>(t.status||'todo')===k).sort(taskSort);
       if(k==='done') items = items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,20);
+      items.forEach(x=>visibleTasks.push(x.id));
       return `<div class="lane" data-lane="${k}"><div class="lane-h">${l} <span class="n">${items.length}</span></div>
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
-          return `<div class="kc ${over?'over':''}" data-drag="${t.id}" onclick="Ops.editTask('${t.id}')"><div class="t">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
+          return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
           <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}</div></div>`; }).join('')}
         ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}</div>`;
     }).join('');
-    return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">Arrastrá las tarjetas entre columnas para cambiar su estado.</p>`,
-      after:()=>UI.kanban($('#tboard'), (id,st)=>setTaskStatus(id,st)) };
+    return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">${selMode?'Tocá las tarjetas para seleccionarlas.':'Arrastrá las tarjetas entre columnas para cambiar su estado. Con “☑ Seleccionar” podés elegir varias y hacer acciones juntas.'}</p>` + selBar(),
+      after:()=>{ if(!selMode) UI.kanban($('#tboard'), (id,st)=>setTaskStatus(id,st)); } };
   }
 
   function setTaskStatus(id, st){
@@ -365,18 +399,27 @@
   }
 
   // ── Alertas ──────────────────────────────────────────────────────────────────
+  let aSelMode = false; const aSel = new Set();
   function viewAlerts(){
     const al = alerts().filter(a=>cm(a.cid));
-    const sec = (lvl, t) => { const xs = al.filter(a=>a.level===lvl); return xs.length ? `<div class="sec-t">${t} · ${xs.length}</div>` + xs.map(alertRow).join('') : ''; };
-    return { html: al.length ? `<div class="toolbar"><div class="small muted grow">Las alertas se calculan solas a partir del seguimiento, tareas, reuniones y calendarios. Tocá “Avisar” para mandarla a la persona responsable.</div><button class="btn g" onclick="App.sendAlert()">📣 Alerta manual</button></div>`
-      + sec('danger','🔴 Urgente') + sec('warn','🟡 Para atender') + sec('info','🔵 Para hoy')
-      : '<div class="card empty"><div class="big">🎉</div>No hay alertas. ¡Todo al día!</div>' };
+    const hidden = allAlerts().filter(a=>cm(a.cid) && a.key && dismissed().has(a.key)).length;
+    const sec = (lvl, t) => { const xs = al.filter(a=>a.level===lvl); return xs.length ? `<div class="sec-t">${t} · ${xs.length}</div>` + xs.map(a=>alertRow(a, true)).join('') : ''; };
+    const bar = `<div class="toolbar"><div class="small muted grow">Las alertas se calculan solas. “Avisar” la manda a la persona responsable; ✕ la descarta por 7 días (vuelve si el problema sigue).</div>
+      <button class="chip ${aSelMode?'on':''}" onclick="Ops.aSelMode(${!aSelMode})">☑ Seleccionar</button>
+      <button class="btn g" onclick="Ops.downloadAlerts()">⇣ Descargar</button><button class="btn g" onclick="App.sendAlert()">📣 Alerta manual</button></div>`;
+    const selbar = aSelMode ? `<div class="selbar"><b>${aSel.size} seleccionada${aSel.size!==1?'s':''}</b>
+      <button class="btn xs g" onclick="Ops.aPickAll()">${al.length && al.filter(a=>a.key).every(a=>aSel.has(a.key))?'Ninguna':'Todas ('+al.filter(a=>a.key).length+')'}</button>
+      ${aSel.size?`<span class="sep"></span><button class="btn xs d" onclick="Ops.dismissSel(7)">✕ Descartar 7 días</button><button class="btn xs g" onclick="Ops.dismissSel(30)">Descartar 30 días</button><button class="btn xs g" onclick="Ops.downloadAlerts(true)">⇣ Descargar estas</button>`:'<span class="xs faint">Tocá las alertas para elegirlas</span>'}
+      <span class="grow"></span><button class="btn xs g" onclick="Ops.aSelMode(false)">✕ Salir</button></div>` : '';
+    const foot = hidden ? `<p class="xs faint" style="margin-top:14px">${hidden} alerta${hidden>1?'s':''} descartada${hidden>1?'s':''} · <a href="#" onclick="Ops.restoreAlerts();return false">Volver a mostrarlas</a></p>` : '';
+    return { html: bar + (al.length ? sec('danger','🔴 Urgente') + sec('warn','🟡 Para atender') + sec('info','🔵 Para hoy') : '<div class="card empty"><div class="big">🎉</div>No hay alertas. ¡Todo al día!</div>') + foot + selbar };
   }
-  function alertRow(a){
+  function alertRow(a, selectable){
     const to = App.member(a.to);
     const msg = `${a.icon} ${a.title}\n${a.desc}`;
-    return `<div class="alert ${a.level}"><div class="ai">${a.icon}</div><div class="grow"><div class="at">${esc(a.title)}</div><div class="ad">${esc(a.desc)}</div></div>
-      ${to?UI.avatar(to,'sm'):''}<a class="btn xs g" href="${a.link}">Ir</a><button class="btn xs g" onclick="App.sendAlert(${esc(JSON.stringify(msg))}, ${esc(JSON.stringify(a.to||'all'))}, ${esc(JSON.stringify(a.link))})">Avisar</button></div>`;
+    const picking = selectable && aSelMode && a.key;
+    return `<div class="alert ${a.level} ${picking&&aSel.has(a.key)?'picked':''}" ${picking?`style="cursor:pointer" onclick="Ops.aPick(${esc(JSON.stringify(a.key))})"`:''}>${picking?`<input type="checkbox" ${aSel.has(a.key)?'checked':''} style="width:18px;height:18px;pointer-events:none;margin-top:2px">`:''}<div class="ai">${a.icon}</div><div class="grow"><div class="at">${esc(a.title)}</div><div class="ad">${esc(a.desc)}</div></div>
+      ${to?UI.avatar(to,'sm'):''}${picking?'':`<a class="btn xs g" href="${a.link}">Ir</a><button class="btn xs g" onclick="App.sendAlert(${esc(JSON.stringify(msg))}, ${esc(JSON.stringify(a.to||'all'))}, ${esc(JSON.stringify(a.link))})">Avisar</button>${a.key?`<button class="icon-btn" title="Descartar por 7 días" onclick="Ops.dismiss(${esc(JSON.stringify(a.key))})">✕</button>`:''}`}</div>`;
   }
 
   // ── Formularios / acciones ──────────────────────────────────────────────────
@@ -454,6 +497,65 @@
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
         App.render();
       } });
+    },
+    dismiss(key, days=7){ Store.upsert('ops','dismissed',{ id:key, until:UI.addDays(UI.today(), days), by:App.me().id }); UI.toast(`Alerta descartada por ${days} días`,'✕'); App.render(); },
+    aSelMode(on){ aSelMode = !!on; aSel.clear(); App.render(); },
+    aPick(k){ aSel.has(k) ? aSel.delete(k) : aSel.add(k); App.render(); },
+    aPickAll(){ const ks = alerts().filter(a=>cm(a.cid) && a.key).map(a=>a.key), all = ks.length && ks.every(k=>aSel.has(k)); aSel.clear(); if(!all) ks.forEach(k=>aSel.add(k)); App.render(); },
+    dismissSel(days){ const n = aSel.size; aSel.forEach(k=>Store.upsert('ops','dismissed',{ id:k, until:UI.addDays(UI.today(), days), by:App.me().id })); aSel.clear(); UI.toast(`${n} alerta${n!==1?'s':''} descartada${n!==1?'s':''} por ${days} días`,'✕'); App.render(); },
+    restoreAlerts(){ S('dismissed').forEach(d=>Store.remove('ops','dismissed',d.id)); UI.toast('Alertas restauradas','↩'); App.render(); },
+    // Descarga en CSV (se abre en Excel / Google Sheets)
+    downloadAlerts(onlySel){
+      let al = alerts().filter(a=>cm(a.cid)); if(onlySel) al = al.filter(a=>aSel.has(a.key));
+      const lvl = { danger:'Urgente', warn:'Para atender', info:'Para hoy' };
+      const q = v => `"${String(v??'').replace(/"/g,'""')}"`;
+      const rows = [['Nivel','Alerta','Detalle','Cliente','Responsable'], ...al.map(a=>[lvl[a.level], a.title, a.desc, a.cid?clientName(a.cid):'Interna', App.member(a.to)?.name||''])];
+      const blob = new Blob(['\ufeff'+rows.map(r=>r.map(q).join(';')).join('\n')], { type:'text/csv;charset=utf-8' });
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `alertas-anm-${UI.today()}.csv`; link.click();
+      UI.toast(`${al.length} alerta${al.length!==1?'s':''} descargada${al.length!==1?'s':''}`,'⇣');
+    },
+    selMode(on){ selMode = !!on; sel.clear(); App.render(); },
+    pick(id){ sel.has(id) ? sel.delete(id) : sel.add(id); App.render(); },
+    pickAll(){ const all = visibleTasks.length && visibleTasks.every(id=>sel.has(id)); sel.clear(); if(!all) visibleTasks.forEach(id=>sel.add(id)); App.render(); },
+    pickGroup(ids){ const list = ids.split(',').filter(Boolean), all = list.every(id=>sel.has(id)); list.forEach(id=>all ? sel.delete(id) : sel.add(id)); App.render(); },
+    // Acciones en bloque sobre las tareas seleccionadas
+    bulk(action, value){
+      const me = App.me(), admin = App.isAdmin();
+      let ids = [...sel].filter(id=>Store.get('ops','tasks',id));
+      if(!ids.length) return;
+      // Quien no es socio solo puede tocar sus propias tareas
+      const own = ids.filter(id=>admin || Store.get('ops','tasks',id).assigneeId===me.id);
+      if(own.length<ids.length) UI.toast(`${ids.length-own.length} tarea(s) no son tuyas: solo los socios pueden modificarlas`,'⚠️');
+      ids = own; if(!ids.length) return App.render();
+      const n = ids.length, s = n!==1?'s':'';
+      if(action==='done' || action==='status'){
+        const st = action==='done' ? 'done' : value; if(!st) return;
+        let xp = 0;
+        ids.forEach(id=>{ const t = Store.get('ops','tasks',id); if(t.status===st) return;
+          Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null });
+          if(st==='done') xp += Game.XP.task_done + (!t.due || t.due>=UI.today() ? Game.XP.task_ontime : 0); });
+        if(xp) Game.log('task_done', `${n} tarea${s} completada${s}`, { xp, icon:'✅' }); else UI.toast(`${n} tarea${s} → ${label(TASK_ST,st)}`,'✓');
+      }
+      if(action==='assign' && value){
+        ids.forEach(id=>Store.upsert('ops','tasks',{ id, assigneeId:value }));
+        const who = App.member(value);
+        if(value!==me.id && confirm(`${n} tarea${s} asignada${s} a ${who.name}. ¿Le mando el aviso con la lista?`)) Ops.bulk('alert');
+        else UI.toast(`${n} tarea${s} asignada${s} a ${who.name.split(' ')[0]}`,'👤');
+      }
+      if(action==='due' && value){ ids.forEach(id=>Store.upsert('ops','tasks',{ id, due:value })); UI.toast(`Nueva fecha para ${n} tarea${s}: ${UI.fdate(value,{abs:true})}`,'📅'); }
+      if(action==='priority' && value){ ids.forEach(id=>Store.upsert('ops','tasks',{ id, priority:value })); UI.toast(`Prioridad actualizada en ${n} tarea${s}`,'🔥'); }
+      if(action==='alert'){
+        const by = {}; ids.map(id=>Store.get('ops','tasks',id)).filter(t=>t.status!=='done' && t.assigneeId && t.assigneeId!==me.id).forEach(t=>(by[t.assigneeId] = by[t.assigneeId]||[]).push(t));
+        const who = Object.keys(by); if(!who.length) return UI.toast('Ninguna de estas tareas está asignada a otra persona','ℹ️');
+        who.forEach(p=>{ App.notify(p, `📋 Tenés ${by[p].length} tarea${by[p].length>1?'s':''} asignada${by[p].length>1?'s':''}:\n${by[p].map(t=>`• ${t.title} (${clientName(t.clientId)}${t.due?' · vence '+UI.fdate(t.due,{abs:true}):''})`).join('\n')}`, '#/ops/tareas');
+          by[p].forEach(t=>Store.upsert('ops','tasks',{ id:t.id, alertedTo:t.assigneeId, alertedAt:new Date().toISOString() })); });
+        Game.log('alert_sent', `Avisos enviados a ${who.map(p=>App.member(p)?.name.split(' ')[0]).join(', ')}`, { icon:'📣' });
+      }
+      if(action==='delete'){
+        if(!confirm(`¿Eliminar ${n} tarea${s}? No se puede deshacer.`)) return;
+        ids.forEach(id=>Store.remove('ops','tasks',id)); sel.clear(); UI.toast(`${n} tarea${s} eliminada${s}`,'🗑');
+      }
+      App.render();
     },
     toggleTask(id){ const t = Store.get('ops','tasks',id); setTaskStatus(id, t.status==='done' ? 'todo' : 'done'); },
 

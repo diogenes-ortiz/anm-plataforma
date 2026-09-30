@@ -276,3 +276,11 @@ code{background:var(--surface3);border-radius:5px;padding:1px 5px;font-size:12px
   .alert .grow{flex-basis:70%}
 }
 .chips.scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+
+/* ── Selección múltiple ─────────────────────────────── */
+.kc.picked,.li.picked{outline:2px solid var(--blue);background:var(--blue-d)}
+.selbar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:400;width:min(1100px,calc(100vw - 32px));display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:10px 14px;box-shadow:var(--shadow);animation:pop .16s ease-out}
+.selbar .sep{width:1px;height:22px;background:var(--border2)}
+@media(min-width:861px){.selbar{left:calc(50% + var(--sidebar)/2);width:min(1100px,calc(100vw - var(--sidebar) - 40px))}}
+.alert.picked{outline:2px solid var(--blue)}
+body:has(.selbar) .toasts{bottom:110px}

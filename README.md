@@ -26,11 +26,12 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 **Operaciones** — filtro por unidad de negocio (Social Media, Pauta, Branding, Web… editables en Ajustes) y **barra de clientes**: elegís un cliente (o “Internas”) y todas las pestañas muestran solo lo suyo; lo que crees queda asignado a ese cliente.
 - *Seguimiento*: tarjeta por cliente con semáforo (🟢/🟡/🔴), “en qué estamos”, próximo paso, días desde la última actualización. Historial completo en la ficha del cliente.
 - *Tareas*: tablero arrastrable o lista agrupada (vencidas, hoy, esta semana…).
+- *Selección múltiple*: en Tareas, “☑ Seleccionar” permite elegir varias (o todas) y marcarlas hechas, cambiar estado, asignar, cambiar fecha o prioridad, avisar a los responsables o eliminarlas juntas.
 - *Calendario*: piezas de contenido, reuniones y tareas en un mes + estado del calendario mensual de cada cliente (por planificar → enviado → aprobado…).
 - *Reuniones y minutas*: minuta, decisiones, temáticas (#etiquetas) y acuerdos. “✨ Detectar acuerdos” lee un resumen pegado (Read AI, Meet, etc.) y los convierte en tareas (`@Nombre` asigna, `dd/mm` pone fecha).
 - *Vista de minuta*: al abrir una reunión se ve la minuta y las decisiones arriba, y abajo las **tareas bajadas** con selector de responsable y fecha; el botón **📣 Mandar alertas de tareas asignadas** manda a cada persona la lista de sus tareas (en la plataforma y por mail). También “Copiar resumen” para WhatsApp.
 - *Minutas por chat*: se pega la minuta (texto suelto o WhatsApp) en el chat con Claude, queda ordenada en `js/minutas.js` y la plataforma muestra “📥 Minuta para cargar”: con un clic crea la reunión, las tareas (responsable y fecha) y las piezas del calendario. El botón “✨ Detectar acuerdos” también entiende mensajes de WhatsApp.
-- *Alertas*: se calculan solas (clientes sin actualizar, en riesgo, tareas vencidas, reuniones sin minuta, calendarios sin aprobar, contenido por salir sin aprobar). “Avisar” la manda en la app, por WhatsApp o email.
+- *Alertas*: se pueden descartar (✕, 7 o 30 días; vuelven si el problema sigue), seleccionar varias y descargar en CSV para Excel/Sheets. Se calculan solas (clientes sin actualizar, en riesgo, tareas vencidas, reuniones sin minuta, calendarios sin aprobar, contenido por salir sin aprobar). “Avisar” la manda en la app, por WhatsApp o email.
 
 **Crecimiento** (sin montos: todo lo económico vive en Finanzas)
 - *Hoy toca contactar*: seguimientos vencidos primero y después los prospectos sin contactar, ordenados por **🔥 ganas** (1 a 5, se cambia con un clic).
