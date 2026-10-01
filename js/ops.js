@@ -258,7 +258,7 @@
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
           <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(c.link)}" target="_blank">Carpeta ↗</a>`:''}</div></div>
-        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button><button class="btn ok" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
+        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button><button class="btn ok" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button><button class="btn g" onclick="Reunion.open('${id}')">🧠 Ordenar reunión</button>
           <div class="row"><button class="btn g sm" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Tarea</button><button class="btn g sm" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋ Reunión</button><button class="btn g sm" onclick="Ops.editClient('${id}')">✎</button></div></div>
       </div>
       ${deliverables}
@@ -455,7 +455,7 @@
     const noMin = past.filter(m=>!m.minuta);
     const openActions = S('meetings').flatMap(m=>(m.actions||[]).filter(a=>!a.taskId).map(a=>({...a, m})));
     const html = `<div class="toolbar"><div class="search grow"><input class="inp" placeholder="Buscar en reuniones y minutas…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
-        <button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
+        <button class="btn ok" onclick="Reunion.open()">🧠 Ordenar reunión</button><button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
         ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">${m.kind==='status'?'Status para cargar':'Minuta para cargar'}: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
         ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta suma +${Game.XP.minuta} XP y convierte los acuerdos en tareas.</div></div></div>`:''}
@@ -812,8 +812,8 @@
       const id = m.id, isStatus = m.kind==='status';
       const cl = (m.clientId && client(m.clientId)) || clientByName(m.client);
       const members = App.members();
-      const taskRow = (t={}, i) => { const as = memberByFirst(t.who)?.id || t.assigneeId || '';
-        return `<div class="li im-row" style="flex-wrap:wrap;gap:8px"><input type="checkbox" checked class="im-on" style="width:18px;height:18px">
+      const taskRow = (t={}, i) => { const ex = t.existingId && Store.get('ops','tasks',t.existingId), as = memberByFirst(t.who)?.id || t.assigneeId || ex?.assigneeId || '';
+        return `<div class="li im-row" style="flex-wrap:wrap;gap:8px"><input type="checkbox" checked class="im-on" style="width:18px;height:18px"><input type="hidden" class="im-ex" value="${ex?ex.id:''}">${ex?'<span class="tag t-blue" title="Ya existía: se actualiza su estado">↻ actualiza</span>':''}
           <input class="inp sm im-text grow" style="min-width:240px" value="${esc(t.text||'')}" placeholder="Qué hay que hacer">
           <select class="inp sm im-who"><option value="">— Sin asignar —</option>${members.map(x=>`<option value="${x.id}" ${x.id===as?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
           <input class="inp sm im-due" type="date" value="${esc(t.due||'')}"><input type="hidden" class="im-unit" value="${esc(t.unit||'')}">
@@ -835,13 +835,13 @@
         <button type="button" class="btn g sm" style="margin:8px 0 14px" id="im-add">＋ Agregar tarea</button>
         ${(m.content||[]).length?`<div class="small muted" style="margin-bottom:6px">🗓️ También se agregan al calendario: ${m.content.map(c=>`${esc(c.title)} (${UI.fdate(c.date,{abs:true})})`).join(' · ')}</div>`:''}
         <div class="mfoot"><button class="btn d sm" id="im-skip" style="margin-right:auto">Descartar</button><button class="btn g" data-close>Cancelar</button>
-          <button class="btn g" id="im-go">Cargar</button><button class="btn p" id="im-go-alert">Cargar y mandar alertas</button></div>`, true);
+          <button class="btn g" id="im-go">Cargar</button><button class="btn g" id="im-go-status">Cargar y armar status</button><button class="btn p" id="im-go-alert">Cargar y mandar alertas</button></div>`, true);
       box.querySelector('#im-add').onclick = ()=>{ box.querySelector('#im-tasks').insertAdjacentHTML('beforeend', taskRow({ due:UI.addDays(UI.today(),7) })); box.querySelector('#im-tasks .im-row:last-child .im-text').focus(); };
       box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(); App.render(); } };
       const go = withAlerts => { try {
         let cid = box.querySelector('#im-client').value;
         const val = (r,c) => r.querySelector(c).value.trim();
-        const rows = [...box.querySelectorAll('.im-row')].filter(r=>r.querySelector('.im-on').checked).map(r=>({ text:val(r,'.im-text'), assigneeId:val(r,'.im-who'), due:val(r,'.im-due'), unit:val(r,'.im-unit'), status:val(r,'.im-st')||'todo', area:val(r,'.im-area').toUpperCase(), note:val(r,'.im-note'), link:val(r,'.im-link') })).filter(r=>r.text);
+        const rows = [...box.querySelectorAll('.im-row')].filter(r=>r.querySelector('.im-on').checked).map(r=>({ text:val(r,'.im-text'), assigneeId:val(r,'.im-who'), due:val(r,'.im-due'), unit:val(r,'.im-unit'), status:val(r,'.im-st')||'todo', area:val(r,'.im-area').toUpperCase(), note:val(r,'.im-note'), link:val(r,'.im-link'), ex:val(r,'.im-ex') })).filter(r=>r.text);
         if(cid==='__new') cid = Store.upsert('ops','clients',{ name:m.client, units:[...new Set(m.tasks.map(t=>t.unit).filter(Boolean))].slice(0,3), health:'ok', active:true, ownerId:App.me().id }).id;
         // Áreas del cliente (orden, link de Canva y nota de cada sección del status)
         if(cid && (m.areas||rows.some(r=>r.area))){ const cur = [...(client(cid)?.areas||[])];
@@ -855,7 +855,7 @@
         if(isStatus) meeting.type = 'status';
         Store.upsert('ops','meetings', meeting);
         const now = new Date().toISOString();
-        const actions = rows.map(r=>{ const ex = isStatus && S('tasks').find(t=>t.clientId===cid && norm(t.title)===norm(r.text));
+        const actions = rows.map(r=>{ const ex = (r.ex && Store.get('ops','tasks',r.ex)) || ((isStatus||m.kind==='ia') && S('tasks').find(t=>t.clientId===cid && t.status!=='done' && norm(t.title)===norm(r.text)));
           const base = ex ? { ...ex } : { title:r.text, clientId:cid, priority:'media', meetingId:m.id, desc:isStatus?`Del status: ${title}`:`De la reunión: ${title}` };
           const tk = Store.upsert('ops','tasks',{ ...base, unit:r.unit||base.unit||'', assigneeId:r.assigneeId||base.assigneeId||'', due:r.due||base.due||'', status:r.status, area:r.area, note:r.note, link:r.link,
             doneAt: r.status==='done' ? (base.doneAt||now) : '' });
@@ -865,14 +865,16 @@
         Store.syncNow();
         Game.log('minuta', `Minuta cargada: ${title}`, { icon:'📝', silent:true });
         UI.close(); UI.toast(`${isStatus?'Status':'Minuta'} cargado con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
+        if(withAlerts==='status' && cid){ App.go('#/ops/cliente/'+cid); setTimeout(()=>Ops.clientStatus(cid), 120); return; }
         if(isStatus && cid){ App.go('#/ops/cliente/'+cid); if(withAlerts) setTimeout(()=>Ops.alertMeeting(m.id), 80); return; }
         App.go('#/ops/reuniones');
         if(withAlerts) setTimeout(()=>Ops.alertMeeting(m.id), 80); else setTimeout(()=>Ops.viewMeeting(m.id), 80);
       } catch(e){ console.error(e); window.alert('No se pudo cargar la minuta: '+(e.message||e)+'\n\nMandale una captura de este mensaje a Claude.'); } };
       box.querySelector('#im-go').onclick = ()=>go(false);
       box.querySelector('#im-go-alert').onclick = ()=>go(true);
+      box.querySelector('#im-go-status').onclick = ()=>{ if(!box.querySelector('#im-client').value) return UI.toast('Elegí el cliente para armar su status','👆'); go('status'); };
     },
-    pendingMinutas,
+    pendingMinutas, parseStatus, statusToTasks,
 
     actionToTask(meetingId, actionId, quiet){
       const m = Store.get('ops','meetings',meetingId); if(!m) return;
