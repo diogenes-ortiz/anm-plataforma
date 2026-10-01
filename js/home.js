@@ -91,7 +91,7 @@
         <p class="xs faint" style="margin-top:12px">Sirven para filtrar Operaciones y Crecimiento (Social Media, Pauta, Branding, Web…).</p></div>
       <div class="card"><div class="card-h"><h3>Datos y respaldo</h3><span class="grow"></span><span class="sync" id="sync2">${esc(Store.status)}</span></div>
         <p class="small muted" style="margin-bottom:14px">Todo se guarda en la nube (Supabase) y se sincroniza entre el equipo cada ~20 segundos. También queda una copia en este navegador por si se corta internet.</p>
-        <div class="row wrap"><button class="btn g" onclick="Store.syncNow().then(()=>UI.toast('Sincronizado','☁️'))">⟳ Sincronizar ahora</button><button class="btn g" onclick="UI.download('anm-plataforma-'+UI.today()+'.json', Store.exportAll())">⇣ Descargar respaldo</button>
+        <div class="row wrap"><button class="btn g" onclick="Store.syncNow().then(()=>UI.toast('Sincronizado','☁️'))">⟳ Sincronizar ahora</button><button class="btn g" onclick="App.repair()">🛠 Reparar (si algo se traba)</button><button class="btn g" onclick="UI.download('anm-plataforma-'+UI.today()+'.json', Store.exportAll())">⇣ Descargar respaldo</button>
         ${admin?'<label class="btn g" style="cursor:pointer">⇡ Restaurar respaldo<input type="file" accept=".json" style="display:none" onchange="Team.restore(this)"></label>':''}</div></div>
       <div class="card"><div class="card-h"><h3>📧 Recordatorios por mail</h3></div>
         <p class="small muted" style="margin-bottom:10px">Todos los días a las 8 h cada persona recibe su resumen (tareas vencidas, de hoy y próximas, reuniones y seguimientos) y cada hora los avisos nuevos (tareas asignadas, alertas). Salen desde el Gmail de un socio con Google Apps Script.</p>

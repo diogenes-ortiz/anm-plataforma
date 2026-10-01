@@ -69,9 +69,11 @@
       const fn = routes[name] || routes.inicio;
       if(name==='crecimiento' && !this.canGrowth()){ location.hash = '#/ops'; return; }
       current = name;
-      renderNav(name);
+      try{ renderNav(name); }catch(e){ console.error(e); showCrash(e.message); }
       const page = $('#page');
-      const out = fn(rest) || {};
+      let out;
+      try{ out = fn(rest) || {}; }
+      catch(e){ console.error(e); showCrash(e.message); out = { title:'Ups', html:`<div class="card empty"><div class="big">⚠️</div>Esta sección tuvo un error: <code>${UI.esc(e.message)}</code><br><br><button class="btn p" onclick="location.reload()">Recargar</button> <button class="btn g" onclick="App.repair()">Reparar</button> <a class="btn g" href="#/inicio">Ir a Inicio</a></div>` }; }
       $('#title').textContent = out.title || '';
       $('#crumb').textContent = out.crumb || '';
       if(out.html!=null) page.innerHTML = out.html;
@@ -128,6 +130,7 @@
     $('#app').style.display = 'none';
     const g = $('#gate'); g.style.display = '';
     const members = App.members();
+    if(!members.length && Store.status==='syncing'){ g.innerHTML = gateBox('<h2>Conectando…</h2><p class="muted">Cargando los datos del equipo.</p>'); return; }
     // Primera vez: se crea el primer socio
     if(!members.length){
       g.innerHTML = gateBox(`<h2>¡Bienvenido/a! 👋</h2><p class="muted" style="margin-bottom:18px">Creá tu perfil de socio/a: vas a poder cargar al equipo, asignar tareas y ver Finanzas.</p>
@@ -265,6 +268,24 @@
     document.documentElement.dataset.theme = t; try{ localStorage.setItem('anm_theme', t); }catch(e){}
   };
 
+  // ── Si algo falla, mostrarlo en pantalla (en vez de quedar trabado) ───────────
+  function showCrash(msg){
+    if(document.getElementById('crash')) return;
+    document.body.insertAdjacentHTML('beforeend', `<div id="crash" class="toast" style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:990;max-width:min(680px,94vw);flex-wrap:wrap;border-color:var(--red)">
+      ⚠️ <span style="flex:1;min-width:200px">Algo falló: <code>${UI.esc(String(msg).slice(0,180))}</code></span>
+      <button class="btn xs p" onclick="location.reload()">Recargar</button><button class="btn xs g" onclick="App.repair()">Reparar</button><button class="btn xs g" onclick="this.parentElement.remove()">✕</button></div>`);
+  }
+  window.addEventListener('error', e=>showCrash(e.message||e.error));
+  window.addEventListener('unhandledrejection', e=>showCrash(e.reason?.message||e.reason));
+  // Reparar: borra solo la copia local del navegador (los datos siguen en la base) y recarga
+  App.repair = ()=>{
+    if(!confirm('Esto borra la copia guardada en este navegador y vuelve a bajar todo de la base de datos. No se pierde nada de lo que ya se sincronizó. ¿Seguimos?')) return;
+    try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem('anm_doc_'+d)); sessionStorage.clear(); }catch(e){}
+    location.href = location.pathname + '#/inicio';
+    location.reload();
+  };
+  if(/[?&]reparar=1/.test(location.search)){ try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem('anm_doc_'+d)); }catch(e){} history.replaceState(null,'',location.pathname); }
+
   // ── Versión: si se publicó algo nuevo, recargar (una vez) o avisar ────────────
   async function checkVersion(onLoad){
     try{
@@ -286,7 +307,11 @@
       }
     });
     checkVersion(true); setInterval(()=>checkVersion(false), 5*60*1000);
-    await Store.init();
+    // Mostrar enseguida lo guardado en este navegador y sincronizar por detrás
+    const ready = Store.init();
+    const joining = /[?&]join=/.test(location.search);
+    if(!joining) App.render();
+    await ready;
     handleJoin();
     // Re-render cuando llegan cambios de otras personas (sin interrumpir si hay un modal abierto)
     let pending = false;

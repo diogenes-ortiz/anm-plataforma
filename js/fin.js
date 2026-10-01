@@ -31,7 +31,8 @@
     try{ const l = localStorage.getItem(LS_KEY); if(l) S = { ...S, ...JSON.parse(l) }; }catch(e){}
     ensure(); setStatus('syncing');
     try{
-      const r = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.main&select=data`, { headers:HEADERS });
+      const ctl = new AbortController(), to = setTimeout(()=>ctl.abort(), 10000);
+      const r = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.main&select=data`, { headers:HEADERS, signal:ctl.signal }); clearTimeout(to);
       if(!r.ok) throw 0;
       const rows = await r.json();
       if(rows[0]?.data && Object.keys(rows[0].data).length){ S = { ...S, ...rows[0].data }; ensure(); }

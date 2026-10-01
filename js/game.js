@@ -41,7 +41,7 @@
   function celebrate(memberId, beforePct){
     const p = perf(memberId);
     if(p.pct>=90 && (beforePct==null || beforePct<90) && p.assigned>=3){
-      const mine = memberId===App.me()?.id, who = App.member(memberId)?.name.split(' ')[0];
+      const mine = memberId===App.me()?.id, who = (App.member(memberId)?.name||'alguien').split(' ')[0];
       UI.confetti(); setTimeout(()=>UI.toast(mine ? '¡Estás en Excelente este mes!' : `${who} está en Excelente este mes`,'🎉'), 400);
     }
   }

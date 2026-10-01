@@ -48,8 +48,15 @@
     return JSON.stringify(v);
   }
 
+  // fetch con tiempo máximo: si la base no responde, no se queda colgado
+  function tfetch(url, opts={}, ms=10000){
+    const ctl = typeof AbortController!=='undefined' ? new AbortController() : null;
+    const t = ctl ? setTimeout(()=>ctl.abort(), ms) : null;
+    return fetch(url, ctl ? { ...opts, signal:ctl.signal } : opts).finally(()=>t && clearTimeout(t));
+  }
+
   async function fetchRemote(id){
-    const res = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}&select=data`, { headers:HEADERS });
+    const res = await tfetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}&select=data`, { headers:HEADERS });
     if(!res.ok) throw new Error('fetch '+res.status);
     const rows = await res.json();
     return rows.length ? (rows[0].data||{}) : null;
@@ -57,12 +64,12 @@
 
   async function pushRemote(id, data){
     const body = JSON.stringify({ id, data, updated_at:now() });
-    const res = await fetch(`${SB_URL}/rest/v1/anm_state`, {
+    const res = await tfetch(`${SB_URL}/rest/v1/anm_state`, {
       method:'POST', headers:{ ...HEADERS, Prefer:'resolution=merge-duplicates,return=minimal' }, body
     });
     if(res.ok) return;
     // Fallback igual al de Finanzas: PATCH sobre la fila existente
-    const res2 = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}`, {
+    const res2 = await tfetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}`, {
       method:'PATCH', headers:{ ...HEADERS, Prefer:'return=minimal' }, body:JSON.stringify({ data, updated_at:now() })
     });
     if(!res2.ok) throw new Error('push '+res2.status);

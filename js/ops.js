@@ -598,7 +598,7 @@
         const who = Object.keys(by); if(!who.length) return UI.toast('Ninguna de estas tareas está asignada a otra persona','ℹ️');
         who.forEach(p=>{ App.notify(p, `📋 Tenés ${by[p].length} tarea${by[p].length>1?'s':''} asignada${by[p].length>1?'s':''}:\n${by[p].map(t=>`• ${t.title} (${clientName(t.clientId)}${t.due?' · vence '+UI.fdate(t.due,{abs:true}):''})`).join('\n')}`, '#/ops/tareas');
           by[p].forEach(t=>Store.upsert('ops','tasks',{ id:t.id, alertedTo:t.assigneeId, alertedAt:new Date().toISOString() })); });
-        Game.log('alert_sent', `Avisos enviados a ${who.map(p=>App.member(p)?.name.split(' ')[0]).join(', ')}`, { icon:'📣' });
+        Game.log('alert_sent', `Avisos enviados a ${who.map(p=>(App.member(p)?.name||'alguien').split(' ')[0]).join(', ')}`, { icon:'📣' });
       }
       if(action==='delete'){
         if(!confirm(`¿Eliminar ${n} tarea${s}? No se puede deshacer.`)) return;
@@ -658,7 +658,7 @@
       const by = {}; tasks.forEach(t=>{ (by[t.assigneeId] = by[t.assigneeId]||[]).push(t); });
       const who = Object.keys(by).filter(p=>p!==App.me().id);
       if(!who.length) return UI.toast('No hay tareas asignadas a otras personas','ℹ️');
-      const resumen = who.map(p=>`${App.member(p)?.name.split(' ')[0]} (${by[p].length})`).join(', ');
+      const resumen = who.map(p=>`${(App.member(p)?.name||'alguien').split(' ')[0]} (${by[p].length})`).join(', ');
       if(!confirm(`Voy a avisar a: ${resumen}.\n\nCada uno recibe la lista de sus tareas de “${m.title}” en la plataforma y por mail.`)) return;
       who.forEach(p=>{
         const list = by[p].map(t=>`• ${t.title}${t.due?` (vence ${UI.fdate(t.due,{abs:true})})`:''}`).join('\n');
@@ -671,7 +671,7 @@
     copyMeeting(id){
       const m = Store.get('ops','meetings',id);
       const tasks = S('tasks').filter(t=>t.meetingId===id);
-      UI.copy(`*${m.title}* — ${clientName(m.clientId)} · ${UI.fdate((m.date||'').slice(0,10),{abs:true})}\n\n${m.minuta||''}${m.decisiones?`\n\n*Decisiones*\n${m.decisiones}`:''}\n\n*Tareas*\n${tasks.map(t=>`• ${t.title} → ${App.member(t.assigneeId)?.name.split(' ')[0]||'sin asignar'}${t.due?` (${UI.fdate(t.due,{abs:true})})`:''}`).join('\n')}`);
+      UI.copy(`*${m.title}* — ${clientName(m.clientId)} · ${UI.fdate((m.date||'').slice(0,10),{abs:true})}\n\n${m.minuta||''}${m.decisiones?`\n\n*Decisiones*\n${m.decisiones}`:''}\n\n*Tareas*\n${tasks.map(t=>`• ${t.title} → ${(App.member(t.assigneeId)?.name||'alguien').split(' ')[0]||'sin asignar'}${t.due?` (${UI.fdate(t.due,{abs:true})})`:''}`).join('\n')}`);
     },
 
     editMeeting(id, preset={}){
