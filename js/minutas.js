@@ -2,6 +2,7 @@
 // Minutas que se pasan por chat y se dejan ordenadas acá. La plataforma muestra
 // un aviso "📥 Minuta para cargar" y con un clic crea la reunión, las tareas y
 // las piezas del calendario (una sola vez: se identifica por el id).
+// kind:'status' → status para el cliente (✅ 👀 🔸 ▫️ por área) que se convierte en tareas.
 //   who  → primer nombre de la persona responsable (si no está cargada, queda para quien importa)
 //   due  → fecha límite YYYY-MM-DD
 window.ANM_MINUTAS = [
@@ -50,5 +51,66 @@ window.ANM_MINUTAS = [
       { title: 'Feria: cobertura con arquitectos y diseñadores', date: '2026-10-23', format: 'reel', unit: 'contenido' },
       { title: 'Tutorial: cómo se coloca MiPileta', date: '2026-10-08', format: 'reel', unit: 'social' },
     ],
+  },
+  {
+    // Status "En qué estamos" pasado por chat: se carga como tareas por área (✅ 👀 🔸 ▫️)
+    id: 'status-2026-09-03-mipileta',
+    kind: 'status',
+    client: 'Mipileta',
+    title: 'Status Mipileta · En qué estamos',
+    date: '2026-09-03T12:00',
+    statusText:
+`*EN QUÉ ESTAMOS* — 9/3/2026
+
+✅ cerrado · 👀 en revisión · 🔸 en curso · ▫️ pendiente
+
+*CONTENIDO*
+👀  Aprobación de calendario de Septiembre - https://canva.link/1wceuffss05p0hd
+👀  Comenzar lanzamiento de Essentia - Falta OK final para empezar a salir
+▫️ Lau tiene que envíar fotos de su casa para planificar grabación
+▫️ Generar reunion con Lau y Diego para coordinar mejor el día de grabación
+🔸 Generar video de la página: cambio de colores, desagües, piletas con accesorios agregados.
+✅ Generar contenido más apuntado para arquitectos
+✅ Video de youtube subido - https://www.youtube.com/watch?v=ydlHkftJvxQ
+
+*CRM Y ATENCIÓN AL CLIENTE*
+https://canva.link/tmokv3b66akf5gx
+👀 Definir la comunicación para derivar consultas de clientes finales a los distribuidores
+👀 Ordenar la canalización de cada tipo de cliente
+👀 Preparar respuestas modelo para consultas frecuentes y generales
+👀 Definir secuencia de seguimiento con mensajes cortos para recontactar potenciales
+
+*CALENDARIO Y EFEMÉRIDES*
+🔸 Revisar efemerides (Falta la del metalurgico a sumar)
+
+*GOOGLE ADS*
+https://canva.link/ifplr1i5kaidg8o
+👀 Propuesta de Google Ads con foco en constructoras
+👀 Propuesta con foco en flipping inmobiliario
+👀 Propuesta con foco en empresas y profesionales del rubro
+👀 Trabajar mensajes de calidad, precio, garantía y compra por volumen
+
+*ORGANIZACIÓN INTERNA*
+✅ Subida de contenido ya posteado en la carpeta de RRSS - ACTUALIZADO 9.3.2026
+✅ Ordenar el Drive con nomenclatura consistente: nombre de producto + fecha
+
+*INFLUENCERS Y CANJES*
+🔸 Seguimiento Mica - Ya le instalaron hoy creo pero le dijeron que espere  hasta el viernes para usarla, y mañana le isntalan el desague y todo, asi q estamos esperando eso.
+✅ Seguimiento Andre - Status: Estamos OK - Ella nos dio tambien todo el material en crudo para q tengamos y podamos generar contenido por ejemplo en tik tok que habíamos pensado
+🔸 Ramiro: Todavía no empezo la obra por q esta a full con casa foa, pero me dijo que en breve estaría.
+
+*SEGUIMIENTO COMERCIAL*
+🔸 Enviar mensaje de seguimiento a Llanos Estudios - hoy les enviamos mensaje 9.3.2026
+
+*LANZAMIENTO ZINGARA OVAL*
+🔸Definir y generar contenidos y tomando la estetica de la web como fuente para generar contenido.
+Lanzamiento: fines de septiembre / octubre.
+
+*60 AÑOS DE MI PILETA*
+🔸Desarrollo de estrategia digital
+
+*WEB*
+✅ Estamos al día con cambios - https://mipileta.com.ar/
+▫️ Listado de sellers que queiran poner en el mapita interactivo que hoy esta oculto de la página.`,
   },
 ];

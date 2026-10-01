@@ -287,11 +287,13 @@
   if(/[?&]reparar=1/.test(location.search)){ try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem('anm_doc_'+d)); }catch(e){} history.replaceState(null,'',location.pathname); }
 
   // ── Versión: si se publicó algo nuevo, recargar (una vez) o avisar ────────────
+  let userActed = false;
+  ['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ userActed = true; }, { once:true, capture:true }));
   async function checkVersion(onLoad){
     try{
       const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); if(!r.ok) return;
       const { v } = await r.json(); if(!v || !window.ANM_VERSION || v===window.ANM_VERSION) return;
-      if(onLoad && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); location.reload(); return; }
+      if(onLoad && !userActed && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); location.reload(); return; }
       if(!document.getElementById('upd-banner')) document.body.insertAdjacentHTML('beforeend', `<div id="upd-banner" class="toast" style="position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:950">✨ Hay una versión nueva de la plataforma <button class="btn xs p" onclick="location.reload()">Actualizar</button></div>`);
     }catch(e){}
   }
@@ -307,17 +309,17 @@
       }
     });
     checkVersion(true); setInterval(()=>checkVersion(false), 5*60*1000);
+    // Navegación y re-render listos ANTES de sincronizar (así los clics funcionan desde el primer segundo)
+    window.addEventListener('hashchange', ()=>{ UI.close(); App.render(); window.scrollTo(0,0); });
+    let pending = false;
+    Store.on(ev=>{ if(ev.type!=='change') return; if(pending) return; pending = true;
+      requestAnimationFrame(()=>{ pending = false; if(!$('#modal').classList.contains('open') && !document.activeElement?.matches('input,textarea,select')) App.render(); }); });
     // Mostrar enseguida lo guardado en este navegador y sincronizar por detrás
     const ready = Store.init();
     const joining = /[?&]join=/.test(location.search);
     if(!joining) App.render();
     await ready;
     handleJoin();
-    // Re-render cuando llegan cambios de otras personas (sin interrumpir si hay un modal abierto)
-    let pending = false;
-    Store.on(ev=>{ if(ev.type!=='change') return; if(pending) return; pending = true;
-      requestAnimationFrame(()=>{ pending = false; if(!$('#modal').classList.contains('open') && !document.activeElement?.matches('input,textarea,select')) App.render(); }); });
-    window.addEventListener('hashchange', ()=>{ UI.close(); App.render(); window.scrollTo(0,0); });
     App.render();
   }
   window.App = App;

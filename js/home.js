@@ -29,7 +29,7 @@
           <div class="xpbar"><div style="width:${pf.pct??0}%;background:${pf.color}"></div></div>
           <div class="row" style="margin-top:14px;gap:22px"><div><div class="b" style="font-size:20px">✅ ${wxp}</div><div class="xs faint b">HECHAS ESTA SEMANA</div></div>${Game.onTime(me.id)!=null?`<div><div class="b" style="font-size:20px">${Game.onTime(me.id)}%</div><div class="xs faint b">A TIEMPO</div></div>`:''}<div><div class="b" style="font-size:20px">${done}/${ms.length}</div><div class="xs faint b">MISIONES</div></div></div></div>
       </div>
-      ${Ops.pendingMinutas().map(m=>`<div class="alert info" style="margin-bottom:18px"><div class="ai">📥</div><div class="grow"><div class="at">Hay una minuta lista para cargar: ${esc(m.title)} (${esc(m.client||'Interna')})</div><div class="ad">${m.tasks.length} tareas con responsable y fecha.</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
+      ${Ops.pendingMinutas().map(m=>`<div class="alert info" style="margin-bottom:18px"><div class="ai">📥</div><div class="grow"><div class="at">Hay ${m.kind==='status'?'un status':'una minuta'} lista para cargar: ${esc(m.title)} (${esc(m.client||'Interna')})</div><div class="ad">${m.tasks.length} tareas${m.kind==='status'?' ordenadas por área':' con responsable y fecha'}.</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
       <div class="grid g3">
         <div class="span2 col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>🎯 Tu foco de hoy</h3><span class="grow"></span><a class="btn xs g" href="#/ops/tareas">Todas mis tareas</a></div>

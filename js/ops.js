@@ -45,14 +45,68 @@
     return { total:cs.length, pending:cs.filter(c=>!CAL_OK.includes(calRec(c.id,m)?.stage)).length };
   }
 
+  // ── Status para el cliente ───────────────────────────────────────────────────
+  // Íconos del status que se le manda al cliente (mismo formato que usa el equipo por WhatsApp)
+  const ST_ICON = { done:'✅', review:'👀', doing:'🔸', todo:'▫️' };
+  const ST_ORDER = ['review','doing','todo','done'];
+  const ST_LEGEND = '✅ cerrado · 👀 en revisión · 🔸 en curso · ▫️ pendiente';
+  // Lee un status escrito en ese formato: *ÁREA*, link del área, y líneas que arrancan con ✅ 👀 🔸 ▫️
+  function parseStatus(text){
+    const out = { date:'', areas:[] }; let cur = null;
+    const icons = [['✅','done'],['👀','review'],['🔸','doing'],['🔹','doing'],['▫️','todo'],['▫','todo'],['⬜','todo'],['◻️','todo']];
+    const URL = /(https?:\/\/\S+)/;
+    const area = name => { cur = out.areas.find(a=>a.name===name) || (out.areas.push({ name, link:'', note:'', items:[] }), out.areas[out.areas.length-1]); };
+    (text||'').split(/\r?\n/).forEach(raw=>{
+      const l = raw.trim(); if(!l) return;
+      const h = l.match(/^\*([^*]+)\*\s*(?:[—–-]\s*(.+))?$/);
+      if(h){ const name = h[1].trim(); if(/^EN QU[ÉE] ESTAMOS/i.test(name)){ out.date = (h[2]||'').trim(); return; } area(name.toUpperCase()); return; }
+      if(/cerrado.*revisi[oó]n.*curso/i.test(l)) return;
+      const ic = icons.find(([e])=>l.startsWith(e));
+      if(!cur) area('GENERAL');
+      if(ic){
+        let body = l.slice(ic[0].length).trim(), link = '';
+        const m = body.match(URL); if(m){ link = m[1]; body = body.replace(m[1],'').replace(/\s*[-–]\s*$/,'').replace(/\s[-–]\s+[-–]\s/,' - ').trim(); }
+        let i = body.search(/\s[-–]\s/), title = body, note = '';
+        if(i<0){ const c = body.search(/:\s/); if(c>0 && c<20) i = c; }
+        if(i>0){ title = body.slice(0,i).trim(); note = body.slice(i).replace(/^\s*[-–:]\s*/,'').trim(); }
+        cur.items.push({ status:ic[1], text:title, note, link });
+      } else if(URL.test(l) && l.replace(URL,'').trim().length<3){ if(!cur.link) cur.link = l.match(URL)[1]; }
+      else cur.note = (cur.note ? cur.note+' ' : '') + l;
+    });
+    return out;
+  }
+  // Arma el texto del status de un cliente a partir de sus tareas
+  function statusText(cid, { closedDays=30 }={}){
+    const c = client(cid); if(!c) return '';
+    const since = UI.addDays(UI.today(), -closedDays);
+    const ts = S('tasks').filter(t=>t.clientId===cid && (t.status!=='done' || (t.doneAt||'').slice(0,10)>=since));
+    // Área de la tarea; si no tiene, se usa su unidad de negocio (SOCIAL MEDIA, WEB…)
+    const areaOf = t => (t.area || (t.unit && App.unit(t.unit)?.label) || '').toUpperCase();
+    const order = [...new Set([...(c.areas||[]).map(a=>a.name), ...ts.map(areaOf).filter(Boolean), '' ])];
+    const d = new Date(), lines = [`*EN QUÉ ESTAMOS* — ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`, '', ST_LEGEND];
+    order.forEach(name=>{
+      const items = ts.filter(t=>areaOf(t)===name).sort((a,b)=>ST_ORDER.indexOf(a.status||'todo')-ST_ORDER.indexOf(b.status||'todo'));
+      if(!items.length) return;
+      const meta = (c.areas||[]).find(a=>a.name===name) || {};
+      lines.push('', `*${name||'OTROS'}*`);
+      if(meta.link) lines.push(meta.link);
+      items.forEach(t=>lines.push(`${ST_ICON[t.status||'todo']} ${t.title}${t.note?' - '+t.note:''}${t.link?' - '+t.link:''}`));
+      if(meta.note) lines.push(meta.note);
+    });
+    return lines.join('\n');
+  }
+
   // ── Minutas preparadas (js/minutas.js) ────────────────────────────────────────
   const norm = x => (x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  const statusToTasks = p => ({ areas:p.areas.map(a=>({ name:a.name, link:a.link, note:a.note })),
+    tasks:p.areas.flatMap(a=>a.items.map(it=>({ text:it.text, note:it.note, link:it.link, area:a.name, status:it.status }))) });
+  const minutaData = m => m.statusText ? { ...m, ...statusToTasks(parseStatus(m.statusText)), minuta:m.minuta||m.statusText } : m;
   function pendingMinutas(){
     (window.ANM_MINUTAS||[]).forEach(m=>{ if(Store.get('ops','meetings',m.id)) return;
       const ts = S('tasks').filter(t=>t.meetingId===m.id); if(!ts.length) return;
       Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:ts[0].clientId||'', type:m.type||'seguimiento', date:m.date, attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions:ts.map(t=>({ id:Store.uid(), text:t.title, taskId:t.id })), by:App.me().id });
     });
-    return (window.ANM_MINUTAS||[]).filter(m=>!Store.get('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)); }
+    return (window.ANM_MINUTAS||[]).filter(m=>!Store.get('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)).map(minutaData); }
   const memberByFirst = n => n && App.members().find(m=>norm(m.name.split(' ')[0])===norm(n));
   const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
 
@@ -204,7 +258,7 @@
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
           <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(c.link)}" target="_blank">Carpeta ↗</a>`:''}</div></div>
-        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button>
+        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button><button class="btn ok" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
           <div class="row"><button class="btn g sm" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Tarea</button><button class="btn g sm" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋ Reunión</button><button class="btn g sm" onclick="Ops.editClient('${id}')">✎</button></div></div>
       </div>
       ${deliverables}
@@ -213,7 +267,13 @@
           <div class="card"><div class="card-h"><h3>Estado actual</h3><span class="grow"></span><span class="sub">${ups[0]?UI.ago(ups[0].at):''}</span></div>
             <div class="prewrap">${esc(c.status||'Sin actualizaciones todavía.')}</div>
             ${c.nextStep?`<div class="alert info" style="margin:14px 0 0"><div class="ai">⏭️</div><div><div class="at">${esc(c.nextStep)}</div><div class="ad">${c.nextStepDate?UI.fdate(c.nextStepDate,{abs:true}):'Sin fecha'}</div></div></div>`:''}</div>
-          <div class="card"><div class="card-h"><h3>Tareas</h3><span class="sub">${tasks.filter(t=>t.status!=='done').length} abiertas</span><span class="grow"></span>${tasks.length?`<button class="btn xs g" onclick="Ops.selectHere()">☑ Seleccionar varias</button>`:''}</div>${taskList(tasks.slice(0,15), true)}</div>
+          <div class="card"><div class="card-h"><h3>Tareas</h3><span class="sub">${tasks.filter(t=>t.status!=='done').length} abiertas</span><span class="grow"></span><button class="btn xs g" onclick="Ops.pasteStatus('${id}')">⇣ Pegar status</button>${tasks.length?`<button class="btn xs g" onclick="Ops.selectHere()">☑ Seleccionar varias</button>`:''}</div>${(()=>{
+            const open = tasks.filter(t=>t.status!=='done'), done = tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,8);
+            const list = [...open, ...done];
+            if(!list.some(t=>t.area)) return taskList(list.slice(0,20), true);
+            const areas = [...new Set([...(c.areas||[]).map(a=>a.name), ...list.map(t=>t.area||'')])];
+            return areas.map(a=>{ const g = list.filter(t=>(t.area||'')===a); return g.length ? `<div class="xs faint b" style="letter-spacing:1px;margin:12px 0 2px">${esc(a||'OTROS')}</div>${taskList(g, true)}` : ''; }).join('');
+          })()}</div>
           <div class="card"><div class="card-h"><h3>Historial de seguimiento</h3></div>
             ${ups.length?`<div class="tl">${ups.slice(0,25).map(u=>`<div class="tl-i ${u.health||'ok'}"><div class="when">${UI.fdate(u.at.slice(0,10),{abs:true})} · ${esc(App.member(u.by)?.name||'')}</div><div class="small prewrap">${esc(u.text)}</div>${u.nextStep?`<div class="xs muted">→ ${esc(u.nextStep)}</div>`:''}</div>`).join('')}</div>`:'<div class="empty">Sin historial</div>'}</div>
         </div>
@@ -237,7 +297,8 @@
     const m = App.member(t.assigneeId);
     return `<div class="li"><input type="checkbox" ${t.status==='done'?'checked':''} onchange="Ops.toggleTask('${t.id}')" style="width:18px;height:18px;cursor:pointer">
       <div class="grow" style="cursor:pointer" onclick="Ops.editTask('${t.id}')"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
-      <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}</div></div>
+      <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
+      ${t.link?`<a href="${esc(t.link)}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
       ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}</div>`;
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
@@ -396,7 +457,7 @@
     const html = `<div class="toolbar"><div class="search grow"><input class="inp" placeholder="Buscar en reuniones y minutas…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
         <button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
-        ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">Minuta para cargar: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
+        ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">${m.kind==='status'?'Status para cargar':'Minuta para cargar'}: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
         ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta suma +${Game.XP.minuta} XP y convierte los acuerdos en tareas.</div></div></div>`:''}
         <div class="card"><div class="card-h"><h3>Próximas</h3><span class="sub">${up.length}</span></div>${up.length?`<div class="list">${up.map(meetRow).join('')}</div>`:'<div class="empty small">No hay reuniones agendadas</div>'}</div>
         <div class="card"><div class="card-h"><h3>Pasadas</h3><span class="sub">${past.length}</span></div>${past.length?`<div class="list">${past.slice(0,40).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones registradas</div>'}</div>
@@ -534,10 +595,13 @@
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts(), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
         { k:'assigneeId', label:'Responsable', type:'select', options:App.assignOpts(), half:true, hint:App.isAdmin()?'':'Solo los socios pueden asignar a otras personas.' }, { k:'due', label:'Vence', type:'date', half:true },
         { k:'status', label:'Estado', type:'select', options:TASK_ST, half:true }, { k:'priority', label:'Prioridad', type:'select', options:PRIO, half:true },
-        { k:'desc', label:'Detalle', type:'textarea', rows:3 },
+        { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
+        { k:'note', label:'Nota para el cliente', placeholder:'Ej: falta OK final para empezar a salir' },
+        { k:'desc', label:'Detalle interno', type:'textarea', rows:3 },
       ], danger: id ? { label:'Eliminar', confirm:'¿Eliminar la tarea?', fn:()=>{ Store.remove('ops','tasks',id); App.render(); } } : null,
       onSubmit:v=>{
         const prevStatus = t.status;
+        v.area = (v.area||'').trim().toUpperCase();
         const r = Store.upsert('ops','tasks',{ ...t, ...v, status:prevStatus });
         if(v.status!==prevStatus || !id) setTaskStatus(r.id, v.status);
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
@@ -626,6 +690,32 @@
     },
 
     // Vista de minuta: texto arriba, tareas bajadas abajo (asignables) y botón para mandar alertas
+    // Status para el cliente: texto listo para WhatsApp/email con ✅ 👀 🔸 ▫️ por área
+    clientStatus(cid){
+      const c = client(cid); if(!c) return;
+      const box = UI.modal(`<h2>📋 Status para ${esc(c.name)}<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="row wrap small muted" style="margin-bottom:10px;gap:8px">Incluir lo cerrado de los últimos <select class="inp sm" id="cs-days">${[[7,'7 días'],[15,'15 días'],[30,'30 días'],[90,'90 días']].map(([v,l])=>`<option value="${v}" ${v===30?'selected':''}>${l}</option>`).join('')}</select>
+          ${c.lastStatusAt?`<span>· último enviado ${UI.ago(c.lastStatusAt)}</span>`:''}</div>
+        <textarea class="inp" id="cs-text" rows="18" style="font-family:inherit;line-height:1.55"></textarea>
+        <p class="xs faint" style="margin-top:6px">Sale de las tareas del cliente: el ícono es su estado (Hecho ✅, En revisión 👀, En curso 🔸, Por hacer ▫️) y se agrupan por <b>Área</b>. Podés editar el texto antes de mandarlo.</p>
+        <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="UI.close();Ops.pasteStatus('${cid}')">⇣ Pegar status existente</button>
+          <button class="btn g" id="cs-copy">📋 Copiar</button><button class="btn g" id="cs-mail">✉️ Email</button><button class="btn p" id="cs-wa">💬 WhatsApp</button></div>`, true);
+      const ta = box.querySelector('#cs-text'), load = ()=>{ ta.value = statusText(cid, { closedDays:+box.querySelector('#cs-days').value }); };
+      box.querySelector('#cs-days').onchange = load; load();
+      const sent = ()=>{ Store.upsert('ops','clients',{ id:cid, lastStatusAt:new Date().toISOString() }); Store.upsert('ops','updates',{ clientId:cid, at:new Date().toISOString(), by:App.me().id, health:c.health||'ok', text:'📋 Se envió status al cliente.' }); };
+      box.querySelector('#cs-copy').onclick = ()=>{ UI.copy(ta.value); sent(); };
+      box.querySelector('#cs-wa').onclick = ()=>{ window.open(UI.waLink(ta.value, c.contactPhone||''), '_blank'); sent(); };
+      box.querySelector('#cs-mail').onclick = ()=>{ location.href = UI.mailLink(c.contactEmail||'', `${c.name} · En qué estamos`, ta.value.replace(/\*/g,'')); sent(); };
+    },
+    // Pegar un status escrito (✅ 👀 🔸 ▫️) y convertirlo en tareas del cliente
+    pasteStatus(cid){
+      const c = client(cid);
+      UI.form({ title:`⇣ Pegar status · ${c?.name||''}`, submit:'Revisar', wide:true, fields:[
+        { k:'txt', label:'Status (formato *ÁREA* y líneas con ✅ 👀 🔸 ▫️)', type:'textarea', rows:16, req:true, placeholder:'*CONTENIDO*\n👀 Aprobación de calendario - https://canva…\n▫️ Pendiente…' },
+      ], onSubmit:v=>{ const p = parseStatus(v.txt); if(!p.areas.some(a=>a.items.length)){ UI.toast('No encontré líneas con ✅ 👀 🔸 ▫️','🔍'); return false; }
+        setTimeout(()=>Ops.openImport({ id:'st-'+Store.uid(), kind:'status', client:c?.name, clientId:cid, title:`Status ${c?.name||''}`, date:UI.today()+'T12:00', minuta:v.txt, ...statusToTasks(p) }), 50); } });
+    },
+
     viewMeeting(id){
       const m = Store.get('ops','meetings',id); if(!m) return;
       const tasks = S('tasks').filter(t=>t.meetingId===id).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9'));
@@ -645,6 +735,7 @@
             <input class="inp sm" type="date" value="${t.due||''}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{due:this.value})"><button class="icon-btn" title="Eliminar tarea" onclick="if(confirm('¿Eliminar esta tarea?')){Store.remove('ops','tasks','${t.id}');Ops.viewMeeting('${id}')}">🗑</button></div>`).join('')}</div>`:'<div class="small faint">Todavía no hay tareas de esta reunión.</div>'}
           ${loose.length?`<div class="xs faint b" style="margin:12px 0 6px">ACUERDOS SIN TAREA</div>${loose.map(a=>`<div class="li"><div class="grow small">${esc(a.text)}</div><button class="btn xs g" onclick="Ops.actionToTask('${id}','${a.id}',true);Ops.viewMeeting('${id}')">→ Tarea</button></div>`).join('')}`:''}</div>
         <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="Ops.copyMeeting('${id}')">📋 Copiar resumen (WhatsApp)</button><button class="btn g" onclick="UI.close();Ops.editMeeting('${id}')">✎ Editar</button>
+          ${m.clientId?`<button class="btn ok" onclick="UI.close();Ops.clientStatus('${m.clientId}')">📋 Status para el cliente</button>`:''}
           <button class="btn p" onclick="Ops.alertMeeting('${id}')">📣 Mandar alertas de tareas asignadas${pending?` (${pending})`:''}</button></div>`, true);
     },
     assignFromMeeting(tid, mid, patch){
@@ -714,22 +805,32 @@
 
     // Carga una minuta preparada: reunión + tareas (con responsable y fecha) + piezas de calendario
     importMinuta(id){
-      const m = (window.ANM_MINUTAS||[]).find(x=>x.id===id); if(!m) return;
-      const cl = clientByName(m.client);
+      const m = (window.ANM_MINUTAS||[]).find(x=>x.id===id); if(m) Ops.openImport(minutaData(m));
+    },
+    // Modal de revisión: sirve para minutas y para status pegados (✅ 👀 🔸 ▫️)
+    openImport(m){
+      const id = m.id, isStatus = m.kind==='status';
+      const cl = (m.clientId && client(m.clientId)) || clientByName(m.client);
       const members = App.members();
       const taskRow = (t={}, i) => { const as = memberByFirst(t.who)?.id || t.assigneeId || '';
         return `<div class="li im-row" style="flex-wrap:wrap;gap:8px"><input type="checkbox" checked class="im-on" style="width:18px;height:18px">
           <input class="inp sm im-text grow" style="min-width:240px" value="${esc(t.text||'')}" placeholder="Qué hay que hacer">
           <select class="inp sm im-who"><option value="">— Sin asignar —</option>${members.map(x=>`<option value="${x.id}" ${x.id===as?'selected':''}>${esc(x.name)}</option>`).join('')}</select>
           <input class="inp sm im-due" type="date" value="${esc(t.due||'')}"><input type="hidden" class="im-unit" value="${esc(t.unit||'')}">
+          <select class="inp sm im-st">${TASK_ST.map(([k,v])=>`<option value="${k}" ${(t.status||'todo')===k?'selected':''}>${ST_ICON[k]} ${esc(v)}</option>`).join('')}</select>
+          <input class="inp sm im-area" style="width:150px" value="${esc(t.area||'')}" placeholder="Área" list="im-areas">
+          <input class="inp sm im-note grow" style="min-width:160px" value="${esc(t.note||'')}" placeholder="Nota para el cliente">
+          <input class="inp sm im-link" style="width:170px" value="${esc(t.link||'')}" placeholder="Link">
           <button type="button" class="icon-btn" title="Quitar" onclick="this.closest('.im-row').remove()">✕</button></div>`; };
-      const box = UI.modal(`<h2>📥 Revisar minuta<button class="icon-btn x" data-close>✕</button></h2>
+      const areaNames = [...new Set([...(cl?.areas||[]).map(a=>a.name), ...(m.areas||[]).map(a=>a.name), ...(m.tasks||[]).map(t=>t.area).filter(Boolean)])];
+      const box = UI.modal(`<h2>📥 ${isStatus?'Revisar status':'Revisar minuta'}<button class="icon-btn x" data-close>✕</button></h2>
         <div class="fld"><label>Título</label><input class="inp" id="im-title" value="${esc(m.title)}"></div>
         <div class="frow"><div class="fld"><label>Cliente</label><select class="inp" id="im-client"><option value="">— Interna —</option>${activeClients().map(c=>`<option value="${c.id}" ${cl?.id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}${!cl&&m.client?`<option value="__new" selected>＋ Crear “${esc(m.client)}”</option>`:''}</select></div>
           <div class="fld"><label>Fecha</label><input class="inp" id="im-date" type="datetime-local" value="${esc(m.date)}"></div></div>
-        <div class="fld"><label>📝 Minuta</label><textarea class="inp" id="im-minuta" rows="10" style="line-height:1.6">${esc(m.minuta||'')}</textarea></div>
-        <div class="fld"><label>✔ Decisiones</label><textarea class="inp" id="im-dec" rows="3">${esc(m.decisiones||'')}</textarea></div>
-        <div class="xs faint b" style="letter-spacing:1px;margin:6px 0">✅ TAREAS BAJADAS — editá el texto, a quién se asigna y la fecha (destildá o ✕ las que no van)</div>
+        <datalist id="im-areas">${areaNames.map(a=>`<option value="${esc(a)}">`).join('')}</datalist>
+        <div class="fld"><label>📝 ${isStatus?'Status original':'Minuta'}</label><textarea class="inp" id="im-minuta" rows="10" style="line-height:1.6">${esc(m.minuta||'')}</textarea></div>
+        ${isStatus?'':`<div class="fld"><label>✔ Decisiones</label><textarea class="inp" id="im-dec" rows="3">${esc(m.decisiones||'')}</textarea></div>`}
+        <div class="xs faint b" style="letter-spacing:1px;margin:6px 0">✅ TAREAS — editá texto, responsable, fecha, estado, área, nota y link (destildá o ✕ las que no van)${isStatus?' · si ya existe una tarea con el mismo nombre, se actualiza':''}</div>
         <div class="list" id="im-tasks">${m.tasks.map(taskRow).join('')}</div>
         <button type="button" class="btn g sm" style="margin:8px 0 14px" id="im-add">＋ Agregar tarea</button>
         ${(m.content||[]).length?`<div class="small muted" style="margin-bottom:6px">🗓️ También se agregan al calendario: ${m.content.map(c=>`${esc(c.title)} (${UI.fdate(c.date,{abs:true})})`).join(' · ')}</div>`:''}
@@ -739,21 +840,32 @@
       box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(); App.render(); } };
       const go = withAlerts => { try {
         let cid = box.querySelector('#im-client').value;
-        const rows = [...box.querySelectorAll('.im-row')].filter(r=>r.querySelector('.im-on').checked).map(r=>({ text:r.querySelector('.im-text').value.trim(), assigneeId:r.querySelector('.im-who').value, due:r.querySelector('.im-due').value, unit:r.querySelector('.im-unit').value })).filter(r=>r.text);
+        const val = (r,c) => r.querySelector(c).value.trim();
+        const rows = [...box.querySelectorAll('.im-row')].filter(r=>r.querySelector('.im-on').checked).map(r=>({ text:val(r,'.im-text'), assigneeId:val(r,'.im-who'), due:val(r,'.im-due'), unit:val(r,'.im-unit'), status:val(r,'.im-st')||'todo', area:val(r,'.im-area').toUpperCase(), note:val(r,'.im-note'), link:val(r,'.im-link') })).filter(r=>r.text);
         if(cid==='__new') cid = Store.upsert('ops','clients',{ name:m.client, units:[...new Set(m.tasks.map(t=>t.unit).filter(Boolean))].slice(0,3), health:'ok', active:true, ownerId:App.me().id }).id;
+        // Áreas del cliente (orden, link de Canva y nota de cada sección del status)
+        if(cid && (m.areas||rows.some(r=>r.area))){ const cur = [...(client(cid)?.areas||[])];
+          [...(m.areas||[]), ...rows.filter(r=>r.area).map(r=>({ name:r.area }))].forEach(a=>{ const ex = cur.find(x=>x.name===a.name); if(ex){ if(a.link) ex.link = a.link; if(a.note) ex.note = a.note; } else cur.push({ name:a.name, link:a.link||'', note:a.note||'' }); });
+          Store.upsert('ops','clients',{ id:cid, areas:cur }); }
         const title = box.querySelector('#im-title').value.trim() || m.title;
         const attendees = (m.attendees||[]).map(memberByFirst).filter(Boolean).map(x=>x.id);
         // Primero se guarda la reunión (así la minuta queda aunque algo falle después)
         const meeting = { id:m.id, title, clientId:cid, type:m.type||'seguimiento', date:box.querySelector('#im-date').value || m.date, attendees:attendees.length?attendees:[App.me().id], topics:m.topics||[],
-          minuta:box.querySelector('#im-minuta').value, decisiones:box.querySelector('#im-dec').value, actions:[], by:App.me().id };
+          minuta:box.querySelector('#im-minuta').value, decisiones:box.querySelector('#im-dec')?.value||'', actions:[], by:App.me().id };
+        if(isStatus) meeting.type = 'status';
         Store.upsert('ops','meetings', meeting);
-        const actions = rows.map(r=>{ const tk = Store.upsert('ops','tasks',{ title:r.text, clientId:cid, unit:r.unit||'', assigneeId:r.assigneeId, due:r.due, status:'todo', priority:'media', meetingId:m.id, desc:`De la reunión: ${title}` });
+        const now = new Date().toISOString();
+        const actions = rows.map(r=>{ const ex = isStatus && S('tasks').find(t=>t.clientId===cid && norm(t.title)===norm(r.text));
+          const base = ex ? { ...ex } : { title:r.text, clientId:cid, priority:'media', meetingId:m.id, desc:isStatus?`Del status: ${title}`:`De la reunión: ${title}` };
+          const tk = Store.upsert('ops','tasks',{ ...base, unit:r.unit||base.unit||'', assigneeId:r.assigneeId||base.assigneeId||'', due:r.due||base.due||'', status:r.status, area:r.area, note:r.note, link:r.link,
+            doneAt: r.status==='done' ? (base.doneAt||now) : '' });
           return { id:Store.uid(), text:r.text, taskId:tk.id }; });
         Store.upsert('ops','meetings',{ id:m.id, actions });
         (m.content||[]).forEach(c=>Store.upsert('ops','content',{ title:c.title, clientId:cid, date:c.date, format:c.format||'post', unit:c.unit||'', status:'idea', assigneeId:App.me().id }));
         Store.syncNow();
         Game.log('minuta', `Minuta cargada: ${title}`, { icon:'📝', silent:true });
-        UI.close(); UI.toast(`Minuta cargada con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
+        UI.close(); UI.toast(`${isStatus?'Status':'Minuta'} cargado con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
+        if(isStatus && cid){ App.go('#/ops/cliente/'+cid); if(withAlerts) setTimeout(()=>Ops.alertMeeting(m.id), 80); return; }
         App.go('#/ops/reuniones');
         if(withAlerts) setTimeout(()=>Ops.alertMeeting(m.id), 80); else setTimeout(()=>Ops.viewMeeting(m.id), 80);
       } catch(e){ console.error(e); window.alert('No se pudo cargar la minuta: '+(e.message||e)+'\n\nMandale una captura de este mensaje a Claude.'); } };
