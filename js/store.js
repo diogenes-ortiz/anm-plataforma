@@ -131,6 +131,8 @@
     // Lectura: registros vivos de una colección
     all(doc, col){ return (docs[doc]?.[col]||[]).filter(r=>!r.deleted); },
     get(doc, col, id){ return (docs[doc]?.[col]||[]).find(r=>r.id===id && !r.deleted); },
+    // ¿Existió alguna vez? (incluye los borrados)
+    exists(doc, col, id){ return (docs[doc]?.[col]||[]).some(r=>r.id===id); },
 
     upsert(doc, col, rec){
       if(!docs[doc]) docs[doc] = {};

@@ -58,6 +58,11 @@
     },
 
     render(){
+      // Lo que se guarde mientras se dibuja no vuelve a disparar otro dibujo (evita bucles que traban los clics)
+      rendering = true;
+      try { this._render(); } finally { rendering = false; }
+    },
+    _render(){
       const me = this.me();
       if(joinPending){ if(App.member(joinPending)?.passHash) joinPending = null; else { renderGate(joinPending, true); return; } }
       if(!me){ renderGate(); return; }
@@ -287,7 +292,7 @@
   if(/[?&]reparar=1/.test(location.search)){ try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem('anm_doc_'+d)); }catch(e){} history.replaceState(null,'',location.pathname); }
 
   // ── Versión: si se publicó algo nuevo, recargar (una vez) o avisar ────────────
-  let userActed = false;
+  let userActed = false, rendering = false;
   ['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ userActed = true; }, { once:true, capture:true }));
   async function checkVersion(onLoad){
     try{
@@ -312,7 +317,7 @@
     // Navegación y re-render listos ANTES de sincronizar (así los clics funcionan desde el primer segundo)
     window.addEventListener('hashchange', ()=>{ UI.close(); App.render(); window.scrollTo(0,0); });
     let pending = false;
-    Store.on(ev=>{ if(ev.type!=='change') return; if(pending) return; pending = true;
+    Store.on(ev=>{ if(ev.type!=='change' || rendering) return; if(pending) return; pending = true;
       requestAnimationFrame(()=>{ pending = false; if(!$('#modal').classList.contains('open') && !document.activeElement?.matches('input,textarea,select')) App.render(); }); });
     // Mostrar enseguida lo guardado en este navegador y sincronizar por detrás
     const ready = Store.init();

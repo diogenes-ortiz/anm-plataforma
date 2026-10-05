@@ -102,11 +102,12 @@
     tasks:p.areas.flatMap(a=>a.items.map(it=>({ text:it.text, note:it.note, link:it.link, area:a.name, status:it.status }))) });
   const minutaData = m => m.statusText ? { ...m, ...statusToTasks(parseStatus(m.statusText)), minuta:m.minuta||m.statusText } : m;
   function pendingMinutas(){
-    (window.ANM_MINUTAS||[]).forEach(m=>{ if(Store.get('ops','meetings',m.id)) return;
+    // Si la reunión se cargó y después se borró a propósito, no se recrea ni se vuelve a ofrecer
+    (window.ANM_MINUTAS||[]).forEach(m=>{ if(Store.exists('ops','meetings',m.id)) return;
       const ts = S('tasks').filter(t=>t.meetingId===m.id); if(!ts.length) return;
       Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:ts[0].clientId||'', type:m.type||'seguimiento', date:m.date, attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions:ts.map(t=>({ id:Store.uid(), text:t.title, taskId:t.id })), by:App.me().id });
     });
-    return (window.ANM_MINUTAS||[]).filter(m=>!Store.get('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)).map(minutaData); }
+    return (window.ANM_MINUTAS||[]).filter(m=>!Store.exists('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)).map(minutaData); }
   const memberByFirst = n => n && App.members().find(m=>norm(m.name.split(' ')[0])===norm(n));
   const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
 

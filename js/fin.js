@@ -183,10 +183,10 @@
     const tot2 = (l, a, b, color, big) => `<tr style="border-top:2px solid var(--border)${big?';font-size:15px':''}"><td class="b"${color?` style="color:${color}"`:''}>${l}</td><td></td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(a)}</td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(b)}</td></tr>`;
     const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`;
     return `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>🧮 La cuenta del mes</h3><span class="sub">${ymLabel(M.ym)}</span><span class="grow"></span>
-        <button class="btn g sm" onclick="Fin.copyCuenta()">📋 Copiar</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
+        <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn g sm" onclick="Fin.copyCuenta()">📋 Copiar</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
-        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)}</div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin clientes este mes</td></tr>'}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
         ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)}</td><td></td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
         ${tot2('Total sueldos y gastos', -K.gas, -K.gas, 'var(--red)')}
@@ -200,6 +200,7 @@
       ${tot.debe>tot.entro?`<p class="xs faint" style="margin-top:10px">Falta cobrar ${fmt(tot.debe-tot.entro)}. “Con lo cobrado” es lo que se puede repartir hoy; “Si cobramos todo”, lo que queda cuando paguen todos. Tocá ✓/✗ para marcar quién pagó.</p>`:''}
     </div>`;
   }
+  const M_has = (cid, ym) => month(ym).cli.some(x=>String(x.id)===String(cid));
   function cuentaTexto(M){
     const { ing, R, tot, A, B } = cuentaDe(M), L = [`*Cuenta ${ymLabel(M.ym)}*`, '', '*Ingresos*'];
     ing.forEach(x=>L.push(`${x.cob==='si'?'✅':x.cob==='parcial'?'🟡':'❌'} ${x.nombre}: ${fmt(x.monto)}${x.cob!=='si'?` (entró ${fmt(x.entro)})`:''}`));
@@ -394,6 +395,65 @@
         const p = S.proyectos.find(y=>String(y.id)===String(id)); if(p){ if(paid==null) paid = p.estado!=='cobrado'; p.estado = paid ? 'cobrado' : 'pendiente'; }
       }
       save(); render();
+    },
+    // ── Cargar ingresos del mes que se está viendo (fijos = clientes mensuales; puntuales = proyectos) ──
+    addFijo2(){
+      const ym = cursor, act = S.clientes.filter(c=>!M_has(c.id, ym)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+      UI.form({ title:`＋ Ingreso fijo · ${ymLabel(ym)}`, submit:'Agregar', fields:[
+        { k:'cid', label:'Cliente', type:'select', options:[['__new','＋ Cliente nuevo'], ...act.map(c=>[String(c.id), c.nombre+(c.estado==='inactivo'?' (inactivo)':'')])] },
+        { k:'nombre', label:'Nombre (si es nuevo)', placeholder:'Nombre del cliente' },
+        { k:'tipo', label:'Servicio', type:'select', options:Object.entries(TIPO), half:true }, { k:'monto', label:'Monto mensual', type:'number', req:true, half:true },
+        { k:'cobrado', label:`¿Pagó ${ymLabel(ym)}?`, type:'select', options:[['no','Todavía no'],['si','✓ Sí, pagó']] },
+        { k:'h', type:'html', html:'<p class="xs faint">Queda como ingreso fijo desde este mes en adelante (se repite todos los meses hasta que lo des de baja).</p>' },
+      ], onSubmit:v=>{
+        let c = v.cid!=='__new' && S.clientes.find(x=>String(x.id)===v.cid);
+        if(!c && !(v.nombre||'').trim()){ UI.toast('Poné el nombre del cliente','👆'); return false; }
+        const monto = +v.monto||0;
+        if(!c){ c = { id:Date.now(), nombre:v.nombre.trim(), tipo:v.tipo, retainer:monto, moneda:'ARS', estado:'activo', inicioServicio:ym, retainerHistory:[], empleadoIds:[], presupuesto:null }; S.clientes.push(c); }
+        c.estado = 'activo'; c.tipo = v.tipo || c.tipo; if(c.finServicio && c.finServicio<ym) c.finServicio = '';
+        if(!c.inicioServicio || c.inicioServicio>ym) c.inicioServicio = ym;
+        c.retainerHistory = (c.retainerHistory||[]).filter(h=>h.desde!==ym); c.retainerHistory.push({ monto, desde:ym, nota:'Cargado en Actualidad' }); c.retainer = monto; c.presupuesto = null;
+        const { m, a } = parts(ym), pk = `cp-${c.id}-${m}-${a}`, key = `c-${c.id}-${m}-${a}`;
+        S.clientesPausados = S.clientesPausados.filter(k=>k!==pk);
+        S.cobros = S.cobros.filter(k=>k.key!==key); if(v.cobrado==='si') S.cobros.push({ key });
+        const cl = closed(ym); if(cl){ cl.clientes = cl.clientes.filter(x=>String(x.id)!==String(c.id)); cl.clientes.push({ id:c.id, nombre:c.nombre, tipo:c.tipo, moneda:c.moneda, estuvo:true, monto, base:monto, cobrado:v.cobrado, pendiente:v.cobrado==='si'?0:monto }); }
+        save(); render(); UI.toast(`${c.nombre}: ${fmt(monto)} por mes`,'💰'); } });
+    },
+    addPuntual(){
+      const ym = cursor, today = UI.today(), def = today.slice(0,7)===ym ? today : ym+'-15';
+      UI.form({ title:`＋ Proyecto / ingreso puntual · ${ymLabel(ym)}`, submit:'Agregar', fields:[
+        { k:'cliente', label:'Cliente', req:true, half:true, placeholder:'Nombre del cliente' }, { k:'nombre', label:'Proyecto', req:true, half:true, placeholder:'Web, branding, pago 1 de 2…' },
+        { k:'monto', label:'Monto', type:'number', req:true, half:true }, { k:'fecha', label:'Fecha', type:'date', default:def, half:true },
+        { k:'costo', label:'Costo (freelance), si hubo', type:'number', half:true }, { k:'cobrado', label:'¿Pagó?', type:'select', options:[['no','Todavía no'],['si','✓ Sí, pagó']], half:true },
+      ], onSubmit:v=>{
+        const fecha = v.fecha || def, monto = +v.monto||0, id = Date.now();
+        S.proyectos.push({ id, nombre:v.nombre, cliente:v.cliente, monto, fecha, estado:v.cobrado==='si'?'cobrado':'pendiente', etapa:'', empCosto:+v.costo||0 });
+        const cl = closed(fecha.slice(0,7)); if(cl){ cl.proyectos = cl.proyectos||[]; cl.proyectos.push({ id, nombre:v.nombre, cliente:v.cliente, monto, costo:+v.costo||0, cobrado:v.cobrado, pendiente:v.cobrado==='si'?0:monto }); }
+        if(fecha.slice(0,7)!==ym) cursor = fecha.slice(0,7);
+        save(); render(); UI.toast(`${v.cliente}: ${fmt(monto)}`,'💰'); } });
+    },
+    editIngreso(kind, id){
+      const ym = cursor, cl = closed(ym), sid = x => String(x.id)===String(id);
+      if(kind==='c'){
+        const c = S.clientes.find(sid), snap = cl && cl.clientes.find(sid), cur = snap ? +snap.monto : (c ? retainerAt(c, ym)+extrasOf(c.id, ym) : 0);
+        UI.form({ title:`✎ ${c?.nombre||snap?.nombre||'Cliente'} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
+          { k:'monto', label:'Monto mensual', type:'number', default:cur, req:true },
+          { k:'h', type:'html', html:'<p class="xs faint">El cambio vale desde este mes en adelante.</p>' },
+        ], danger: c && !cl ? { label:'Dar de baja desde este mes', confirm:`¿${c.nombre} deja de ser cliente desde ${ymLabel(ym)}?`, fn:()=>{ c.finServicio = ymAdd(ym,-1); c.estado = 'inactivo'; save(); render(); } } : null,
+        onSubmit:v=>{ const monto = +v.monto||0;
+          if(c){ c.retainerHistory = (c.retainerHistory||[{ monto:c.retainer||0, desde:c.inicioServicio||ym, nota:'Inicial' }]).filter(h=>h.desde!==ym); c.retainerHistory.push({ monto, desde:ym, nota:'Editado en Actualidad' }); c.retainer = monto; c.presupuesto = null; }
+          if(snap){ snap.monto = monto; snap.pendiente = snap.cobrado==='si' ? 0 : snap.cobrado==='parcial' ? Math.min(+snap.pendiente||0, monto) : monto; }
+          save(); render(); } });
+      } else {
+        const p = S.proyectos.find(sid), snap = cl && (cl.proyectos||[]).find(sid), src = snap || p; if(!src) return;
+        UI.form({ title:`✎ ${src.cliente} · ${src.nombre}`, submit:'Guardar', fields:[
+          { k:'monto', label:'Monto', type:'number', default:src.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:snap ? snap.costo : p.empCosto, half:true },
+        ], danger:{ label:'Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); if(cl) cl.proyectos = (cl.proyectos||[]).filter(x=>!sid(x)); save(); render(); } },
+        onSubmit:v=>{ const monto = +v.monto||0;
+          if(p){ p.monto = monto; p.empCosto = +v.costo||0; }
+          if(snap){ snap.monto = monto; snap.costo = +v.costo||0; snap.pendiente = snap.cobrado==='si' ? 0 : monto; }
+          save(); render(); } });
+      }
     },
     copyCuenta(){ UI.copy(cuentaTexto(month(cursor))); },
     editReparto(){
