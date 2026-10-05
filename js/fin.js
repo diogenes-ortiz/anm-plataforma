@@ -15,6 +15,7 @@
   let status = 'local', saveTimer = null, tab = 'actualidad', cursor = UI.ym(), charts = {};
 
   // ── Formato y fechas ────────────────────────────────────────────────────────
+  const fmtBase = (n, cur) => fmt(n, cur);
   const fmt = (n, cur) => (cur==='USD'?'U$S ':cur==='EUR'?'€':'$') + Math.round(n||0).toLocaleString('es-AR');
   const ymAdd = (ym, n) => { const [y,m] = ym.split('-').map(Number); return UI.ym(new Date(y, m-1+n, 1)); };
   const ymLabel = (ym, short) => { const [y,m] = ym.split('-'); return short ? MONTHS[+m-1].slice(0,3)+' '+y.slice(2) : MONTHS[+m-1]+' '+y; };
@@ -26,7 +27,8 @@
     el.textContent = { local:'💾 Local', syncing:'⏳ Guardando', synced:'● En línea', error:'⚠️ Sin conexión' }[s];
     el.style.color = { synced:'var(--green)', error:'var(--red)', syncing:'var(--yellow)' }[s]||''; }
   function ensure(){ ['clientes','proyectos','empleados','gastos','cobros','extras','clientesPausados','skips'].forEach(k=>{ if(!Array.isArray(S[k])) S[k] = []; });
-    if(!S.cierres || typeof S.cierres!=='object') S.cierres = {}; if(!S.metas) S.metas = { facturacion:0 }; }
+    if(!S.cierres || typeof S.cierres!=='object') S.cierres = {}; if(!S.metas) S.metas = { facturacion:0 };
+    if(!S.mes || typeof S.mes!=='object') S.mes = {}; }
   async function load(){
     try{ const l = localStorage.getItem(LS_KEY); if(l) S = { ...S, ...JSON.parse(l) }; }catch(e){}
     ensure(); setStatus('syncing');
@@ -37,6 +39,7 @@
       const rows = await r.json();
       if(rows[0]?.data && Object.keys(rows[0].data).length){ S = { ...S, ...rows[0].data }; ensure(); }
       setStatus('synced');
+      if(migrate()) save();
     }catch(e){ setStatus('error'); }
     try{ localStorage.setItem(LS_KEY, JSON.stringify(S)); }catch(e){}
   }
@@ -78,27 +81,80 @@
     const { m, a } = parts(ym); return !S.skips.includes(`skip-${e.id}-${m}-${a}`);
   };
   const gastoMensual = g => g.frecuencia==='mensual' ? (+g.monto||0) : g.frecuencia==='anual' ? (+g.monto||0)/12 : 0;
-  const closed = ym => { const c = S.cierres[ym]; return c?.closedAt && Array.isArray(c.clientes) ? c : null; };
+  const closed = ym => S.cierres[ym]?.closedAt ? S.cierres[ym] : null;
 
-  // Resultado de un mes: si está cerrado se usa lo que respondieron; si no, se estima
+  // ── Un mes = la base (clientes, equipo, gastos, proyectos) + los ajustes de ese mes ──
+  // Actualidad y el Cierre del mes leen y escriben exactamente lo mismo.
+  // S.mes[ym] = { cli:{id:{monto,pendiente,in}}, eq:{id:{monto,in}}, fj:{id:{monto,off}}, pro:{id:{off}} }
+  const ovGet = (ym, g, id) => S.mes?.[ym]?.[g]?.[String(id)] || {};
+  function ovSet(ym, g, id, patch){
+    S.mes[ym] = S.mes[ym] || {}; const grp = S.mes[ym][g] = S.mes[ym][g] || {};
+    const cur = { ...(grp[String(id)]||{}), ...patch }; Object.keys(cur).forEach(k=>{ if(cur[k]==null) delete cur[k]; });
+    if(Object.keys(cur).length) grp[String(id)] = cur; else delete grp[String(id)];
+  }
+  const ckey = (pre, id, ym) => { const { m, a } = parts(ym); return `${pre}-${id}-${m}-${a}`; };
+  const setPaused = (id, ym, on) => { const k = ckey('cp', id, ym); S.clientesPausados = S.clientesPausados.filter(x=>x!==k); if(on) S.clientesPausados.push(k); };
+  const setCobro = (id, ym, on) => { const k = ckey('c', id, ym); S.cobros = S.cobros.filter(x=>x.key!==k); if(on) S.cobros.push({ key:k }); };
+  const setSkip = (id, ym, on) => { const k = ckey('skip', id, ym); S.skips = S.skips.filter(x=>x!==k); if(on) S.skips.push(k); };
+  const enRango = (ini, fin, ym) => (!ini || ini<=ym) && (!fin || fin>=ym);
+  const clearIn = (ym, g, id) => Object.keys(S.mes).filter(k=>k>=ym).forEach(k=>ovSet(k, g, id, { in:null }));
+
+  const cliCands = ym => S.clientes.filter(x=>(!(x.estado==='inactivo' && !x.finServicio) && enRango(x.inicioServicio, x.finServicio, ym)) || ovGet(ym,'cli',x.id).in);
+  function cliRow(x, ym){
+    const o = ovGet(ym,'cli',x.id), base = retainerAt(x, ym)+extrasOf(x.id, ym), monto = o.monto ?? base, cob = isCobrado(x.id, ym);
+    const pendiente = cob ? 0 : o.pendiente!=null ? Math.min(+o.pendiente||0, monto) : monto;
+    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente };
+  }
+  const proRows = ym => projectsOf(ym).filter(p=>!ovGet(ym,'pro',p.id).off).map(p=>{ const m = +p.monto||0, cob = p.estado==='cobrado', par = !cob && p.pendienteParcial!=null;
+    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m }; });
+  const eqCands = ym => S.empleados.filter(e=>!isSocio(e) && ((!(e.estado==='inactivo' && !e.finLaboral) && enRango(e.inicioLaboral, e.finLaboral, ym)) || ovGet(ym,'eq',e.id).in));
+  const eqRow = (e, ym) => { const base = sueldoAt(e, ym), o = ovGet(ym,'eq',e.id); return { id:e.id, nombre:e.nombre, base, monto:o.monto ?? base, incluir:!S.skips.includes(ckey('skip', e.id, ym)) }; };
+  const fjRows = ym => S.gastos.filter(g=>gastoMensual(g) && enRango(g.desde, g.hasta, ym)).map(g=>{ const base = Math.round(gastoMensual(g)), o = ovGet(ym,'fj',g.id); return { id:g.id, concepto:g.concepto, base, monto:o.monto ?? base, incluir:!o.off }; });
+
   function month(ym){
-    const c = closed(ym);
-    if(c){
-      const cli = c.clientes.filter(x=>x.estuvo!==false).map(x=>({ ...x, total:(+x.monto||0) }));
-      const pro = c.proyectos||[];
-      const gastos = [...(c.equipo||[]).filter(x=>x.incluir!==false).map(x=>({ grupo:'Equipo', concepto:x.nombre, monto:+x.monto||0 })),
-        ...(c.fijos||[]).filter(x=>x.incluir!==false).map(x=>({ grupo:'Fijos', concepto:x.concepto, monto:+x.monto||0 })),
-        ...(c.extras||[]).map(x=>({ grupo:'Extras del mes', concepto:x.concepto, monto:+x.monto||0 })),
-        ...pro.filter(p=>+p.costo).map(p=>({ grupo:'Costo de proyectos', concepto:`${p.nombre} (${p.cliente})`, monto:+p.costo }))];
-      return build(ym, cli, pro, gastos, true, c);
-    }
-    const cli = S.clientes.filter(x=>vigente(x, ym)).map(x=>{ const monto = retainerAt(x, ym)+extrasOf(x.id, ym), cob = isCobrado(x.id, ym);
-      return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, monto, total:monto, cobrado:cob?'si':'no', pendiente:cob?0:monto }; });
-    const pro = projectsOf(ym).map(p=>({ id:p.id, nombre:p.nombre, cliente:p.cliente, monto:+p.monto||0, cobrado:p.estado==='cobrado'?'si':'no', pendiente:p.estado==='cobrado'?0:(+p.monto||0), costo:+p.empCosto||0 }));
-    const gastos = [...S.empleados.filter(e=>empActivo(e, ym)).map(e=>({ grupo:'Equipo', concepto:e.nombre, monto:sueldoAt(e, ym) })),
-      ...S.gastos.filter(g=>gastoMensual(g)).map(g=>({ grupo:'Fijos', concepto:g.concepto, monto:gastoMensual(g) })),
-      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', concepto:`${p.nombre} (${p.cliente})`, monto:p.costo }))];
-    return build(ym, cli, pro, gastos, false, S.cierres[ym]);
+    const c = S.cierres[ym] || null;
+    const cli = cliCands(ym).map(x=>cliRow(x, ym)).filter(x=>x.estuvo);
+    const pro = proRows(ym);
+    const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre, monto:x.monto })),
+      ...fjRows(ym).filter(x=>x.incluir).map(x=>({ grupo:'Fijos', kind:'fj', id:x.id, concepto:x.concepto, monto:x.monto })),
+      ...(c?.extras||[]).map((x,i)=>({ grupo:'Extras del mes', kind:'ex', id:i, concepto:x.concepto, monto:+x.monto||0 })),
+      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo }))];
+    return build(ym, cli, pro, gastos, !!c?.closedAt, c);
+  }
+
+  // Pasa los cierres viejos (que guardaban su propia copia) al formato único. Corre una sola vez.
+  function migrate(){
+    if(S.mesV>=1) return false;
+    Object.entries(S.cierres||{}).forEach(([ym, c])=>{
+      if(!c || !Array.isArray(c.clientes)) return;
+      const isC = !!c.closedAt, same = (a,b) => String(a)===String(b);
+      c.clientes.forEach(x=>{
+        let k = S.clientes.find(y=>same(y.id, x.id));
+        if(!k){ k = { id:x.id, nombre:x.nombre, tipo:x.tipo, retainer:+x.monto||0, moneda:x.moneda||'ARS', estado:isC?'inactivo':'activo', inicioServicio:ym, finServicio:isC?ym:'', retainerHistory:[{ monto:+x.monto||0, desde:ym, nota:'Inicial' }], empleadoIds:[], presupuesto:null }; S.clientes.push(k); }
+        setPaused(k.id, ym, x.estuvo===false);
+        const base = retainerAt(k, ym)+extrasOf(k.id, ym);
+        ovSet(ym,'cli',k.id,{ monto: (isC || +x.monto!==base) ? +x.monto||0 : null, in: isC ? true : null, pendiente: x.cobrado==='parcial' ? +x.pendiente||0 : null });
+        setCobro(k.id, ym, x.cobrado==='si');
+      });
+      if(isC) cliCands(ym).filter(k=>!c.clientes.some(x=>same(x.id, k.id))).forEach(k=>setPaused(k.id, ym, true));
+      (c.proyectos||[]).forEach(p=>{ let pr = S.proyectos.find(y=>same(y.id, p.id));
+        if(!pr){ pr = { id:p.id, nombre:p.nombre, cliente:p.cliente, moneda:'ARS', etapa:'Pago único', fecha:`${ym}-15`, empNombre:'', desc:'' }; S.proyectos.push(pr); }
+        if(pr.fecha && pr.fecha.slice(0,7)!==ym) return;
+        pr.monto = +p.monto||0; pr.empCosto = +p.costo||0; pr.estado = p.cobrado==='si' ? 'cobrado' : 'pendiente';
+        if(p.cobrado==='parcial') pr.pendienteParcial = +p.pendiente||0; else delete pr.pendienteParcial; });
+      if(isC) projectsOf(ym).filter(p=>!(c.proyectos||[]).some(x=>same(x.id, p.id))).forEach(p=>ovSet(ym,'pro',p.id,{ off:true }));
+      (c.equipo||[]).forEach(x=>{ let e = S.empleados.find(y=>same(y.id, x.id));
+        if(!e){ e = { id:x.id, nombre:x.nombre, rol:'', sueldo:+x.monto||0, moneda:'ARS', estado:isC?'inactivo':'activo', inicioLaboral:ym, finLaboral:isC?ym:'', sueldoHistory:[{ monto:+x.monto||0, desde:ym, nota:'Inicial' }], clienteIds:[] }; S.empleados.push(e); }
+        setSkip(e.id, ym, x.incluir===false);
+        ovSet(ym,'eq',e.id,{ monto: (isC || +x.monto!==sueldoAt(e, ym)) ? +x.monto||0 : null, in: isC ? true : null }); });
+      if(isC) eqCands(ym).filter(e=>!(c.equipo||[]).some(x=>same(x.id, e.id))).forEach(e=>setSkip(e.id, ym, true));
+      (c.fijos||[]).forEach(x=>{ const g = S.gastos.find(y=>same(y.id, x.id));
+        if(!g){ if(x.incluir!==false) (c.extras = c.extras||[]).push({ concepto:x.concepto, monto:+x.monto||0 }); return; }
+        ovSet(ym,'fj',g.id,{ off: x.incluir===false ? true : null, monto: (isC || +x.monto!==Math.round(gastoMensual(g))) ? +x.monto||0 : null }); });
+      if(isC) fjRows(ym).filter(g=>!(c.fijos||[]).some(x=>same(x.id, g.id))).forEach(g=>ovSet(ym,'fj',g.id,{ off:true }));
+      if(!isC){ delete c.clientes; delete c.proyectos; delete c.equipo; delete c.fijos; }
+    });
+    S.mesV = 1; return true;
   }
   function build(ym, cli, pro, gastos, isClosed, cierre){
     const ingClientes = cli.reduce((s,x)=>s+x.total,0), ingProy = pro.reduce((s,p)=>s+(+p.monto||0),0);
@@ -153,7 +209,7 @@
           <div class="row" style="gap:6px">${[['mes','Este mes'],['hist','📅 Mes por mes']].map(([k,l])=>`<button class="chip ${cliView===k?'on':''}" onclick="Fin.cliView('${k}')">${l}</button>`).join('')}</div></div>
           ${cliView==='hist' ? mesPorMes() : rows.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Cliente</th><th style="text-align:right">Mensual</th><th style="text-align:right">Puntuales</th><th style="text-align:right">Total</th><th class="hide-m" style="text-align:right">% del mes</th><th>Estado</th></tr></thead><tbody>
             ${rows.map(r=>`<tr><td><div class="b">${esc(r.nombre)}</div><div class="xs faint">${esc(r.soloProyecto?'Solo proyecto':TIPO[r.tipo]||'')}${r.proy.length?' · '+r.proy.map(p=>`<a href="#" title="Editar" onclick="Fin.editIngreso('p','${p.id}');return false">${esc(p.nombre)} ✎</a>`).join(', '):''}</div></td>
-              <td style="text-align:right;white-space:nowrap">${r.soloProyecto?'—':`<a href="#" class="editable" title="Editar monto" onclick="Fin.editIngreso('c','${r.id}');return false">${r.total?fmt(r.total,r.moneda):'—'} ✎</a> <a href="#" title="Sacar de este mes" style="text-decoration:none" onclick="Fin.quitarMes('${r.id}');return false">🗑</a>`}</td><td style="text-align:right">${r.proyMonto?fmt(r.proyMonto):'—'}</td><td style="text-align:right" class="b">${fmt(r.suma)}</td>
+              <td style="text-align:right;white-space:nowrap">${r.soloProyecto?'—':`<a href="#" class="editable" title="Editar monto" onclick="Fin.editIngreso('c','${r.id}');return false">${r.total?fmt(r.total,r.moneda):'—'} ✎</a> <a href="#" title="Sacar de este mes" style="text-decoration:none" onclick="Fin.quitar('c','${r.id}');return false">🗑</a>`}</td><td style="text-align:right">${r.proyMonto?fmt(r.proyMonto):'—'}</td><td style="text-align:right" class="b">${fmt(r.suma)}</td>
               <td class="hide-m" style="text-align:right"><div class="row" style="justify-content:flex-end"><div class="bar" style="width:70px"><div style="width:${M.ing?r.suma/M.ing*100:0}%;background:var(--green)"></div></div><span class="xs">${M.ing?Math.round(r.suma/M.ing*100):0}%</span></div></td>
               <td>${cobroTag(r)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No hay clientes activos este mes. Agregalos con “＋ Ingreso fijo” en la cuenta del mes.</div>'}
           ${cliView==='mes'?'<p class="xs faint" style="margin-top:8px">Tocá el monto ✎ para cambiarlo (solo este mes o desde este mes en adelante).</p>':''}</div>
@@ -188,10 +244,12 @@
         <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn g sm" onclick="Fin.copyCuenta()">📋 Copiar</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
-        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="${x.kind==='c'?`Fin.quitarMes('${x.id}')`:`Fin.editIngreso('p','${x.id}')`};return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
-        ${(()=>{ const q = quitados(M.ym); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volverMes('${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
+        ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind==='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('c','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
-        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)}</td><td></td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
+        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td></td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
+        ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind!=='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('${c.kind}','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
+        <tr><td colspan="4"><button class="btn g xs" onclick="Fin.addGasto()">＋ Gasto / sueldo</button></td></tr>
         ${tot2('Total sueldos y gastos', -K.gas, -K.gas, 'var(--red)')}
         ${tot2('= Queda', A.queda, B.queda, A.queda>=0?'var(--blue-l)':'var(--red)', 1)}
         ${sec('🏢 REPARTO')}
@@ -204,11 +262,15 @@
     </div>`;
   }
   // Clientes que estaban activos ese mes pero se sacaron solo de ese mes
-  const quitados = ym => { const cl = closed(ym); if(cl) return cl.clientes.filter(x=>x.estuvo===false);
-    return S.clientes.filter(c=>paused(c.id, ym) && !(c.estado==='inactivo' && !c.finServicio) && (!c.inicioServicio || c.inicioServicio<=ym) && (!c.finServicio || c.finServicio>=ym)); };
+  // Lo que estaba ese mes pero se sacó solo de ese mes (para poder volver a sumarlo)
+  const quitados = ym => [
+    ...cliCands(ym).filter(x=>paused(x.id, ym)).map(x=>({ kind:'c', id:x.id, nombre:x.nombre })),
+    ...eqCands(ym).filter(e=>S.skips.includes(ckey('skip', e.id, ym))).map(e=>({ kind:'eq', id:e.id, nombre:e.nombre })),
+    ...fjRows(ym).filter(g=>!g.incluir).map(g=>({ kind:'fj', id:g.id, nombre:g.concepto })) ];
   const M_has = (cid, ym) => month(ym).cli.some(x=>String(x.id)===String(cid));
   function cuentaTexto(M){
     const { ing, R, tot, A, B } = cuentaDe(M), L = [`*Cuenta ${ymLabel(M.ym)}*`, '', '*Ingresos*'];
+    const fmt = v => v<0 ? '− '+fmtBase(-v) : fmtBase(v);
     ing.forEach(x=>L.push(`${x.cob==='si'?'✅':x.cob==='parcial'?'🟡':'❌'} ${x.nombre}: ${fmt(x.monto)}${x.cob!=='si'?` (entró ${fmt(x.entro)})`:''}`));
     L.push(`Total: ${fmt(tot.debe)} · cobrado ${fmt(tot.entro)}`, '', '*Sueldos y gastos*');
     M.gastos.forEach(g=>L.push(`− ${g.concepto}: ${fmt(g.monto)}`));
@@ -249,7 +311,8 @@
       const ret = S.clientes.filter(c=>vigente(c, ym) || (i>0 && !c.finServicio && c.estado!=='inactivo' && (!c.inicioServicio || c.inicioServicio<=ym))).reduce((s,c)=>s+retainerAt(c, ym),0);
       const proy = S.proyectos.filter(p=>p.fecha && p.fecha.slice(0,7)===ym && isOneShot(p)).reduce((s,p)=>s+(+p.monto||0),0);
       const equipo = S.empleados.filter(e=>empActivo(e, ym) || (i>0 && !isSocio(e) && e.estado!=='inactivo' && !e.finLaboral)).reduce((s,e)=>s+sueldoAt(e, ym),0);
-      const ing = ret + proy + (i>0?extraCliente:0), gas = equipo + fijos;
+      const fijosMes = fjRows(ym).filter(g=>g.incluir).reduce((s,g)=>s+g.monto,0);
+      const ing = ret + proy + (i>0?extraCliente:0), gas = equipo + fijosMes;
       fut.push({ ym, ret, proy, ing, gas, neto:ing-gas });
     }
     const tot = k => fut.reduce((s,m)=>s+m[k],0);
@@ -286,23 +349,10 @@
   let ciYm = null, step = 0;
   const STEPS = ['Clientes del mes','Proyectos puntuales','Gastos','Resumen y cierre'];
 
-  // Borrador del cierre: se arma con lo que ya sabemos y se va guardando solo
-  function draft(ym){
-    S.cierres[ym] = S.cierres[ym] || {};
-    const c = S.cierres[ym];
-    if(!c.clientes){
-      c.clientes = S.clientes.filter(x=>x.estado!=='inactivo' || (x.finServicio && x.finServicio>=ym)).filter(x=>!x.inicioServicio || x.inicioServicio<=ym).filter(x=>!x.finServicio || x.finServicio>=ym)
-        .map(x=>{ const monto = retainerAt(x, ym)+extrasOf(x.id, ym), cob = isCobrado(x.id, ym);
-          return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base:retainerAt(x, ym), cobrado:cob?'si':'no', pendiente:cob?0:monto }; });
-      c.proyectos = projectsOf(ym).map(p=>({ id:p.id, nombre:p.nombre, cliente:p.cliente, monto:+p.monto||0, costo:+p.empCosto||0, cobrado:p.estado==='cobrado'?'si':'no', pendiente:p.estado==='cobrado'?0:(+p.monto||0) }));
-      c.equipo = S.empleados.filter(e=>!isSocio(e) && (e.estado!=='inactivo' || (e.finLaboral && e.finLaboral>=ym)) && (!e.inicioLaboral || e.inicioLaboral<=ym) && (!e.finLaboral || e.finLaboral>=ym))
-        .map(e=>({ id:e.id, nombre:e.nombre, monto:sueldoAt(e, ym), base:sueldoAt(e, ym), incluir:empActivo(e, ym) }));
-      c.fijos = S.gastos.filter(g=>gastoMensual(g)).map(g=>({ id:g.id, concepto:g.concepto, monto:Math.round(gastoMensual(g)), incluir:true }));
-      c.extras = []; c.answers = c.answers || {};
-    }
-    return c;
-  }
-  const upd = () => { S.cierres[ciYm].updatedAt = new Date().toISOString(); save(); };
+  // El cierre usa los mismos datos que Actualidad; acá solo viven los gastos extra y las respuestas
+  function draft(ym){ const c = S.cierres[ym] = S.cierres[ym] || {}; if(!Array.isArray(c.extras)) c.extras = []; c.answers = c.answers || {}; return c; }
+  const touch = ym => { const c = S.cierres[ym]; if(c) c.updatedAt = new Date().toISOString(); save(); };
+  const upd = () => touch(ciYm);
   const money = (val, onchange, extra='') => `<input class="inp sm" type="number" step="any" style="width:130px;text-align:right" value="${val??''}" onchange="${onchange}" ${extra}>`;
   const cobSel = (v, fn) => `<select class="inp sm" onchange="${fn}">${[['si','✓ Cobrado'],['parcial','Cobró una parte'],['no','Pendiente']].map(([k,l])=>`<option value="${k}" ${v===k?'selected':''}>${l}</option>`).join('')}</select>`;
 
@@ -320,47 +370,49 @@
     let body = '';
     const dis = isClosed ? 'disabled' : '';
     if(step===0){
-      const tot = c.clientes.filter(x=>x.estuvo).reduce((s,x)=>s+(+x.monto||0),0);
+      const rows = cliCands(ciYm).map(x=>cliRow(x, ciYm)), tot = rows.filter(x=>x.estuvo).reduce((s,x)=>s+(+x.monto||0),0);
       body = `<div class="card"><div class="card-h"><h3>1. ¿Qué clientes estuvieron en ${ymLabel(ciYm)} y por cuánto?</h3><span class="grow"></span><b>${fmt(tot)}</b></div>
-        <p class="small muted" style="margin-bottom:12px">Destildá a quien no trabajó este mes. Corregí el monto si fue distinto (aumentos, extras, descuentos). Marcá si ya pagó.</p>
-        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Estuvo</th><th>Cliente</th><th style="text-align:right">Monto del mes</th><th>¿Pagó?</th><th style="text-align:right">Le queda pagar</th></tr></thead><tbody>
-        ${c.clientes.map((x,i)=>`<tr style="${x.estuvo?'':'opacity:.45'}"><td><input type="checkbox" ${x.estuvo?'checked':''} ${dis} onchange="Fin.cli(${i},'estuvo',this.checked)" style="width:18px;height:18px"></td>
-          <td><div class="b">${esc(x.nombre)}</div><div class="xs faint">${esc(TIPO[x.tipo]||'')}${x.base&&+x.monto!==+x.base?` · habitual ${fmt(x.base)}`:''}${x.nuevo?' · <span style="color:var(--green)">nuevo</span>':''}</div></td>
-          <td style="text-align:right">${money(x.monto, `Fin.cli(${i},'monto',this.value)`, dis)}</td>
-          <td>${x.estuvo?cobSel(x.cobrado, `Fin.cli(${i},'cobrado',this.value)`).replace('<select', `<select ${dis}`):'—'}</td>
-          <td style="text-align:right">${!x.estuvo?'—':x.cobrado==='parcial'?money(x.pendiente, `Fin.cli(${i},'pendiente',this.value)`, dis):`<b style="color:${x.pendiente?'var(--yellow)':'var(--green)'}">${x.pendiente?fmt(x.pendiente):'$0'}</b>`}</td></tr>`).join('')}</tbody></table></div>
-        ${isClosed?'':`<button class="btn g sm" style="margin-top:12px" onclick="Fin.addCli()">＋ Cliente nuevo este mes</button>`}</div>`;
+        <p class="small muted" style="margin-bottom:12px">Destildá a quien no trabajó este mes. Corregí el monto si fue distinto (aumentos, extras, descuentos). Marcá si ya pagó. Es lo mismo que ves en Actualidad: lo que cambies acá se ve allá y al revés.</p>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Estuvo</th><th>Cliente</th><th style="text-align:right">Monto del mes</th><th>¿Pagó?</th><th style="text-align:right">Le queda pagar</th><th></th></tr></thead><tbody>
+        ${rows.map(x=>`<tr style="${x.estuvo?'':'opacity:.45'}"><td><input type="checkbox" ${x.estuvo?'checked':''} ${dis} onchange="Fin.cli('${x.id}','estuvo',this.checked)" style="width:18px;height:18px"></td>
+          <td><div class="b">${esc(x.nombre)}</div><div class="xs faint">${esc(TIPO[x.tipo]||'')}${x.base&&+x.monto!==+x.base?` · habitual ${fmt(x.base)}`:''}</div></td>
+          <td style="text-align:right">${money(x.monto, `Fin.cli('${x.id}','monto',this.value)`, dis)}</td>
+          <td>${x.estuvo?cobSel(x.cobrado, `Fin.cli('${x.id}','cobrado',this.value)`).replace('<select', `<select ${dis}`):'—'}</td>
+          <td style="text-align:right">${!x.estuvo?'—':x.cobrado==='parcial'?money(x.pendiente, `Fin.cli('${x.id}','pendiente',this.value)`, dis):`<b style="color:${x.pendiente?'var(--yellow)':'var(--green)'}">${x.pendiente?fmt(x.pendiente):'$0'}</b>`}</td>
+          <td>${isClosed?'':`<button class="icon-btn" title="Sacar / dar de baja" onclick="Fin.quitar('c','${x.id}','${ciYm}')">🗑</button>`}</td></tr>`).join('')||'<tr><td colspan="6" class="small faint">Sin clientes</td></tr>'}</tbody></table></div>
+        ${isClosed?'':`<button class="btn g sm" style="margin-top:12px" onclick="Fin.addFijo2('${ciYm}')">＋ Cliente / ingreso fijo</button>`}</div>`;
     }
     if(step===1){
-      const prev = S.proyectos.filter(p=>p.estado!=='cobrado' && p.fecha && p.fecha.slice(0,7)<ciYm && isOneShot(p));
-      body = `<div class="card"><div class="card-h"><h3>2. Proyectos puntuales de ${ymLabel(ciYm)}</h3><span class="grow"></span><b>${fmt(c.proyectos.reduce((s,p)=>s+(+p.monto||0),0))}</b></div>
+      const pros = proRows(ciYm), prev = S.proyectos.filter(p=>p.estado!=='cobrado' && p.fecha && p.fecha.slice(0,7)<ciYm && isOneShot(p));
+      body = `<div class="card"><div class="card-h"><h3>2. Proyectos puntuales de ${ymLabel(ciYm)}</h3><span class="grow"></span><b>${fmt(pros.reduce((s,p)=>s+(+p.monto||0),0))}</b></div>
         <p class="small muted" style="margin-bottom:12px">Webs, brandings, pagos de 50%… todo lo que no es el mensual. Si tuvo costo (freelance), cargalo.</p>
-        ${c.proyectos.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Proyecto</th><th style="text-align:right">Monto</th><th>¿Pagó?</th><th style="text-align:right">Le queda pagar</th><th style="text-align:right">Costo</th><th></th></tr></thead><tbody>
-          ${c.proyectos.map((p,i)=>`<tr><td><div class="b">${esc(p.nombre)}</div><div class="xs faint">${esc(p.cliente)}</div></td><td style="text-align:right">${money(p.monto, `Fin.pro(${i},'monto',this.value)`, dis)}</td>
-            <td>${cobSel(p.cobrado, `Fin.pro(${i},'cobrado',this.value)`).replace('<select', `<select ${dis}`)}</td>
-            <td style="text-align:right">${p.cobrado==='parcial'?money(p.pendiente, `Fin.pro(${i},'pendiente',this.value)`, dis):`<b style="color:${p.pendiente?'var(--yellow)':'var(--green)'}">${p.pendiente?fmt(p.pendiente):'$0'}</b>`}</td>
-            <td style="text-align:right">${money(p.costo, `Fin.pro(${i},'costo',this.value)`, dis)}</td><td>${isClosed?'':`<button class="icon-btn" onclick="Fin.delPro(${i})">✕</button>`}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty small">No hay proyectos puntuales cargados en este mes.</div>'}
-        ${isClosed?'':`<button class="btn g sm" style="margin-top:12px" onclick="Fin.addPro()">＋ Proyecto puntual</button>`}</div>
+        ${pros.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Proyecto</th><th style="text-align:right">Monto</th><th>¿Pagó?</th><th style="text-align:right">Le queda pagar</th><th style="text-align:right">Costo</th><th></th></tr></thead><tbody>
+          ${pros.map(p=>`<tr><td><div class="b">${esc(p.nombre)}</div><div class="xs faint">${esc(p.cliente)}</div></td><td style="text-align:right">${money(p.monto, `Fin.pro('${p.id}','monto',this.value)`, dis)}</td>
+            <td>${cobSel(p.cobrado, `Fin.pro('${p.id}','cobrado',this.value)`).replace('<select', `<select ${dis}`)}</td>
+            <td style="text-align:right">${p.cobrado==='parcial'?money(p.pendiente, `Fin.pro('${p.id}','pendiente',this.value)`, dis):`<b style="color:${p.pendiente?'var(--yellow)':'var(--green)'}">${p.pendiente?fmt(p.pendiente):'$0'}</b>`}</td>
+            <td style="text-align:right">${money(p.costo, `Fin.pro('${p.id}','costo',this.value)`, dis)}</td><td>${isClosed?'':`<button class="icon-btn" title="Eliminar" onclick="Fin.quitar('p','${p.id}','${ciYm}')">🗑</button>`}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty small">No hay proyectos puntuales cargados en este mes.</div>'}
+        ${isClosed?'':`<button class="btn g sm" style="margin-top:12px" onclick="Fin.addPuntual('${ciYm}')">＋ Proyecto puntual</button>`}</div>
         ${prev.length&&!isClosed?`<div class="card" style="margin-top:16px"><div class="card-h"><h3>¿Se cobró algún pendiente de meses anteriores?</h3></div><div class="list">
           ${prev.map(p=>`<div class="li"><div class="grow"><div class="b small">${esc(p.cliente)} · ${esc(p.nombre)}</div><div class="xs faint">${esc(p.etapa||'')} · ${UI.fdate(p.fecha,{abs:true})}</div></div><b>${fmt(p.monto)}</b><button class="btn xs ok" onclick="Fin.paidOld(${p.id})">Se cobró ✓</button></div>`).join('')}</div></div>`:''}`;
     }
     if(step===2){
-      const eq = c.equipo.filter(x=>x.incluir).reduce((s,x)=>s+(+x.monto||0),0), fj = c.fijos.filter(x=>x.incluir).reduce((s,x)=>s+(+x.monto||0),0), ex = c.extras.reduce((s,x)=>s+(+x.monto||0),0);
+      const eqs = eqCands(ciYm).map(e=>eqRow(e, ciYm)), fjs = fjRows(ciYm);
+      const eq = eqs.filter(x=>x.incluir).reduce((s,x)=>s+(+x.monto||0),0), fj = fjs.filter(x=>x.incluir).reduce((s,x)=>s+(+x.monto||0),0), ex = c.extras.reduce((s,x)=>s+(+x.monto||0),0);
+      const del = (k,id) => isClosed ? '' : `<button class="icon-btn" title="Sacar / eliminar" onclick="Fin.quitar('${k}','${id}','${ciYm}')">🗑</button>`;
       body = `<div class="card"><div class="card-h"><h3>3. ¿Cuánto gastamos en ${ymLabel(ciYm)}?</h3><span class="grow"></span><b>${fmt(eq+fj+ex)}</b></div>
         <div class="xs faint b" style="margin:6px 0">EQUIPO · ${fmt(eq)}</div>
-        ${c.equipo.map((x,i)=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><input type="checkbox" ${x.incluir?'checked':''} ${dis} onchange="Fin.eq(${i},'incluir',this.checked)" style="width:18px;height:18px"><span class="grow ${x.incluir?'':'faint'}">${esc(x.nombre)}${x.base&&+x.monto!==+x.base?` <span class="xs faint">(habitual ${fmt(x.base)})</span>`:''}</span>${money(x.monto, `Fin.eq(${i},'monto',this.value)`, dis)}</div>`).join('')||'<div class="small faint">Sin equipo cargado</div>'}
-        ${isClosed?'':`<button class="btn g xs" style="margin-top:8px" onclick="Fin.addEq()">＋ Persona</button>`}
+        ${eqs.map(x=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><input type="checkbox" ${x.incluir?'checked':''} ${dis} onchange="Fin.eq('${x.id}','incluir',this.checked)" style="width:18px;height:18px"><span class="grow ${x.incluir?'':'faint'}">${esc(x.nombre)}${x.base&&+x.monto!==+x.base?` <span class="xs faint">(habitual ${fmt(x.base)})</span>`:''}</span>${money(x.monto, `Fin.eq('${x.id}','monto',this.value)`, dis)}${del('eq',x.id)}</div>`).join('')||'<div class="small faint">Sin equipo cargado</div>'}
+        ${isClosed?'':`<button class="btn g xs" style="margin-top:8px" onclick="Fin.addEq('${ciYm}')">＋ Persona</button>`}
         <div class="xs faint b" style="margin:16px 0 6px">GASTOS FIJOS · ${fmt(fj)}</div>
-        ${c.fijos.map((x,i)=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><input type="checkbox" ${x.incluir?'checked':''} ${dis} onchange="Fin.fj(${i},'incluir',this.checked)" style="width:18px;height:18px"><span class="grow">${esc(x.concepto)}</span>${money(x.monto, `Fin.fj(${i},'monto',this.value)`, dis)}</div>`).join('')||'<div class="small faint">Sin gastos fijos</div>'}
-        ${isClosed?'':`<button class="btn g xs" style="margin-top:8px" onclick="Fin.addFijo()">＋ Gasto fijo (todos los meses)</button>`}
+        ${fjs.map(x=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><input type="checkbox" ${x.incluir?'checked':''} ${dis} onchange="Fin.fj('${x.id}','incluir',this.checked)" style="width:18px;height:18px"><span class="grow ${x.incluir?'':'faint'}">${esc(x.concepto)}</span>${money(x.monto, `Fin.fj('${x.id}','monto',this.value)`, dis)}${del('fj',x.id)}</div>`).join('')||'<div class="small faint">Sin gastos fijos</div>'}
+        ${isClosed?'':`<button class="btn g xs" style="margin-top:8px" onclick="Fin.addFijo('${ciYm}')">＋ Gasto fijo (todos los meses)</button>`}
         <div class="xs faint b" style="margin:16px 0 6px">GASTOS EXTRA DE ESTE MES · ${fmt(ex)}</div>
-        ${c.extras.map((x,i)=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><span class="grow">${esc(x.concepto)}</span><b>${fmt(x.monto)}</b>${isClosed?'':`<button class="icon-btn" onclick="Fin.delEx(${i})">✕</button>`}</div>`).join('')||'<div class="small faint">¿Hubo algún gasto que no se repite? (equipos, viajes, imprevistos)</div>'}
-        ${isClosed?'':`<button class="btn g xs" style="margin-top:8px" onclick="Fin.addEx()">＋ Gasto extra</button>`}</div>`;
+        ${c.extras.map((x,i)=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--border)"><span class="grow">${esc(x.concepto)}</span><b>${fmt(x.monto)}</b>${del('ex',i)}</div>`).join('')||'<div class="small faint">¿Hubo algún gasto que no se repite? (equipos, viajes, imprevistos)</div>'}
+        ${isClosed?'':`<button class="btn g xs" style="margin-top:8px" onclick="Fin.addEx('${ciYm}')">＋ Gasto extra</button>`}</div>`;
     }
     if(step===3){
-      const M = build(ciYm, c.clientes.filter(x=>x.estuvo).map(x=>({ ...x, total:+x.monto||0 })), c.proyectos,
-        [...c.equipo.filter(x=>x.incluir).map(x=>({ monto:+x.monto||0 })), ...c.fijos.filter(x=>x.incluir).map(x=>({ monto:+x.monto||0 })), ...c.extras.map(x=>({ monto:+x.monto||0 })), ...c.proyectos.filter(p=>+p.costo).map(p=>({ monto:+p.costo }))], false);
-      const owes = {}; c.clientes.filter(x=>x.estuvo && +x.pendiente).forEach(x=>owes[x.nombre]=(owes[x.nombre]||0)+(+x.pendiente)); c.proyectos.filter(p=>+p.pendiente).forEach(p=>owes[p.cliente]=(owes[p.cliente]||0)+(+p.pendiente));
+      const M = month(ciYm);
+      const owes = {}; M.cli.filter(x=>+x.pendiente).forEach(x=>owes[x.nombre]=(owes[x.nombre]||0)+(+x.pendiente)); M.pro.filter(p=>+p.pendiente).forEach(p=>owes[p.cliente]=(owes[p.cliente]||0)+(+p.pendiente));
       const a = c.answers||{};
       body = `<div class="grid g4" style="margin-bottom:16px">
           <div class="card kpi"><div class="l">Ingresos</div><div class="v" style="color:var(--green)">${fmt(M.ing)}</div></div>
@@ -387,45 +439,47 @@
     step(n){ step = Math.max(0, Math.min(3, n)); render(); window.scrollTo(0,0); },
     whatIf(v){ extraCliente = +v||0; render(); },
     setMeta(){ const v = prompt('Meta de facturación anual ($):', S.metas.facturacion||''); if(v!=null){ S.metas.facturacion = +v||0; save(); render(); } },
-    cli(i,k,v){ const x = S.cierres[ciYm].clientes[i]; x[k] = k==='estuvo' ? v : k==='cobrado' ? v : +v||0; if(k!=='pendiente') syncPend(x); upd(); render(); },
-    pro(i,k,v){ const x = S.cierres[ciYm].proyectos[i]; x[k] = k==='cobrado' ? v : +v||0; if(k!=='pendiente' && k!=='costo') syncPend(x); upd(); render(); },
-    eq(i,k,v){ const x = S.cierres[ciYm].equipo[i]; x[k] = k==='incluir' ? v : +v||0; upd(); render(); },
-    fj(i,k,v){ const x = S.cierres[ciYm].fijos[i]; x[k] = k==='incluir' ? v : +v||0; upd(); render(); },
-    delPro(i){ S.cierres[ciYm].proyectos.splice(i,1); upd(); render(); },
-    delEx(i){ S.cierres[ciYm].extras.splice(i,1); upd(); render(); },
-    ans(k,v){ const c = S.cierres[ciYm]; c.answers = c.answers||{}; c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; upd(); },
-    addCli(){ UI.form({ title:'Cliente nuevo', fields:[
-        { k:'nombre', label:'Nombre', req:true }, { k:'tipo', label:'Servicio', type:'select', options:Object.entries(TIPO), half:true }, { k:'monto', label:'Monto mensual', type:'number', req:true, half:true } ],
-      onSubmit:v=>{ S.cierres[ciYm].clientes.push({ id:Date.now(), nombre:v.nombre, tipo:v.tipo, estuvo:true, monto:v.monto, base:0, cobrado:'no', pendiente:v.monto, nuevo:true }); upd(); render(); } }); },
-    addPro(){ UI.form({ title:'Proyecto puntual', fields:[
-        { k:'cliente', label:'Cliente', req:true, placeholder:'Nombre del cliente' }, { k:'nombre', label:'Proyecto', req:true, placeholder:'Web, branding, pago 1 de 2…' },
-        { k:'monto', label:'Monto de este mes', type:'number', req:true, half:true }, { k:'costo', label:'Costo (freelance), si hubo', type:'number', half:true },
-        { k:'cobrado', label:'¿Pagó?', type:'select', options:[['si','✓ Cobrado'],['no','Pendiente']] } ],
-      onSubmit:v=>{ S.cierres[ciYm].proyectos.push({ id:Date.now(), nuevo:true, nombre:v.nombre, cliente:v.cliente, monto:v.monto, costo:v.costo||0, cobrado:v.cobrado, pendiente:v.cobrado==='si'?0:v.monto }); upd(); render(); } }); },
-    addEq(){ UI.form({ title:'Persona del equipo', fields:[ { k:'nombre', label:'Nombre', req:true, half:true }, { k:'monto', label:'Sueldo del mes', type:'number', req:true, half:true } ],
-      onSubmit:v=>{ S.cierres[ciYm].equipo.push({ id:Date.now(), nombre:v.nombre, monto:v.monto, base:0, incluir:true, nuevo:true }); upd(); render(); } }); },
-    addFijo(){ UI.form({ title:'Gasto fijo mensual', fields:[ { k:'concepto', label:'Concepto', req:true, half:true }, { k:'monto', label:'Monto por mes', type:'number', req:true, half:true } ],
-      onSubmit:v=>{ const g = { id:Date.now(), concepto:v.concepto, categoria:'Otros', frecuencia:'mensual', monto:v.monto, moneda:'ARS' }; S.gastos.push(g); S.cierres[ciYm].fijos.push({ id:g.id, concepto:v.concepto, monto:v.monto, incluir:true }); upd(); render(); } }); },
-    addEx(){ UI.form({ title:'Gasto extra del mes', fields:[ { k:'concepto', label:'¿En qué?', req:true, half:true }, { k:'monto', label:'Monto', type:'number', req:true, half:true } ],
-      onSubmit:v=>{ S.cierres[ciYm].extras.push({ concepto:v.concepto, monto:v.monto }); upd(); render(); } }); },
+    // ── Cambios (sirven igual desde Actualidad y desde el Cierre) ──
+    cli(id,k,v){ const ym = ciYm, x = S.clientes.find(y=>String(y.id)===String(id)); if(!x) return; const r = cliRow(x, ym);
+      if(k==='estuvo') setPaused(x.id, ym, !v);
+      if(k==='monto'){ const n = +v||0; ovSet(ym,'cli',x.id,{ monto: n===r.base ? null : n }); }
+      if(k==='cobrado'){ setCobro(x.id, ym, v==='si'); ovSet(ym,'cli',x.id,{ pendiente: v==='parcial' ? r.monto : null }); }
+      if(k==='pendiente'){ const n = +v||0; if(n<=0){ setCobro(x.id, ym, true); ovSet(ym,'cli',x.id,{ pendiente:null }); } else ovSet(ym,'cli',x.id,{ pendiente:n }); }
+      upd(); render(); },
+    pro(id,k,v){ const p = S.proyectos.find(y=>String(y.id)===String(id)); if(!p) return;
+      if(k==='monto') p.monto = +v||0;
+      if(k==='costo') p.empCosto = +v||0;
+      if(k==='cobrado'){ p.estado = v==='si' ? 'cobrado' : 'pendiente'; if(v==='parcial') p.pendienteParcial = +p.monto||0; else delete p.pendienteParcial; }
+      if(k==='pendiente'){ const n = +v||0; if(n<=0){ p.estado = 'cobrado'; delete p.pendienteParcial; } else p.pendienteParcial = n; }
+      upd(); render(); },
+    eq(id,k,v){ const ym = ciYm, e = S.empleados.find(y=>String(y.id)===String(id)); if(!e) return;
+      if(k==='incluir') setSkip(e.id, ym, !v);
+      if(k==='monto'){ const n = +v||0; ovSet(ym,'eq',e.id,{ monto: n===sueldoAt(e, ym) ? null : n }); }
+      upd(); render(); },
+    fj(id,k,v){ const ym = ciYm, g = S.gastos.find(y=>String(y.id)===String(id)); if(!g) return;
+      if(k==='incluir') ovSet(ym,'fj',g.id,{ off: v ? null : true });
+      if(k==='monto'){ const n = +v||0; ovSet(ym,'fj',g.id,{ monto: n===Math.round(gastoMensual(g)) ? null : n }); }
+      upd(); render(); },
+    ans(k,v){ const c = draft(ciYm); c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; upd(); },
+    addEq(ymArg){ const ym = ymArg || cursor; UI.form({ title:`Persona del equipo · desde ${ymLabel(ym)}`, fields:[ { k:'nombre', label:'Nombre', req:true, half:true }, { k:'monto', label:'Sueldo por mes', type:'number', req:true, half:true } ],
+      onSubmit:v=>{ S.empleados.push({ id:Date.now(), nombre:v.nombre, rol:'', sueldo:+v.monto||0, moneda:'ARS', estado:'activo', inicioLaboral:ym, sueldoHistory:[{ monto:+v.monto||0, desde:ym, nota:'Inicial' }], clienteIds:[] }); touch(ym); render(); } }); },
+    addFijo(ymArg){ const ym = ymArg || cursor; UI.form({ title:`Gasto fijo mensual · desde ${ymLabel(ym)}`, fields:[ { k:'concepto', label:'Concepto', req:true, half:true }, { k:'monto', label:'Monto por mes', type:'number', req:true, half:true } ],
+      onSubmit:v=>{ S.gastos.push({ id:Date.now(), concepto:v.concepto, categoria:'Otros', frecuencia:'mensual', monto:+v.monto||0, moneda:'ARS', desde:ym }); touch(ym); render(); } }); },
+    addEx(ymArg){ const ym = ymArg || cursor; UI.form({ title:`Gasto extra · solo ${ymLabel(ym)}`, fields:[ { k:'concepto', label:'¿En qué?', req:true, half:true }, { k:'monto', label:'Monto', type:'number', req:true, half:true } ],
+      onSubmit:v=>{ draft(ym).extras.push({ concepto:v.concepto, monto:+v.monto||0 }); touch(ym); render(); } }); },
+    addGasto(ymArg){ const ym = ymArg || cursor;
+      UI.form({ title:`＋ Gasto · ${ymLabel(ym)}`, submit:'Siguiente', fields:[ { k:'t', label:'¿Qué tipo de gasto?', type:'select', options:[['ex',`Gasto extra (solo ${ymLabel(ym)})`],['fj',`Gasto fijo (todos los meses desde ${ymLabel(ym)})`],['eq','Sueldo de una persona nueva']] } ],
+        onSubmit:v=>{ setTimeout(()=>Fin[{ ex:'addEx', fj:'addFijo', eq:'addEq' }[v.t]](ym), 60); } }); },
     // Marca si un cliente/proyecto pagó (en el mes que se está viendo)
     cobro(kind, id){
-      const ym = cursor, { m, a } = parts(ym), c = closed(ym);
-      const flip = x => { x.cobrado = x.cobrado==='si' ? 'no' : 'si'; x.pendiente = x.cobrado==='si' ? 0 : (+x.monto||0); return x.cobrado==='si'; };
-      if(kind==='c'){
-        const key = `c-${id}-${m}-${a}`; let paid;
-        if(c){ const x = c.clientes.find(y=>String(y.id)===String(id)); if(!x) return; paid = flip(x); }
-        else paid = !isCobrado(id, ym);
-        S.cobros = S.cobros.filter(k=>k.key!==key); if(paid) S.cobros.push({ key });
-      } else {
-        let paid; if(c){ const x = (c.proyectos||[]).find(y=>String(y.id)===String(id)); if(x) paid = flip(x); }
-        const p = S.proyectos.find(y=>String(y.id)===String(id)); if(p){ if(paid==null) paid = p.estado!=='cobrado'; p.estado = paid ? 'cobrado' : 'pendiente'; }
-      }
-      save(); render();
+      const ym = cursor;
+      if(kind==='c'){ setCobro(id, ym, !isCobrado(id, ym)); ovSet(ym,'cli',id,{ pendiente:null }); }
+      else { const p = S.proyectos.find(y=>String(y.id)===String(id)); if(p){ p.estado = p.estado==='cobrado' ? 'pendiente' : 'cobrado'; delete p.pendienteParcial; } }
+      touch(ym); render();
     },
-    // ── Cargar ingresos del mes que se está viendo (fijos = clientes mensuales; puntuales = proyectos) ──
-    addFijo2(){
-      const ym = cursor, act = S.clientes.filter(c=>!M_has(c.id, ym)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+    // ── Cargar ingresos de un mes (fijos = clientes mensuales; puntuales = proyectos) ──
+    addFijo2(ymArg){
+      const ym = ymArg || cursor, act = S.clientes.filter(c=>!M_has(c.id, ym)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
       UI.form({ title:`＋ Ingreso fijo · ${ymLabel(ym)}`, submit:'Agregar', fields:[
         { k:'cid', label:'Cliente', type:'select', options:[['__new','＋ Cliente nuevo'], ...act.map(c=>[String(c.id), c.nombre+(c.estado==='inactivo'?' (inactivo)':'')])] },
         { k:'nombre', label:'Nombre (si es nuevo)', placeholder:'Nombre del cliente' },
@@ -439,75 +493,103 @@
         if(!c){ c = { id:Date.now(), nombre:v.nombre.trim(), tipo:v.tipo, retainer:monto, moneda:'ARS', estado:'activo', inicioServicio:ym, retainerHistory:[], empleadoIds:[], presupuesto:null }; S.clientes.push(c); }
         c.estado = 'activo'; c.tipo = v.tipo || c.tipo; if(c.finServicio && c.finServicio<ym) c.finServicio = '';
         if(!c.inicioServicio || c.inicioServicio>ym) c.inicioServicio = ym;
-        c.retainerHistory = (c.retainerHistory||[]).filter(h=>h.desde!==ym); c.retainerHistory.push({ monto, desde:ym, nota:'Cargado en Actualidad' }); c.retainer = monto; c.presupuesto = null;
-        const { m, a } = parts(ym), pk = `cp-${c.id}-${m}-${a}`, key = `c-${c.id}-${m}-${a}`;
-        S.clientesPausados = S.clientesPausados.filter(k=>k!==pk);
-        S.cobros = S.cobros.filter(k=>k.key!==key); if(v.cobrado==='si') S.cobros.push({ key });
-        const cl = closed(ym); if(cl){ cl.clientes = cl.clientes.filter(x=>String(x.id)!==String(c.id)); cl.clientes.push({ id:c.id, nombre:c.nombre, tipo:c.tipo, moneda:c.moneda, estuvo:true, monto, base:monto, cobrado:v.cobrado, pendiente:v.cobrado==='si'?0:monto }); }
-        save(); render(); UI.toast(`${c.nombre}: ${fmt(monto)} por mes`,'💰'); } });
+        c.retainerHistory = (c.retainerHistory||[]).filter(h=>h.desde!==ym); c.retainerHistory.push({ monto, desde:ym, nota:'Cargado' }); c.retainer = monto; c.presupuesto = null;
+        setPaused(c.id, ym, false); setCobro(c.id, ym, v.cobrado==='si'); ovSet(ym,'cli',c.id,{ monto:null, pendiente:null });
+        touch(ym); render(); UI.toast(`${c.nombre}: ${fmt(monto)} por mes`,'💰'); } });
     },
-    addPuntual(){
-      const ym = cursor, today = UI.today(), def = today.slice(0,7)===ym ? today : ym+'-15';
+    addPuntual(ymArg){
+      const ym = ymArg || cursor, today = UI.today(), def = today.slice(0,7)===ym ? today : ym+'-15';
       UI.form({ title:`＋ Proyecto / ingreso puntual · ${ymLabel(ym)}`, submit:'Agregar', fields:[
         { k:'cliente', label:'Cliente', req:true, half:true, placeholder:'Nombre del cliente' }, { k:'nombre', label:'Proyecto', req:true, half:true, placeholder:'Web, branding, pago 1 de 2…' },
         { k:'monto', label:'Monto', type:'number', req:true, half:true }, { k:'fecha', label:'Fecha', type:'date', default:def, half:true },
         { k:'costo', label:'Costo (freelance), si hubo', type:'number', half:true }, { k:'cobrado', label:'¿Pagó?', type:'select', options:[['no','Todavía no'],['si','✓ Sí, pagó']], half:true },
       ], onSubmit:v=>{
-        const fecha = v.fecha || def, monto = +v.monto||0, id = Date.now();
-        S.proyectos.push({ id, nombre:v.nombre, cliente:v.cliente, monto, fecha, estado:v.cobrado==='si'?'cobrado':'pendiente', etapa:'', empCosto:+v.costo||0 });
-        const cl = closed(fecha.slice(0,7)); if(cl){ cl.proyectos = cl.proyectos||[]; cl.proyectos.push({ id, nombre:v.nombre, cliente:v.cliente, monto, costo:+v.costo||0, cobrado:v.cobrado, pendiente:v.cobrado==='si'?0:monto }); }
-        if(fecha.slice(0,7)!==ym) cursor = fecha.slice(0,7);
-        save(); render(); UI.toast(`${v.cliente}: ${fmt(monto)}`,'💰'); } });
+        const fecha = v.fecha || def, monto = +v.monto||0;
+        S.proyectos.push({ id:Date.now(), nombre:v.nombre, cliente:v.cliente, monto, fecha, estado:v.cobrado==='si'?'cobrado':'pendiente', etapa:'Pago único', empCosto:+v.costo||0, moneda:'ARS' });
+        if(tab==='actualidad' && fecha.slice(0,7)!==ym) cursor = fecha.slice(0,7);
+        touch(ym); render(); UI.toast(`${v.cliente}: ${fmt(monto)}`,'💰'); } });
     },
     cliView(v){ cliView = v; render(); },
-    // Sacar a un cliente solo de un mes (no cuenta ese mes; los demás quedan igual)
-    quitarMes(id, ymArg){
-      const ym = ymArg || cursor, cl = closed(ym), c = S.clientes.find(x=>String(x.id)===String(id)), snap = cl && cl.clientes.find(x=>String(x.id)===String(id));
-      const nombre = c?.nombre || snap?.nombre || 'este cliente';
-      if(!confirm(`¿Sacar a ${nombre} de ${ymLabel(ym)}?\n\nNo va a contar en ese mes. Los demás meses quedan igual (para darlo de baja del todo usá ✎ → “Dar de baja”).`)) return;
-      const { m, a } = parts(ym), pk = `cp-${id}-${m}-${a}`;
-      if(!S.clientesPausados.includes(pk)) S.clientesPausados.push(pk);
-      S.cobros = S.cobros.filter(k=>k.key!==`c-${id}-${m}-${a}`);
-      if(snap) snap.estuvo = false;
-      save(); render(); UI.toast(`${nombre} no cuenta en ${ymLabel(ym)}`,'🗑');
+    // 🗑 Sacar algo de un mes, darlo de baja o eliminarlo (mismo efecto en Actualidad y en el Cierre)
+    quitar(kind, id, ymArg){
+      const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
+      const nm = kind==='c' ? S.clientes.find(sid)?.nombre : kind==='eq' ? S.empleados.find(sid)?.nombre : kind==='fj' ? S.gastos.find(sid)?.concepto
+        : kind==='ex' ? S.cierres[ym]?.extras?.[+id]?.concepto : (()=>{ const p = S.proyectos.find(sid); return p ? `${p.cliente} · ${p.nombre}` : ''; })();
+      const opts = {
+        c:[['mes',`Sacarlo solo de ${L}`,'No cuenta este mes; los demás meses quedan igual.'],['baja',`Dar de baja desde ${L}`,'Deja de ser cliente de acá en adelante (los meses anteriores no se tocan).']],
+        eq:[['mes',`Sacarlo solo de ${L}`,'No cobra sueldo este mes; los demás meses quedan igual.'],['baja',`Ya no trabaja con nosotros desde ${L}`,'Se saca de acá en adelante (los meses anteriores no se tocan).']],
+        fj:[['mes',`Sacarlo solo de ${L}`,'No se paga este mes; los demás meses quedan igual.'],['baja',`Dejar de pagarlo desde ${L}`,'Se saca de acá en adelante (los meses anteriores no se tocan).']],
+        p:[['del','Eliminar este ingreso puntual','Se borra del todo.']], pc:[['del','Eliminar el proyecto (ingreso y costo)','Se borra del todo.']], ex:[['del','Eliminar este gasto extra','Se borra de este mes.']] }[kind];
+      if(!opts) return;
+      const box = UI.modal(`<h2>🗑 ${esc(nm||'')}<button class="icon-btn x" data-close>✕</button></h2><div class="list">${opts.map(([k,l,d])=>`<div class="li click" data-k="${k}" style="cursor:pointer"><div class="grow"><div class="b">${l}</div><div class="xs faint">${d}</div></div><span>›</span></div>`).join('')}</div>
+        <div class="mfoot"><button class="btn g" data-close>Cancelar</button></div>`);
+      box.querySelectorAll('[data-k]').forEach(el=>el.onclick = ()=>{ const k = el.dataset.k;
+        if(kind==='c'){ const x = S.clientes.find(sid); if(k==='mes'){ setPaused(id, ym, true); setCobro(id, ym, false); } else if(x){ x.finServicio = ymAdd(ym,-1); x.estado = 'inactivo'; clearIn(ym,'cli',id); } }
+        if(kind==='eq'){ const e = S.empleados.find(sid); if(k==='mes') setSkip(id, ym, true); else if(e){ e.finLaboral = ymAdd(ym,-1); e.estado = 'inactivo'; clearIn(ym,'eq',id); } }
+        if(kind==='fj'){ const g = S.gastos.find(sid); if(k==='mes') ovSet(ym,'fj',id,{ off:true }); else if(g){ if(g.desde && g.desde>=ym) S.gastos = S.gastos.filter(x=>!sid(x)); else g.hasta = ymAdd(ym,-1); } }
+        if(kind==='p' || kind==='pc') S.proyectos = S.proyectos.filter(x=>!sid(x));
+        if(kind==='ex') S.cierres[ym]?.extras?.splice(+id, 1);
+        UI.close(); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
     },
-    volverMes(id, ymArg){
-      const ym = ymArg || cursor, cl = closed(ym), { m, a } = parts(ym);
-      S.clientesPausados = S.clientesPausados.filter(k=>k!==`cp-${id}-${m}-${a}`);
-      const snap = cl && cl.clientes.find(x=>String(x.id)===String(id)); if(snap) snap.estuvo = true;
-      save(); render();
-    },
+    quitarMes(id, ymArg){ Fin.quitar('c', id, ymArg); },
+    volver(kind, id, ymArg){ const ym = ymArg || cursor;
+      if(kind==='c') setPaused(id, ym, false); if(kind==='eq') setSkip(id, ym, false); if(kind==='fj') ovSet(ym,'fj',id,{ off:null });
+      touch(ym); render(); },
+    volverMes(id, ymArg){ Fin.volver('c', id, ymArg); },
     editIngreso(kind, id, ymArg){
-      const ym = ymArg || cursor, cl = closed(ym), sid = x => String(x.id)===String(id);
+      const ym = ymArg || cursor, sid = x => String(x.id)===String(id);
       if(kind==='c'){
-        const c = S.clientes.find(sid), snap = cl && cl.clientes.find(sid), cur = snap ? +snap.monto : (c ? retainerAt(c, ym)+extrasOf(c.id, ym) : 0);
-        UI.form({ title:`✎ ${c?.nombre||snap?.nombre||'Cliente'} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
-          { k:'monto', label:`Monto de ${ymLabel(ym)}`, type:'number', default:cur, req:true },
-          ...(c ? [{ k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${ymLabel(ym)} en adelante (nuevo precio)`],['solo',`Solo ${ymLabel(ym)} (los demás meses quedan igual)`]] }] : []),
-          ...(c && (c.retainerHistory||[]).length ? [{ k:'h', type:'html', html:`<div class="xs faint" style="margin-top:4px"><b>Historial de precios:</b> ${[...c.retainerHistory].sort((a,b)=>a.desde.localeCompare(b.desde)).map(h=>`${ymLabel(h.desde,1)} ${fmt(h.monto)}`).join(' → ')}</div>` }] : []),
-        ], danger: c && !cl ? { label:'Dar de baja desde este mes', confirm:`¿${c.nombre} deja de ser cliente desde ${ymLabel(ym)}?`, fn:()=>{ c.finServicio = ymAdd(ym,-1); c.estado = 'inactivo'; save(); render(); } } : null,
+        const c = S.clientes.find(sid); if(!c) return; const r = cliRow(c, ym);
+        UI.form({ title:`✎ ${c.nombre} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
+          { k:'monto', label:`Monto de ${ymLabel(ym)}`, type:'number', default:r.monto, req:true },
+          { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${ymLabel(ym)} en adelante (nuevo precio)`],['solo',`Solo ${ymLabel(ym)} (los demás meses quedan igual)`]] },
+          ...((c.retainerHistory||[]).length ? [{ k:'h', type:'html', html:`<div class="xs faint" style="margin-top:4px"><b>Historial de precios:</b> ${[...c.retainerHistory].sort((a,b)=>a.desde.localeCompare(b.desde)).map(h=>`${ymLabel(h.desde,1)} ${fmt(h.monto)}`).join(' → ')}</div>` }] : []),
+        ], danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('c', id, ym), 60) },
         onSubmit:v=>{ const monto = +v.monto||0;
-          if(c){
-            const base = monto - extrasOf(c.id, ym), next = ymAdd(ym, 1), prevNext = retainerAt(c, next);
+          if(v.alcance==='solo') ovSet(ym,'cli',c.id,{ monto: monto===r.base ? null : monto });
+          else {
+            const base = monto - extrasOf(c.id, ym);
             c.retainerHistory = (c.retainerHistory||[]).length ? c.retainerHistory : [{ monto:c.presupuesto ?? c.retainer ?? 0, desde:c.inicioServicio||ym, nota:'Inicial' }];
-            const hadNext = c.retainerHistory.some(h=>h.desde===next);
-            c.retainerHistory = c.retainerHistory.filter(h=>h.desde!==ym); c.retainerHistory.push({ monto:base, desde:ym, nota:v.alcance==='solo'?'Solo este mes':'Editado' });
-            if(v.alcance==='solo'){ if(!hadNext) c.retainerHistory.push({ monto:prevNext, desde:next, nota:'Vuelve al precio anterior' }); }
-            else c.retainerHistory = c.retainerHistory.filter(h=>h.desde<=ym);   // el precio nuevo rige de acá en adelante
-            const last = [...c.retainerHistory].sort((a,b)=>b.desde.localeCompare(a.desde))[0]; c.retainer = last ? last.monto : base; c.presupuesto = null;
+            c.retainerHistory = c.retainerHistory.filter(h=>h.desde<ym); c.retainerHistory.push({ monto:base, desde:ym, nota:'Editado' });
+            c.retainer = base; c.presupuesto = null;
+            Object.keys(S.mes).filter(k=>k>=ym && !closed(k)).forEach(k=>ovSet(k,'cli',c.id,{ monto:null }));   // los meses cerrados quedan como se cerraron
+            ovSet(ym,'cli',c.id,{ monto:null });
           }
-          if(snap){ snap.monto = monto; snap.pendiente = snap.cobrado==='si' ? 0 : snap.cobrado==='parcial' ? Math.min(+snap.pendiente||0, monto) : monto; }
-          save(); render(); } });
+          touch(ym); render(); } });
       } else {
-        const p = S.proyectos.find(sid), snap = cl && (cl.proyectos||[]).find(sid), src = snap || p; if(!src) return;
-        UI.form({ title:`✎ ${src.cliente} · ${src.nombre}`, submit:'Guardar', fields:[
-          { k:'monto', label:'Monto', type:'number', default:src.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:snap ? snap.costo : p.empCosto, half:true },
-        ], danger:{ label:'Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); if(cl) cl.proyectos = (cl.proyectos||[]).filter(x=>!sid(x)); save(); render(); } },
-        onSubmit:v=>{ const monto = +v.monto||0;
-          if(p){ p.monto = monto; p.empCosto = +v.costo||0; }
-          if(snap){ snap.monto = monto; snap.costo = +v.costo||0; snap.pendiente = snap.cobrado==='si' ? 0 : monto; }
-          save(); render(); } });
+        const p = S.proyectos.find(sid); if(!p) return;
+        UI.form({ title:`✎ ${p.cliente} · ${p.nombre}`, submit:'Guardar', fields:[
+          { k:'cliente', label:'Cliente', default:p.cliente, half:true, req:true }, { k:'nombre', label:'Proyecto', default:p.nombre, half:true, req:true },
+          { k:'monto', label:'Monto', type:'number', default:p.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:p.empCosto, half:true },
+          { k:'fecha', label:'Fecha (define el mes)', type:'date', default:p.fecha },
+        ], danger:{ label:'🗑 Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); touch(ym); render(); } },
+        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha }); touch(ym); render(); } });
       }
+    },
+    editGasto(kind, id, ymArg){
+      const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
+      const alc = { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${L} en adelante`],['solo',`Solo ${L} (los demás meses quedan igual)`]] };
+      if(kind==='pc') return Fin.editIngreso('p', id, ym);
+      if(kind==='eq'){ const e = S.empleados.find(sid); if(!e) return; const r = eqRow(e, ym);
+        return UI.form({ title:`✎ ${e.nombre} · ${L}`, submit:'Guardar', fields:[ { k:'monto', label:`Sueldo de ${L}`, type:'number', default:r.monto, req:true }, alc ],
+          danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('eq', id, ym), 60) },
+          onSubmit:v=>{ const n = +v.monto||0;
+            if(v.alcance==='solo') ovSet(ym,'eq',e.id,{ monto: n===r.base ? null : n });
+            else { e.sueldoHistory = (e.sueldoHistory||[]).filter(h=>h.desde<ym); e.sueldoHistory.push({ monto:n, desde:ym, nota:'Editado' }); e.sueldo = n;
+              Object.keys(S.mes).filter(k=>k>=ym && !closed(k)).forEach(k=>ovSet(k,'eq',e.id,{ monto:null })); }
+            touch(ym); render(); } }); }
+      if(kind==='fj'){ const g = S.gastos.find(sid); if(!g) return; const r = fjRows(ym).find(x=>sid(x)) || { monto:0, base:0 };
+        return UI.form({ title:`✎ ${g.concepto} · ${L}`, submit:'Guardar', fields:[ { k:'concepto', label:'Concepto', default:g.concepto, req:true }, { k:'monto', label:`Monto de ${L}`, type:'number', default:r.monto, req:true }, alc ],
+          danger:{ label:'🗑 Sacar / dejar de pagar', fn:()=>setTimeout(()=>Fin.quitar('fj', id, ym), 60) },
+          onSubmit:v=>{ const n = +v.monto||0; g.concepto = v.concepto;
+            if(v.alcance==='solo') ovSet(ym,'fj',g.id,{ monto: n===r.base ? null : n });
+            else if(g.desde && g.desde>=ym){ g.monto = n; g.frecuencia = 'mensual'; ovSet(ym,'fj',g.id,{ monto:null }); }
+            else { S.gastos.push({ ...g, id:Date.now(), monto:n, frecuencia:'mensual', desde:ym }); g.hasta = ymAdd(ym,-1); }   // así los meses anteriores no cambian
+            touch(ym); render(); } }); }
+      if(kind==='ex'){ const x = S.cierres[ym]?.extras?.[+id]; if(!x) return;
+        return UI.form({ title:`✎ Gasto extra · ${L}`, submit:'Guardar', fields:[ { k:'concepto', label:'¿En qué?', default:x.concepto, req:true, half:true }, { k:'monto', label:'Monto', type:'number', default:x.monto, req:true, half:true } ],
+          danger:{ label:'🗑 Eliminar', confirm:'¿Eliminar este gasto?', fn:()=>{ S.cierres[ym].extras.splice(+id,1); touch(ym); render(); } },
+          onSubmit:v=>{ x.concepto = v.concepto; x.monto = +v.monto||0; touch(ym); render(); } }); }
     },
     copyCuenta(){ UI.copy(cuentaTexto(month(cursor))); },
     editReparto(){
@@ -525,27 +607,23 @@
 
     // Cerrar: guarda la foto del mes y actualiza la base (tarifas, clientes, proyectos, cobros)
     close(){
-      const ym = ciYm, c = S.cierres[ym], { m, a } = parts(ym);
-      // Tarifas que cambiaron
-      const changed = c.clientes.filter(x=>x.estuvo && !x.nuevo && x.base && +x.monto!==+x.base);
+      const ym = ciYm, c = draft(ym);
+      const cls = cliCands(ym).map(x=>cliRow(x, ym));
+      const changed = cls.filter(x=>x.estuvo && ovGet(ym,'cli',x.id).monto!=null && x.base && +x.monto!==+x.base);
       if(changed.length && confirm(`Estos clientes tuvieron un monto distinto al habitual:\n\n${changed.map(x=>`• ${x.nombre}: ${fmt(x.base)} → ${fmt(x.monto)}`).join('\n')}\n\n¿Es su NUEVO valor mensual desde ${ymLabel(ym)}?\n(Aceptar = nuevo valor fijo · Cancelar = fue solo este mes)`)){
-        changed.forEach(x=>{ const cl = S.clientes.find(y=>y.id===x.id); if(!cl) return; cl.retainerHistory = (cl.retainerHistory||[{ monto:cl.retainer||0, desde:cl.inicioServicio||ym, nota:'Inicial' }]).filter(h=>h.desde!==ym); cl.retainerHistory.push({ monto:+x.monto, desde:ym, nota:'Cierre de mes' }); cl.retainer = +x.monto; });
+        changed.forEach(x=>{ const k = S.clientes.find(y=>String(y.id)===String(x.id)); if(!k) return; const base = +x.monto - extrasOf(k.id, ym);
+          k.retainerHistory = ((k.retainerHistory||[]).length ? k.retainerHistory : [{ monto:k.presupuesto ?? k.retainer ?? 0, desde:k.inicioServicio||ym, nota:'Inicial' }]).filter(h=>h.desde!==ym);
+          k.retainerHistory.push({ monto:base, desde:ym, nota:'Cierre de mes' }); k.retainer = base; k.presupuesto = null; ovSet(ym,'cli',k.id,{ monto:null }); });
       }
-      const sal = c.equipo.filter(x=>x.incluir && !x.nuevo && x.base && +x.monto!==+x.base);
+      const sal = eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir && ovGet(ym,'eq',x.id).monto!=null && x.base && +x.monto!==+x.base);
       if(sal.length && confirm(`Sueldos distintos al habitual:\n\n${sal.map(x=>`• ${x.nombre}: ${fmt(x.base)} → ${fmt(x.monto)}`).join('\n')}\n\n¿Es el nuevo sueldo desde ${ymLabel(ym)}?`)){
-        sal.forEach(x=>{ const e = S.empleados.find(y=>y.id===x.id); if(!e) return; e.sueldoHistory = (e.sueldoHistory||[]).filter(h=>h.desde!==ym); e.sueldoHistory.push({ monto:+x.monto, desde:ym, nota:'Cierre de mes' }); e.sueldo = +x.monto; });
+        sal.forEach(x=>{ const e = S.empleados.find(y=>String(y.id)===String(x.id)); if(!e) return; e.sueldoHistory = (e.sueldoHistory||[]).filter(h=>h.desde!==ym); e.sueldoHistory.push({ monto:+x.monto, desde:ym, nota:'Cierre de mes' }); e.sueldo = +x.monto; ovSet(ym,'eq',e.id,{ monto:null }); });
       }
-      // Clientes nuevos → base de clientes
-      c.clientes.filter(x=>x.nuevo && !S.clientes.some(y=>y.id===x.id)).forEach(x=>{ S.clientes.push({ id:x.id, nombre:x.nombre, tipo:x.tipo, retainer:+x.monto, moneda:'ARS', estado:'activo', inicioServicio:ym, retainerHistory:[{ monto:+x.monto, desde:ym, nota:'Inicial' }], empleadoIds:[], presupuesto:null }); x.nuevo = false; x.base = +x.monto; });
-      c.equipo.filter(x=>x.nuevo && !S.empleados.some(y=>y.id===x.id)).forEach(x=>{ S.empleados.push({ id:x.id, nombre:x.nombre, rol:'', sueldo:+x.monto, moneda:'ARS', estado:'activo', inicioLaboral:ym, sueldoHistory:[{ monto:+x.monto, desde:ym, nota:'Inicial' }], clienteIds:[] }); x.nuevo = false; });
-      // Pausas y cobros (para que la vista completa quede igual)
-      c.clientes.forEach(x=>{ const pk = `cp-${x.id}-${m}-${a}`, ck = `c-${x.id}-${m}-${a}`;
-        S.clientesPausados = S.clientesPausados.filter(k=>k!==pk); if(!x.estuvo) S.clientesPausados.push(pk);
-        S.cobros = S.cobros.filter(k=>k.key!==ck); if(x.estuvo && x.cobrado==='si') S.cobros.push({ key:ck }); });
-      // Proyectos puntuales
-      c.proyectos.forEach(p=>{ let pr = S.proyectos.find(y=>y.id===p.id);
-        if(!pr){ pr = { id:p.id, nombre:p.nombre, cliente:p.cliente, moneda:'ARS', etapa:'Pago único', fecha:`${ym}-15`, empNombre:'', desc:'' }; S.proyectos.push(pr); p.nuevo = false; }
-        pr.monto = +p.monto; pr.empCosto = +p.costo||0; pr.estado = p.cobrado==='si' ? 'cobrado' : 'pendiente'; });
+      // Foto del mes (respaldo) y montos fijados: si más adelante cambian tarifas o sueldos, este mes cerrado no se mueve
+      c.clientes = cliCands(ym).map(x=>cliRow(x, ym)); c.proyectos = proRows(ym); c.equipo = eqCands(ym).map(e=>eqRow(e, ym)); c.fijos = fjRows(ym);
+      c.clientes.forEach(x=>ovSet(ym,'cli',x.id,{ monto:x.monto, in:true }));
+      c.equipo.forEach(x=>ovSet(ym,'eq',x.id,{ monto:x.monto, in:true }));
+      c.fijos.forEach(x=>ovSet(ym,'fj',x.id,{ monto:x.monto }));
       c.closedAt = new Date().toISOString();
       const me = platformMember(); c.by = me?.name || '';
       save(); UI.confetti(120);
