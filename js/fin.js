@@ -144,9 +144,10 @@
       <div class="grid g4" style="margin-bottom:20px">
         <div class="card kpi"><div class="l">Ingresos del mes</div><div class="v" style="color:var(--green)">${fmt(M.ing)}${d(M.ing,P.ing)}</div><div class="s">Clientes ${fmt(M.ingClientes)} · Puntuales ${fmt(M.ingProy)}</div></div>
         <div class="card kpi"><div class="l">Gastos del mes</div><div class="v" style="color:var(--red)">${fmt(M.gas)}${d(M.gas,P.gas,true)}</div><div class="s">${Object.entries(groups).map(([k,v])=>`${k} ${fmt(v.reduce((s,g)=>s+g.monto,0))}`).join(' · ')||'Sin gastos'}</div></div>
-        <div class="card kpi"><div class="l">Ganancia</div><div class="v" style="color:${M.neto>=0?'var(--blue-l)':'var(--red)'}">${fmt(M.neto)}${d(M.neto,P.neto)}</div><div class="s">Margen ${M.margen}% · Dio 40% ${fmt(Math.max(0,M.neto*.4))} · Santi 40% ${fmt(Math.max(0,M.neto*.4))} · Agencia 20%</div></div>
+        <div class="card kpi"><div class="l">Ganancia</div><div class="v" style="color:${M.neto>=0?'var(--blue-l)':'var(--red)'}">${fmt(M.neto)}${d(M.neto,P.neto)}</div><div class="s">Margen ${M.margen}% · ${(()=>{ const K = cuentaDe(M); return [...K.A.socios.map(x=>`${esc(x.nombre)} ${fmt(x.monto)}`), `Agencia ${fmt(K.A.ag)}`].join(' · '); })()}</div></div>
         <div class="card kpi"><div class="l">Falta cobrar</div><div class="v" style="color:${M.pend?'var(--yellow)':'var(--green)'}">${fmt(M.pend)}</div><div class="s">Cobrado ${fmt(M.cobrado)} de ${fmt(M.ing)}</div></div>
       </div>
+      ${cuenta(M)}
       <div class="grid g3">
         <div class="span2 card"><div class="card-h"><h3>💰 Cuánto ganamos con cada cliente</h3><span class="sub">${rows.length} clientes</span></div>
           ${rows.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Cliente</th><th style="text-align:right">Mensual</th><th style="text-align:right">Puntuales</th><th style="text-align:right">Total</th><th class="hide-m" style="text-align:right">% del mes</th><th>Estado</th></tr></thead><tbody>
@@ -159,6 +160,54 @@
             ${v.map(g=>`<div class="row small" style="padding:5px 0;border-bottom:1px solid var(--border)"><span class="grow">${esc(g.concepto)}</span><b>${fmt(g.monto)}</b></div>`).join('')}`).join(''):'<div class="empty small">Sin gastos cargados</div>'}
           ${M.cierre?.answers?.saldo?`<div class="alert info" style="margin-top:14px"><div class="ai">🏦</div><div><div class="at">Saldo real al cierre: ${fmt(M.cierre.answers.saldo)}</div>${M.cierre.answers.notas?`<div class="ad prewrap">${esc(M.cierre.answers.notas)}</div>`:''}</div></div>`:''}</div>
       </div>` };
+  }
+
+  // ── 🧮 La cuenta del mes: ingresos − sueldos − gastos = queda → agencia → socios ──
+  // Reparto: primero se separa el % de la agencia y lo que queda se divide entre los socios.
+  const reparto = () => { const r = S.reparto || {}; return { agencia: r.agencia ?? 20, socios: (r.socios && r.socios.length) ? r.socios : [{ nombre:'Dio', pct:50 }, { nombre:'Santi', pct:50 }] }; };
+  function cuentaDe(M){
+    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado })),
+      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado }))];
+    const R = reparto(), sum = (a,k) => a.reduce((s,x)=>s+x[k],0);
+    const tot = { debe:sum(ing,'monto'), entro:sum(ing,'entro') }, gas = M.gas;
+    const calc = base => { const queda = base - gas, ag = Math.max(0, queda) * R.agencia/100, soc = Math.max(0, queda) - ag;
+      return { queda, ag, soc, socios: R.socios.map(x=>({ ...x, monto: soc * (+x.pct||0)/100 })) }; };
+    return { ing, R, tot, gas, A:calc(tot.debe), B:calc(tot.entro) };
+  }
+  function cuenta(M){
+    const K = cuentaDe(M), { ing, R, tot, A, B } = K;
+    const groups = {}; M.gastos.forEach(g=>{ (groups[g.grupo] = groups[g.grupo]||[]).push(g); });
+    const n = (v, neg) => `<td style="text-align:right;white-space:nowrap">${v ? (neg?'− ':'')+fmt(v) : '—'}</td>`;
+    const sg = v => v<0 ? '− '+fmt(-v) : fmt(v);
+    const sec = t => `<tr><td colspan="4" class="xs faint b" style="letter-spacing:1px;padding-top:16px">${t}</td></tr>`;
+    const tot2 = (l, a, b, color, big) => `<tr style="border-top:2px solid var(--border)${big?';font-size:15px':''}"><td class="b"${color?` style="color:${color}"`:''}>${l}</td><td></td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(a)}</td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(b)}</td></tr>`;
+    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`;
+    return `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>🧮 La cuenta del mes</h3><span class="sub">${ymLabel(M.ym)}</span><span class="grow"></span>
+        <button class="btn g sm" onclick="Fin.copyCuenta()">📋 Copiar</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
+        ${sec('💰 LO QUE ENTRA DE CLIENTES')}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)}</div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin clientes este mes</td></tr>'}
+        ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
+        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)}</td><td></td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
+        ${tot2('Total sueldos y gastos', -K.gas, -K.gas, 'var(--red)')}
+        ${tot2('= Queda', A.queda, B.queda, A.queda>=0?'var(--blue-l)':'var(--red)', 1)}
+        ${sec('🏢 REPARTO')}
+        <tr><td>Para la agencia (${R.agencia}%)</td><td></td>${n(A.ag)}${n(B.ag)}</tr>
+        <tr><td class="b">Para los socios</td><td></td>${n(A.soc)}${n(B.soc)}</tr>
+        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td></td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${A.queda<0?`<div class="alert warn" style="margin-top:12px"><div class="ai">⚠️</div><div class="ad">Este mes los sueldos y gastos superan lo que entra: no queda para repartir.</div></div>`:''}
+      ${tot.debe>tot.entro?`<p class="xs faint" style="margin-top:10px">Falta cobrar ${fmt(tot.debe-tot.entro)}. “Con lo cobrado” es lo que se puede repartir hoy; “Si cobramos todo”, lo que queda cuando paguen todos. Tocá ✓/✗ para marcar quién pagó.</p>`:''}
+    </div>`;
+  }
+  function cuentaTexto(M){
+    const { ing, R, tot, A, B } = cuentaDe(M), L = [`*Cuenta ${ymLabel(M.ym)}*`, '', '*Ingresos*'];
+    ing.forEach(x=>L.push(`${x.cob==='si'?'✅':x.cob==='parcial'?'🟡':'❌'} ${x.nombre}: ${fmt(x.monto)}${x.cob!=='si'?` (entró ${fmt(x.entro)})`:''}`));
+    L.push(`Total: ${fmt(tot.debe)} · cobrado ${fmt(tot.entro)}`, '', '*Sueldos y gastos*');
+    M.gastos.forEach(g=>L.push(`− ${g.concepto}: ${fmt(g.monto)}`));
+    L.push(`Total: ${fmt(M.gas)}`, '', `*Queda:* ${fmt(A.queda)} (con lo cobrado: ${fmt(B.queda)})`, `Agencia ${R.agencia}%: ${fmt(A.ag)}`);
+    A.socios.forEach((x,i)=>L.push(`${x.nombre}: ${fmt(x.monto)} (con lo cobrado: ${fmt(B.socios[i].monto)})`));
+    return L.join('\n');
   }
 
   // ── 🔭 Proyecciones ─────────────────────────────────────────────────────────
@@ -331,6 +380,32 @@
       onSubmit:v=>{ const g = { id:Date.now(), concepto:v.concepto, categoria:'Otros', frecuencia:'mensual', monto:v.monto, moneda:'ARS' }; S.gastos.push(g); S.cierres[ciYm].fijos.push({ id:g.id, concepto:v.concepto, monto:v.monto, incluir:true }); upd(); render(); } }); },
     addEx(){ UI.form({ title:'Gasto extra del mes', fields:[ { k:'concepto', label:'¿En qué?', req:true, half:true }, { k:'monto', label:'Monto', type:'number', req:true, half:true } ],
       onSubmit:v=>{ S.cierres[ciYm].extras.push({ concepto:v.concepto, monto:v.monto }); upd(); render(); } }); },
+    // Marca si un cliente/proyecto pagó (en el mes que se está viendo)
+    cobro(kind, id){
+      const ym = cursor, { m, a } = parts(ym), c = closed(ym);
+      const flip = x => { x.cobrado = x.cobrado==='si' ? 'no' : 'si'; x.pendiente = x.cobrado==='si' ? 0 : (+x.monto||0); return x.cobrado==='si'; };
+      if(kind==='c'){
+        const key = `c-${id}-${m}-${a}`; let paid;
+        if(c){ const x = c.clientes.find(y=>String(y.id)===String(id)); if(!x) return; paid = flip(x); }
+        else paid = !isCobrado(id, ym);
+        S.cobros = S.cobros.filter(k=>k.key!==key); if(paid) S.cobros.push({ key });
+      } else {
+        let paid; if(c){ const x = (c.proyectos||[]).find(y=>String(y.id)===String(id)); if(x) paid = flip(x); }
+        const p = S.proyectos.find(y=>String(y.id)===String(id)); if(p){ if(paid==null) paid = p.estado!=='cobrado'; p.estado = paid ? 'cobrado' : 'pendiente'; }
+      }
+      save(); render();
+    },
+    copyCuenta(){ UI.copy(cuentaTexto(month(cursor))); },
+    editReparto(){
+      const R = reparto();
+      UI.form({ title:'⚙ Cómo se reparte lo que queda', submit:'Guardar', fields:[
+        { k:'agencia', label:'% que queda para la agencia', type:'number', default:R.agencia },
+        ...R.socios.map((x,i)=>[{ k:'n'+i, label:'Socio '+(i+1), default:x.nombre, half:true }, { k:'p'+i, label:'% de lo de socios', type:'number', default:x.pct, half:true }]).flat(),
+        { k:'h', type:'html', html:'<p class="xs faint">Primero se separa el % de la agencia de lo que queda (ingresos − sueldos − gastos). El resto se reparte entre los socios según su %; tiene que sumar 100.</p>' },
+      ], onSubmit:v=>{ const socios = R.socios.map((x,i)=>({ nombre:(v['n'+i]||x.nombre).trim(), pct:+v['p'+i]||0 }));
+        const t = socios.reduce((s,x)=>s+x.pct,0); if(Math.round(t)!==100){ UI.toast(`Los % de los socios suman ${t}, tienen que sumar 100`,'⚠️'); return false; }
+        S.reparto = { agencia:Math.min(100, Math.max(0, +v.agencia||0)), socios }; save(); render(); } });
+    },
     paidOld(id){ const p = S.proyectos.find(x=>x.id===id); if(p){ p.estado = 'cobrado'; save(); UI.toast(`${p.cliente}: marcado como cobrado`,'✓'); render(); } },
     reopen(){ if(!confirm('¿Reabrir el mes para corregirlo?')) return; S.cierres[ciYm].closedAt = null; save(); render(); },
 
