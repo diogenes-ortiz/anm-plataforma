@@ -193,7 +193,7 @@
     const cobroTag = r => r.queda ? `<span class="tag t-yellow">Falta ${fmt(r.queda)}</span>` : '<span class="tag t-green">Cobrado ✓</span>';
     return { html:`
       <div class="toolbar"><button class="btn g sm" onclick="Fin.move(-1)">‹</button><div class="b" style="font-size:18px;min-width:170px;text-align:center">${ymLabel(cursor)}</div><button class="btn g sm" onclick="Fin.move(1)">›</button>
-        <span class="grow"></span>${cursor!==UI.ym()?`<button class="btn g sm" onclick="Fin.hoy()">Ir a este mes</button>`:''}</div>
+        <span class="grow"></span>${cursor!==UI.ym()?`<button class="btn g sm" onclick="Fin.hoy()">Ir a este mes</button>`:''}<button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button></div>
       ${(()=>{ const prev = S.proyectos.filter(p=>p.estado!=='cobrado' && p.fecha && p.fecha.slice(0,7)<cursor && isOneShot(p)); return prev.length ? `<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>⏳ Pendientes de cobro de meses anteriores</h3><span class="sub">${fmt(prev.reduce((s,p)=>s+(+(p.pendienteParcial ?? p.monto) || 0),0))}</span></div><div class="list">
         ${prev.map(p=>`<div class="li"><div class="grow"><div class="b small">${esc(p.cliente)} · ${esc(p.nombre)}</div><div class="xs faint">${UI.fdate(p.fecha,{abs:true})}</div></div><b>${fmt(p.pendienteParcial ?? p.monto)}</b><button class="btn xs ok" onclick="Fin.paidOld(${JSON.stringify(p.id)})">Se cobró ✓</button></div>`).join('')}</div></div>` : ''; })()}
       <div class="grid g4" style="margin-bottom:20px">
@@ -242,7 +242,7 @@
     const tot2 = (l, a, b, color, big) => `<tr style="border-top:2px solid var(--border)${big?';font-size:15px':''}"><td class="b"${color?` style="color:${color}"`:''}>${l}</td><td></td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(a)}</td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(b)}</td></tr>`;
     const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`;
     return `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>🧮 La cuenta del mes</h3><span class="sub">${ymLabel(M.ym)}</span><span class="grow"></span>
-        <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn g sm" onclick="Fin.copyCuenta()">📋 Copiar</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
+        <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
         ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
@@ -270,14 +270,29 @@
     ...eqCands(ym).filter(e=>S.skips.includes(ckey('skip', e.id, ym))).map(e=>({ kind:'eq', id:e.id, nombre:e.nombre })),
     ...fjRows(ym).filter(g=>!g.incluir).map(g=>({ kind:'fj', id:g.id, nombre:g.concepto })) ];
   const M_has = (cid, ym) => month(ym).cli.some(x=>String(x.id)===String(cid));
-  function cuentaTexto(M){
-    const { ing, R, tot, A, B } = cuentaDe(M), L = [`*Cuenta ${ymLabel(M.ym)}*`, '', '*Ingresos*'];
-    const fmt = v => v<0 ? '− '+fmtBase(-v) : fmtBase(v);
-    ing.forEach(x=>L.push(`${x.cob==='si'?'✅':x.cob==='parcial'?'🟡':'❌'} ${x.nombre}: ${fmt(x.monto)}${x.cob!=='si'?` (entró ${fmt(x.entro)})`:''}`));
-    L.push(`Total: ${fmt(tot.debe)} · cobrado ${fmt(tot.entro)}`, '', '*Sueldos y gastos*');
-    M.gastos.forEach(g=>L.push(`− ${g.concepto}: ${fmt(g.monto)}${g.kind==='eq'?(g.pagado?' ✅':' ❌ (no pagado)'):''}`));
-    L.push(`Total: ${fmt(M.gas)}`, '', `*Queda:* ${fmt(A.queda)} (con lo cobrado: ${fmt(B.queda)})`, `Agencia ${R.agencia}%: ${fmt(A.ag)}`);
-    A.socios.forEach((x,i)=>L.push(`${x.nombre}: ${fmt(x.monto)} (con lo cobrado: ${fmt(B.socios[i].monto)})`));
+  // Resumen del mes listo para pegar en WhatsApp (*negrita* y emojis de WhatsApp)
+  function cuentaTexto(M, modo='completo'){
+    const { ing, R, tot, A, B } = cuentaDe(M), fmt = v => v<0 ? '−'+fmtBase(-v) : fmtBase(v);
+    const ic = c => c==='si' ? '✅' : c==='parcial' ? '🟡' : '⏳';
+    const eq = M.gastos.filter(g=>g.kind==='eq'), otros = M.gastos.filter(g=>g.kind!=='eq');
+    const debeCli = ing.filter(x=>x.cob!=='si'), debeEq = eq.filter(g=>!g.pagado);
+    const L = [`📊 *ANM · ${ymLabel(M.ym)}*`, ''];
+    L.push(`💰 Ingresos: *${fmt(tot.debe)}*`, `💸 Sueldos y gastos: *${fmt(M.gas)}*`, `🟰 Queda: *${fmt(A.queda)}*`);
+    if(tot.debe>tot.entro) L.push(`   _(con lo cobrado hasta hoy: ${fmt(B.queda)})_`);
+    L.push('', '*Reparto*', `🏢 Agencia (${R.agencia}%): ${fmt(A.ag)}`);
+    A.socios.forEach((x,i)=>L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''}`));
+    if(modo==='completo'){
+      L.push('', `*Clientes* (${fmt(tot.entro)} cobrado de ${fmt(tot.debe)})`);
+      ing.forEach(x=>L.push(`${ic(x.cob)} ${x.nombre}${x.kind==='p'?' _(puntual)_':''}: ${fmt(x.monto)}${x.cob==='parcial'?` _(falta ${fmt(x.monto-x.entro)})_`:''}`));
+      if(eq.length){ L.push('', '*Sueldos*'); eq.forEach(g=>L.push(`${g.pagado?'✅':'⏳'} ${g.concepto}: ${fmt(g.monto)}`)); }
+      if(otros.length){ L.push('', '*Gastos*'); otros.forEach(g=>L.push(`• ${g.concepto}: ${fmt(g.monto)}`)); }
+    }
+    if(debeCli.length || debeEq.length){
+      L.push('', '*Pendientes*');
+      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre).join(', ')}`);
+      if(debeEq.length) L.push(`⏳ Falta pagar ${fmt(debeEq.reduce((s,g)=>s+g.monto,0))}: ${debeEq.map(g=>g.concepto).join(', ')}`);
+    } else L.push('', '🎉 Todo cobrado y todo pagado.');
+    const notas = M.cierre?.answers?.notas; if(notas) L.push('', `📝 ${notas}`);
     return L.join('\n');
   }
 
@@ -598,6 +613,19 @@
           onSubmit:v=>{ x.concepto = v.concepto; x.monto = +v.monto||0; touch(ym); render(); } }); }
     },
     copyCuenta(){ UI.copy(cuentaTexto(month(cursor))); },
+    // 💬 Resumen del mes para WhatsApp: se puede elegir corto/completo y editar antes de mandar
+    wpp(){
+      const M = month(cursor);
+      const box = UI.modal(`<h2>💬 Resumen de ${ymLabel(cursor)} para WhatsApp<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="row" style="gap:6px;margin-bottom:10px"><button class="chip on" data-m="completo">Completo</button><button class="chip" data-m="corto">Corto (solo números)</button></div>
+        <textarea class="inp" id="wa-text" rows="18" style="line-height:1.5;font-family:inherit"></textarea>
+        <p class="xs faint" style="margin-top:6px">Podés editar el texto antes de mandarlo. En WhatsApp los *asteriscos* salen en negrita.</p>
+        <div class="mfoot"><button class="btn g" data-close>Cerrar</button><button class="btn g" id="wa-copy">📋 Copiar</button><button class="btn p" id="wa-open">💬 Abrir WhatsApp</button></div>`, true);
+      const ta = box.querySelector('#wa-text'), set = m => { ta.value = cuentaTexto(M, m); box.querySelectorAll('[data-m]').forEach(b=>b.classList.toggle('on', b.dataset.m===m)); };
+      box.querySelectorAll('[data-m]').forEach(b=>b.onclick = ()=>set(b.dataset.m)); set('completo');
+      box.querySelector('#wa-copy').onclick = ()=>{ UI.copy(ta.value); UI.toast('Copiado: pegalo en WhatsApp','📋'); };
+      box.querySelector('#wa-open').onclick = ()=>window.open(UI.waLink(ta.value), '_blank');
+    },
     editReparto(){
       const R = reparto();
       UI.form({ title:'⚙ Cómo se reparte lo que queda', submit:'Guardar', fields:[
