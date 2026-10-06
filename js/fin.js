@@ -1,4 +1,4 @@
-// ─── FINANZAS (versión simple: Actualidad · Proyecciones · Cierre del mes) ────
+// ─── FINANZAS (versión simple: Actualidad · Proyecciones) ──────────────────────
 // Usa el mismo documento 'main' de Supabase y el mismo formato de datos que la
 // app de finanzas original (clientes, proyectos, empleados, gastos…), así los
 // backups siguen siendo compatibles y la "vista completa" sigue funcionando.
@@ -173,11 +173,11 @@
 
   // ── Render general ──────────────────────────────────────────────────────────
   function render(){
-    const pend = toClose();
-    $('#tabs').innerHTML = [['actualidad','📊 Actualidad'],['proyecciones','🔭 Proyecciones'],['cierre','✅ Cierre del mes']].map(([k,l])=>
-      `<a href="#" class="${tab===k?'active':''}" onclick="Fin.go('${k}');return false">${l}${k==='cierre'&&pend?'<span class="cnt">1</span>':''}</a>`).join('');
+    if(tab!=='proyecciones') tab = 'actualidad';   // todo se carga en Actualidad (ya no hay cierre del mes aparte)
+    $('#tabs').innerHTML = [['actualidad','📊 Actualidad'],['proyecciones','🔭 Proyecciones']].map(([k,l])=>
+      `<a href="#" class="${tab===k?'active':''}" onclick="Fin.go('${k}');return false">${l}</a>`).join('');
     Object.values(charts).forEach(c=>c.destroy?.()); charts = {};
-    const v = tab==='proyecciones' ? viewProjections() : tab==='cierre' ? viewClose() : viewNow();
+    const v = tab==='proyecciones' ? viewProjections() : viewNow();
     $('#page').innerHTML = v.html; v.after?.();
   }
 
@@ -185,7 +185,6 @@
   function viewNow(){
     const M = month(cursor), P = month(ymAdd(cursor,-1));
     const d = (a,b,inv) => { const p = pct(a,b); if(p==null||!b) return ''; const good = inv ? p<0 : p>0; return `<span class="tag ${p===0?'':good?'t-green':'t-red'}" style="margin-left:6px">${p>0?'▲':p<0?'▼':'='} ${Math.abs(p)}%</span>`; };
-    const pend = toClose();
     const rows = [...M.cli.map(x=>({ ...x, proy:M.pro.filter(p=>p.cliente===x.nombre) })),
       ...[...new Set(M.pro.map(p=>p.cliente))].filter(n=>!M.cli.some(x=>x.nombre===n)).map(n=>({ nombre:n, total:0, pendiente:0, cobrado:'si', proy:M.pro.filter(p=>p.cliente===n), soloProyecto:true }))]
       .map(r=>({ ...r, proyMonto:r.proy.reduce((s,p)=>s+(+p.monto||0),0), proyPend:r.proy.reduce((s,p)=>s+(+p.pendiente||0),0) }))
@@ -193,10 +192,10 @@
     const groups = {}; M.gastos.forEach(g=>{ (groups[g.grupo] = groups[g.grupo]||[]).push(g); });
     const cobroTag = r => r.queda ? `<span class="tag t-yellow">Falta ${fmt(r.queda)}</span>` : '<span class="tag t-green">Cobrado ✓</span>';
     return { html:`
-      ${pend?`<div class="alert warn" style="margin-bottom:18px"><div class="ai">🗓️</div><div class="grow"><div class="at">Falta cerrar ${ymLabel(pend)}</div><div class="ad">Son unas preguntas rápidas: qué clientes estuvieron, por cuánto y qué quedó pendiente.</div></div><button class="btn sm p" onclick="Fin.startClose('${pend}')">Cerrar el mes</button></div>`:''}
       <div class="toolbar"><button class="btn g sm" onclick="Fin.move(-1)">‹</button><div class="b" style="font-size:18px;min-width:170px;text-align:center">${ymLabel(cursor)}</div><button class="btn g sm" onclick="Fin.move(1)">›</button>
-        <span class="tag ${M.closed?'t-green':'t-yellow'}">${M.closed?'✓ Mes cerrado':'Estimado (sin cerrar)'}</span><span class="grow"></span>
-        ${M.closed?'':`<button class="btn g sm" onclick="Fin.startClose('${cursor}')">Cerrar ${ymLabel(cursor)}</button>`}</div>
+        <span class="grow"></span>${cursor!==UI.ym()?`<button class="btn g sm" onclick="Fin.hoy()">Ir a este mes</button>`:''}</div>
+      ${(()=>{ const prev = S.proyectos.filter(p=>p.estado!=='cobrado' && p.fecha && p.fecha.slice(0,7)<cursor && isOneShot(p)); return prev.length ? `<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>⏳ Pendientes de cobro de meses anteriores</h3><span class="sub">${fmt(prev.reduce((s,p)=>s+(+(p.pendienteParcial ?? p.monto) || 0),0))}</span></div><div class="list">
+        ${prev.map(p=>`<div class="li"><div class="grow"><div class="b small">${esc(p.cliente)} · ${esc(p.nombre)}</div><div class="xs faint">${UI.fdate(p.fecha,{abs:true})}</div></div><b>${fmt(p.pendienteParcial ?? p.monto)}</b><button class="btn xs ok" onclick="Fin.paidOld(${JSON.stringify(p.id)})">Se cobró ✓</button></div>`).join('')}</div></div>` : ''; })()}
       <div class="grid g4" style="margin-bottom:20px">
         <div class="card kpi"><div class="l">Ingresos del mes</div><div class="v" style="color:var(--green)">${fmt(M.ing)}${d(M.ing,P.ing)}</div><div class="s">Clientes ${fmt(M.ingClientes)} · Puntuales ${fmt(M.ingProy)}</div></div>
         <div class="card kpi"><div class="l">Gastos del mes</div><div class="v" style="color:var(--red)">${fmt(M.gas)}${d(M.gas,P.gas,true)}</div><div class="s">${Object.entries(groups).map(([k,v])=>`${k} ${fmt(v.reduce((s,g)=>s+g.monto,0))}`).join(' · ')||'Sin gastos'}</div></div>
@@ -216,7 +215,9 @@
         <div class="card"><div class="card-h"><h3>💸 Gastos del mes</h3><span class="sub">${fmt(M.gas)}</span></div>
           ${Object.keys(groups).length?Object.entries(groups).map(([k,v])=>`<div class="xs faint b" style="margin:12px 0 4px">${esc(k.toUpperCase())} · ${fmt(v.reduce((s,g)=>s+g.monto,0))}</div>
             ${v.map(g=>`<div class="row small" style="padding:5px 0;border-bottom:1px solid var(--border)"><span class="grow">${esc(g.concepto)}</span><b>${fmt(g.monto)}</b></div>`).join('')}`).join(''):'<div class="empty small">Sin gastos cargados</div>'}
-          ${M.cierre?.answers?.saldo?`<div class="alert info" style="margin-top:14px"><div class="ai">🏦</div><div><div class="at">Saldo real al cierre: ${fmt(M.cierre.answers.saldo)}</div>${M.cierre.answers.notas?`<div class="ad prewrap">${esc(M.cierre.answers.notas)}</div>`:''}</div></div>`:''}</div>
+          <div class="xs faint b" style="margin:18px 0 6px">📝 NOTAS DEL MES</div>
+          <div class="fld"><label>Saldo real en cuentas (opcional)</label><input class="inp sm" type="number" step="any" value="${M.cierre?.answers?.saldo??''}" onchange="Fin.nota('saldo',this.value)"></div>
+          <div class="fld"><label>¿Algo importante? (bajas, aumentos, imprevistos)</label><textarea class="inp" rows="3" onchange="Fin.nota('notas',this.value)">${esc(M.cierre?.answers?.notas||'')}</textarea></div></div>
       </div>`, after:()=>{ const w = document.getElementById('mpm'); if(w) w.scrollLeft = w.scrollWidth; } };
   }
 
@@ -434,6 +435,8 @@
   window.Fin = {
     go(t){ tab = t; if(t==='cierre' && !ciYm) step = 0; render(); window.scrollTo(0,0); },
     move(n){ cursor = ymAdd(cursor, n); render(); },
+    hoy(){ cursor = UI.ym(); render(); },
+    nota(k,v){ const c = draft(cursor); c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; touch(cursor); },
     startClose(ym){ ciYm = ym; step = 0; tab = 'cierre'; render(); window.scrollTo(0,0); },
     pickClose(ym){ ciYm = ym; step = 0; render(); },
     step(n){ step = Math.max(0, Math.min(3, n)); render(); window.scrollTo(0,0); },
@@ -602,7 +605,7 @@
         const t = socios.reduce((s,x)=>s+x.pct,0); if(Math.round(t)!==100){ UI.toast(`Los % de los socios suman ${t}, tienen que sumar 100`,'⚠️'); return false; }
         S.reparto = { agencia:Math.min(100, Math.max(0, +v.agencia||0)), socios }; save(); render(); } });
     },
-    paidOld(id){ const p = S.proyectos.find(x=>x.id===id); if(p){ p.estado = 'cobrado'; save(); UI.toast(`${p.cliente}: marcado como cobrado`,'✓'); render(); } },
+    paidOld(id){ const p = S.proyectos.find(x=>String(x.id)===String(id)); if(p) delete p.pendienteParcial; if(p){ p.estado = 'cobrado'; save(); UI.toast(`${p.cliente}: marcado como cobrado`,'✓'); render(); } },
     reopen(){ if(!confirm('¿Reabrir el mes para corregirlo?')) return; S.cierres[ciYm].closedAt = null; save(); render(); },
 
     // Cerrar: guarda la foto del mes y actualiza la base (tarifas, clientes, proyectos, cobros)
@@ -668,7 +671,7 @@
   const rnd = n => [...crypto.getRandomValues(new Uint8Array(n))].map(x=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[x%32]).join('');
   function gate(html){ $('#app').style.display = 'none'; const g = $('#gate'); g.style.display = ''; g.innerHTML = `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Finanzas · acceso restringido</div></div></div>${html}<p class="xs" style="margin-top:16px"><a href="index.html">← Volver a la plataforma</a></p></div>`; setTimeout(()=>g.querySelector('input')?.focus(), 30); return g; }
   function open(){ $('#gate').style.display = 'none'; $('#app').style.display = ''; sessionStorage.setItem(OK_KEY, String(Date.now()));
-    const p = toClose(); if(p){ ciYm = p; step = 0; tab = 'cierre'; } render(); }
+    tab = 'actualidad'; render(); }
   const FinGate = {
     async check(){
       const me = platformMember();
