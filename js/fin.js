@@ -115,7 +115,7 @@
     const c = S.cierres[ym] || null;
     const cli = cliCands(ym).map(x=>cliRow(x, ym)).filter(x=>x.estuvo);
     const pro = proRows(ym);
-    const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre, monto:x.monto })),
+    const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre, monto:x.monto, pagado:!!ovGet(ym,'eq',x.id).pagado })),
       ...fjRows(ym).filter(x=>x.incluir).map(x=>({ grupo:'Fijos', kind:'fj', id:x.id, concepto:x.concepto, monto:x.monto })),
       ...(c?.extras||[]).map((x,i)=>({ grupo:'Extras del mes', kind:'ex', id:i, concepto:x.concepto, monto:+x.monto||0 })),
       ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo }))];
@@ -248,9 +248,10 @@
         ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind==='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('c','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
-        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td></td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
+        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td>${g.kind==='eq'?`<button class="tag ${g.pagado?'t-green':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.pagoEq('${g.id}')">${g.pagado?'✓ Pagado':'✗ No pagado'}</button>`:''}</td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind!=='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('${c.kind}','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         <tr><td colspan="4"><button class="btn g xs" onclick="Fin.addGasto()">＋ Gasto / sueldo</button></td></tr>
+        ${(()=>{ const f = M.gastos.filter(g=>g.kind==='eq' && !g.pagado); return f.length ? `<tr><td colspan="4" class="xs" style="color:var(--yellow)">Falta pagar sueldos: ${f.map(g=>`${esc(g.concepto)} ${fmt(g.monto)}`).join(' · ')} — total ${fmt(f.reduce((s,g)=>s+g.monto,0))}</td></tr>` : ''; })()}
         ${tot2('Total sueldos y gastos', -K.gas, -K.gas, 'var(--red)')}
         ${tot2('= Queda', A.queda, B.queda, A.queda>=0?'var(--blue-l)':'var(--red)', 1)}
         ${sec('🏢 REPARTO')}
@@ -274,7 +275,7 @@
     const fmt = v => v<0 ? '− '+fmtBase(-v) : fmtBase(v);
     ing.forEach(x=>L.push(`${x.cob==='si'?'✅':x.cob==='parcial'?'🟡':'❌'} ${x.nombre}: ${fmt(x.monto)}${x.cob!=='si'?` (entró ${fmt(x.entro)})`:''}`));
     L.push(`Total: ${fmt(tot.debe)} · cobrado ${fmt(tot.entro)}`, '', '*Sueldos y gastos*');
-    M.gastos.forEach(g=>L.push(`− ${g.concepto}: ${fmt(g.monto)}`));
+    M.gastos.forEach(g=>L.push(`− ${g.concepto}: ${fmt(g.monto)}${g.kind==='eq'?(g.pagado?' ✅':' ❌ (no pagado)'):''}`));
     L.push(`Total: ${fmt(M.gas)}`, '', `*Queda:* ${fmt(A.queda)} (con lo cobrado: ${fmt(B.queda)})`, `Agencia ${R.agencia}%: ${fmt(A.ag)}`);
     A.socios.forEach((x,i)=>L.push(`${x.nombre}: ${fmt(x.monto)} (con lo cobrado: ${fmt(B.socios[i].monto)})`));
     return L.join('\n');
@@ -436,6 +437,8 @@
     go(t){ tab = t; if(t==='cierre' && !ciYm) step = 0; render(); window.scrollTo(0,0); },
     move(n){ cursor = ymAdd(cursor, n); render(); },
     hoy(){ cursor = UI.ym(); render(); },
+    // Sueldo pagado / no pagado en el mes que se está viendo
+    pagoEq(id){ const ym = cursor; ovSet(ym,'eq',id,{ pagado: ovGet(ym,'eq',id).pagado ? null : true }); touch(ym); render(); },
     nota(k,v){ const c = draft(cursor); c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; touch(cursor); },
     startClose(ym){ ciYm = ym; step = 0; tab = 'cierre'; render(); window.scrollTo(0,0); },
     pickClose(ym){ ciYm = ym; step = 0; render(); },
