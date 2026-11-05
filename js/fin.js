@@ -6,7 +6,7 @@
   const { esc, $ } = UI;
   const { SUPABASE_URL:SB_URL, SUPABASE_KEY:SB_KEY } = window.ANM_CONFIG;
   const HEADERS = { 'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY };
-  const LS_KEY = 'anm_v7';            // mismo cache local que la app original
+  const LS_KEY = (window.ANM_CONFIG.LS_PREFIX||'')+'anm_v7';            // mismo cache local que la app original
   const MONTHS = UI.MONTHS;
   const TIPO = { rrss:'Redes sociales', pauta:'Pauta / Ads', 'rrss+pauta':'Redes + Pauta', web:'Web', branding:'Branding', otros:'Otros' };
   const SOCIOS = ['dio','santi','diogenes','santiago'];
@@ -689,7 +689,7 @@
   };
 
   function platformMember(){
-    try{ const me = localStorage.getItem('anm_me'); const team = JSON.parse(localStorage.getItem('anm_doc_team')||'{}');
+    try{ const me = localStorage.getItem('anm_me'); const team = JSON.parse(localStorage.getItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_team')||'{}');
       return (team.members||[]).find(m=>m.id===me && !m.deleted) || null; }catch(e){ return null; }
   }
 

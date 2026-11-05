@@ -43,7 +43,7 @@
   function platformMember(){
     try{
       const me = localStorage.getItem('anm_me'); if(!me) return null;
-      const team = JSON.parse(localStorage.getItem('anm_doc_team')||'{}');
+      const team = JSON.parse(localStorage.getItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_team')||'{}');
       return (team.members||[]).find(m=>m.id===me && !m.deleted) || null;
     }catch(e){ return null; }
   }

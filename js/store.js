@@ -8,13 +8,14 @@
   const { SUPABASE_URL:SB_URL, SUPABASE_KEY:SB_KEY } = window.ANM_CONFIG;
   const HEADERS = { 'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY };
   const DOCS = ['ops','growth','team'];
-  const LS = id => 'anm_doc_'+id;
+  const LS = id => (window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_'+id;
   const TOMBSTONE_DAYS = 60;
 
   const docs = {};           // id -> { col: [records] }
   const dirty = new Set();
   let saveTimer = null, pollTimer = null, status = 'local';
   const listeners = [];
+  const logged = new Set();
 
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
   function now(){ return new Date().toISOString(); }
@@ -164,6 +165,15 @@
     // Finanzas (documento 'main') — solo lectura de nombres para importar clientes
     async readFinance(){ try{ return await fetchRemote('main'); }catch(e){ return null; } },
 
+    // Deja registro del error en la base (tabla anm_errors). Máximo 5 por carga, sin repetir.
+    logError(msg){
+      try{
+        const m = String(msg||'').slice(0,1000); if(!m || logged.has(m) || logged.size>=5) return; logged.add(m);
+        let who = ''; try{ who = localStorage.getItem('anm_me')||''; }catch(e){}
+        tfetch(`${SB_URL}/rest/v1/anm_errors`, { method:'POST', headers:{ ...HEADERS, Prefer:'return=minimal' },
+          body:JSON.stringify({ msg:m, page:location.hash||location.pathname, version:window.ANM_VERSION||'', who, agent:navigator.userAgent.slice(0,200) }) }, 5000).catch(()=>{});
+      }catch(e){}
+    },
     exportAll(){ return JSON.parse(JSON.stringify(docs)); },
     importAll(data){
       DOCS.forEach(id=>{ if(data[id]){ docs[id] = mergeDocs(docs[id], data[id]); this.touch(id); } });
