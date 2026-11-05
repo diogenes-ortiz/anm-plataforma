@@ -6,8 +6,9 @@
 // (gana el updatedAt más nuevo). Así dos personas editando a la vez no se pisan.
 (function(){
   const { SUPABASE_URL:SB_URL, SUPABASE_KEY:SB_KEY } = window.ANM_CONFIG;
-  const HEADERS = { 'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY };
-  const DOCS = ['ops','growth','team'];
+  // Cada pedido va con el token de la sesión de Google (sin sesión, la base no devuelve nada)
+  const H = extra => window.Auth ? Auth.headers(extra) : Promise.resolve({ 'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, ...(extra||{}) });
+  let DOCS = ['ops','growth','team'];
   const LS = id => (window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_'+id;
   const TOMBSTONE_DAYS = 60;
 
@@ -57,7 +58,7 @@
   }
 
   async function fetchRemote(id){
-    const res = await tfetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}&select=data`, { headers:HEADERS });
+    const res = await tfetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}&select=data`, { headers:await H() });
     if(!res.ok) throw new Error('fetch '+res.status);
     const rows = await res.json();
     return rows.length ? (rows[0].data||{}) : null;
@@ -66,12 +67,12 @@
   async function pushRemote(id, data){
     const body = JSON.stringify({ id, data, updated_at:now() });
     const res = await tfetch(`${SB_URL}/rest/v1/anm_state`, {
-      method:'POST', headers:{ ...HEADERS, Prefer:'resolution=merge-duplicates,return=minimal' }, body
+      method:'POST', headers:await H({ Prefer:'resolution=merge-duplicates,return=minimal' }), body
     });
     if(res.ok) return;
     // Fallback igual al de Finanzas: PATCH sobre la fila existente
     const res2 = await tfetch(`${SB_URL}/rest/v1/anm_state?id=eq.${id}`, {
-      method:'PATCH', headers:{ ...HEADERS, Prefer:'return=minimal' }, body:JSON.stringify({ data, updated_at:now() })
+      method:'PATCH', headers:await H({ Prefer:'return=minimal' }), body:JSON.stringify({ data, updated_at:now() })
     });
     if(!res2.ok) throw new Error('push '+res2.status);
   }
@@ -170,9 +171,16 @@
       try{
         const m = String(msg||'').slice(0,1000); if(!m || logged.has(m) || logged.size>=5) return; logged.add(m);
         let who = ''; try{ who = localStorage.getItem('anm_me')||''; }catch(e){}
-        tfetch(`${SB_URL}/rest/v1/anm_errors`, { method:'POST', headers:{ ...HEADERS, Prefer:'return=minimal' },
-          body:JSON.stringify({ msg:m, page:location.hash||location.pathname, version:window.ANM_VERSION||'', who, agent:navigator.userAgent.slice(0,200) }) }, 5000).catch(()=>{});
+        H({ Prefer:'return=minimal' }).then(headers=>tfetch(`${SB_URL}/rest/v1/anm_errors`, { method:'POST', headers,
+          body:JSON.stringify({ msg:m, page:location.hash||location.pathname, version:window.ANM_VERSION||'', who, agent:navigator.userAgent.slice(0,200) }) }, 5000)).catch(()=>{});
       }catch(e){}
+    },
+    // Qué documentos sincroniza este usuario (un invitado no tiene acceso a Crecimiento)
+    setDocs(ids){ DOCS = ids.slice(); },
+    // Borra campos de todos los registros de una colección (ej: datos sensibles viejos)
+    stripFields(doc, col, fields){
+      let n = 0; (docs[doc]?.[col]||[]).forEach(r=>{ if(fields.some(f=>f in r)){ fields.forEach(f=>delete r[f]); r.updatedAt = now(); n++; } });
+      if(n) this.touch(doc); return n;
     },
     exportAll(){ return JSON.parse(JSON.stringify(docs)); },
     importAll(data){

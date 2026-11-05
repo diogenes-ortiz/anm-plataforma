@@ -246,7 +246,7 @@
     const delivRow = (icon, name, date, st, opts, okList, fn, rec, kind, month) => `<div class="li" style="flex-wrap:wrap;gap:10px">
       <span style="font-size:20px">${icon}</span><div class="grow" style="min-width:180px"><div class="b small">${name}</div><div class="xs faint">Fecha: ${dueTag(date, okList.includes(st))}</div></div>
       <select class="inp sm" style="${okList.includes(st)?'border-color:var(--green)':st==='enviado'||st==='correcciones'||st==='corregir'?'border-color:var(--yellow)':''}" onchange="${fn}">${opts.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select>
-      <input class="inp sm" style="width:190px" placeholder="Link (Drive, Canva…)" value="${esc(rec?.link||'')}" onchange="Ops.setDelivLink('${kind}','${id}','${month}',this.value)">${rec?.link?`<a class="btn xs g" href="${esc(rec.link)}" target="_blank">Abrir ↗</a>`:''}</div>`;
+      <input class="inp sm" style="width:190px" placeholder="Link (Drive, Canva…)" value="${esc(rec?.link||'')}" onchange="Ops.setDelivLink('${kind}','${id}','${month}',this.value)">${rec?.link?`<a class="btn xs g" href="${esc(UI.safeUrl(rec.link))}" target="_blank">Abrir ↗</a>`:''}</div>`;
     const deliverables = (needsCal(c)||needsRep(c)) ? `<div class="card" style="margin-bottom:18px;border-color:color-mix(in srgb,var(--blue) 35%,transparent)"><div class="card-h"><h3>📦 Entregables del mes</h3><span class="grow"></span>
         <span class="xs faint">Calendario: día ${c.calendarDay||25} · Reporte: día ${c.reportDay||5}</span><button class="btn xs g" onclick="Ops.editClient('${id}')">Cambiar fechas</button></div><div class="list">
       ${needsCal(c) && !CAL_OK.includes(calRec(id,UI.ym())?.stage) ? delivRow('🗓️', `Calendario de ${UI.ymLabel(UI.ym())} <span class="tag t-red">atrasado</span>`, calDue(c, prevYm()), calRec(id,UI.ym())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${UI.ym()}',this.value)`, calRec(id,UI.ym()), 'cal', UI.ym()) : ''}
@@ -258,7 +258,7 @@
       <div class="hero" style="margin-bottom:22px">
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
-          <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(c.link)}" target="_blank">Carpeta ↗</a>`:''}</div></div>
+          <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(UI.safeUrl(c.link))}" target="_blank">Carpeta ↗</a>`:''}</div></div>
         <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button><button class="btn ok" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button><button class="btn g" onclick="Reunion.open('${id}')">🧠 Ordenar reunión</button>
           <div class="row"><button class="btn g sm" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Tarea</button><button class="btn g sm" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋ Reunión</button><button class="btn g sm" onclick="Ops.editClient('${id}')">✎</button></div></div>
       </div>
@@ -299,7 +299,7 @@
     return `<div class="li"><input type="checkbox" ${t.status==='done'?'checked':''} onchange="Ops.toggleTask('${t.id}')" style="width:18px;height:18px;cursor:pointer">
       <div class="grow" style="cursor:pointer" onclick="Ops.editTask('${t.id}')"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
       <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
-      ${t.link?`<a href="${esc(t.link)}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
+      ${UI.safeUrl(t.link)?`<a href="${esc(UI.safeUrl(t.link))}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
       ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}</div>`;
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
@@ -524,7 +524,7 @@
     const msg = `${a.icon} ${a.title}\n${a.desc}`;
     const picking = selectable && aSelMode && a.key;
     return `<div class="alert ${a.level} ${picking&&aSel.has(a.key)?'picked':''}" ${picking?`style="cursor:pointer" onclick="Ops.aPick(${esc(JSON.stringify(a.key))})"`:''}>${picking?`<input type="checkbox" ${aSel.has(a.key)?'checked':''} style="width:18px;height:18px;pointer-events:none;margin-top:2px">`:''}<div class="ai">${a.icon}</div><div class="grow"><div class="at">${esc(a.title)}</div><div class="ad">${esc(a.desc)}</div></div>
-      ${to?UI.avatar(to,'sm'):''}${picking?'':`<a class="btn xs g" href="${a.link}">Ir</a><button class="btn xs g" onclick="App.sendAlert(${esc(JSON.stringify(msg))}, ${esc(JSON.stringify(a.to||'all'))}, ${esc(JSON.stringify(a.link))})">Avisar</button>${a.key?`<button class="icon-btn" title="Descartar por 7 días" onclick="Ops.dismiss(${esc(JSON.stringify(a.key))})">✕</button>`:''}`}</div>`;
+      ${to?UI.avatar(to,'sm'):''}${picking?'':`<a class="btn xs g" href="${esc(UI.safeUrl(a.link))}">Ir</a><button class="btn xs g" onclick="App.sendAlert(${esc(JSON.stringify(msg))}, ${esc(JSON.stringify(a.to||'all'))}, ${esc(JSON.stringify(a.link))})">Avisar</button>${a.key?`<button class="icon-btn" title="Descartar por 7 días" onclick="Ops.dismiss(${esc(JSON.stringify(a.key))})">✕</button>`:''}`}</div>`;
   }
 
   // ── Formularios / acciones ──────────────────────────────────────────────────
@@ -594,7 +594,7 @@
       UI.form({ title: id ? 'Tarea' : 'Nueva tarea', values:t, fields:[
         { k:'title', label:'¿Qué hay que hacer?', req:true },
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts(), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
-        { k:'assigneeId', label:'Responsable', type:'select', options:App.assignOpts(), half:true, hint:App.isAdmin()?'':'Solo los socios pueden asignar a otras personas.' }, { k:'due', label:'Vence', type:'date', half:true },
+        { k:'assigneeId', label:'Responsable', type:'select', options:(()=>{ const o = App.assignOpts(); return t.assigneeId && !o.some(x=>x[0]===t.assigneeId) ? [...o, [t.assigneeId, App.member(t.assigneeId)?.name||'—']] : o; })(), half:true, hint:App.me().role==='invitado'?'Como invitado/a solo te podés asignar a vos.':'' }, { k:'due', label:'Vence', type:'date', half:true },
         { k:'status', label:'Estado', type:'select', options:TASK_ST, half:true }, { k:'priority', label:'Prioridad', type:'select', options:PRIO, half:true },
         { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
         { k:'note', label:'Nota para el cliente', placeholder:'Ej: falta OK final para empezar a salir' },
@@ -605,6 +605,7 @@
         v.area = (v.area||'').trim().toUpperCase();
         const r = Store.upsert('ops','tasks',{ ...t, ...v, status:prevStatus });
         if(v.status!==prevStatus || !id) setTaskStatus(r.id, v.status);
+        if(id && v.assigneeId && v.assigneeId!==t.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `${App.me().name.split(' ')[0]} te pasó la tarea: ${v.title}`, '#/ops/tareas');
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
         App.render();
       } });
@@ -632,12 +633,12 @@
     pickGroup(ids){ const list = ids.split(',').filter(Boolean), all = list.every(id=>sel.has(id)); list.forEach(id=>all ? sel.delete(id) : sel.add(id)); App.render(); },
     // Acciones en bloque sobre las tareas seleccionadas
     bulk(action, value){
-      const me = App.me(), admin = App.isAdmin();
+      const me = App.me(), puede = me.role!=='invitado';
       let ids = [...sel].filter(id=>Store.get('ops','tasks',id));
       if(!ids.length) return;
-      // Quien no es socio solo puede tocar sus propias tareas
-      const own = ids.filter(id=>admin || Store.get('ops','tasks',id).assigneeId===me.id);
-      if(own.length<ids.length) UI.toast(`${ids.length-own.length} tarea(s) no son tuyas: solo los socios pueden modificarlas`,'⚠️');
+      // Socios y equipo pueden modificar cualquier tarea (y volverla atrás); el invitado solo las suyas
+      const own = ids.filter(id=>puede || Store.get('ops','tasks',id).assigneeId===me.id);
+      if(own.length<ids.length) UI.toast(`${ids.length-own.length} tarea(s) no son tuyas: un invitado solo modifica las propias`,'⚠️');
       ids = own; if(!ids.length) return App.render();
       const n = ids.length, s = n!==1?'s':'';
       if(action==='done' || action==='status'){
@@ -679,7 +680,7 @@
         { k:'title', label:'Título / idea', req:true, placeholder:'Ej: Reel lanzamiento colección' },
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts('— Contenido propio ANM —'), half:true }, { k:'date', label:'Fecha de publicación / entrega', type:'date', req:true, half:true },
         { k:'format', label:'Formato', type:'select', options:FORMATS, half:true }, { k:'status', label:'Estado', type:'select', options:CONTENT_ST, half:true },
-        { k:'unit', label:'Unidad', type:'select', options:[['','(la del cliente)'],...App.unitOpts()], half:true }, { k:'assigneeId', label:'Responsable', type:'select', options:App.assignOpts(), half:true },
+        { k:'unit', label:'Unidad', type:'select', options:[['','(la del cliente)'],...App.unitOpts()], half:true }, { k:'assigneeId', label:'Responsable', type:'select', options:(()=>{ const o = App.assignOpts(); return t.assigneeId && !o.some(x=>x[0]===t.assigneeId) ? [...o, [t.assigneeId, App.member(t.assigneeId)?.name||'—']] : o; })(), half:true },
         { k:'notes', label:'Copy / brief / links', type:'textarea', rows:4 },
       ], danger: id ? { label:'Eliminar', confirm:'¿Eliminar la pieza?', fn:()=>{ Store.remove('ops','content',id); App.render(); } } : null,
       onSubmit:v=>{
@@ -725,7 +726,7 @@
       const pending = tasks.filter(t=>t.status!=='done' && t.assigneeId && t.assigneeId!==App.me().id && t.alertedTo!==t.assigneeId).length;
       const people = App.members().filter(x=>(m.attendees||[]).includes(x.id)).map(x=>x.name.split(' ')[0]).join(', ');
       UI.modal(`<h2>🤝 ${esc(m.title)}<button class="icon-btn x" data-close>✕</button></h2>
-        <div class="row wrap small muted" style="gap:10px;margin:-8px 0 16px"><span class="tag t-blue">${esc(clientName(m.clientId))}</span><span>${UI.fdate((m.date||'').slice(0,10),{abs:true})}${UI.time(m.date)?' · '+UI.time(m.date):''}</span>${people?`<span>👥 ${esc(people)}</span>`:''}${(m.topics||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join('')}${m.link?`<a href="${esc(m.link)}" target="_blank">🔗 grabación / link</a>`:''}</div>
+        <div class="row wrap small muted" style="gap:10px;margin:-8px 0 16px"><span class="tag t-blue">${esc(clientName(m.clientId))}</span><span>${UI.fdate((m.date||'').slice(0,10),{abs:true})}${UI.time(m.date)?' · '+UI.time(m.date):''}</span>${people?`<span>👥 ${esc(people)}</span>`:''}${(m.topics||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join('')}${m.link?`<a href="${esc(UI.safeUrl(m.link))}" target="_blank">🔗 grabación / link</a>`:''}</div>
         <div class="card" style="padding:16px 18px;margin-bottom:12px"><div class="xs faint b" style="letter-spacing:1px;margin-bottom:8px">📝 MINUTA</div><div class="small prewrap" style="line-height:1.65">${esc(m.minuta||'Sin minuta cargada.')}</div>
           ${m.decisiones?`<div class="xs faint b" style="letter-spacing:1px;margin:14px 0 6px">✔ DECISIONES</div><div class="small prewrap" style="line-height:1.65">${esc(m.decisiones)}</div>`:''}</div>
         <div class="card" style="padding:16px 18px"><div class="row" style="margin-bottom:8px"><div class="xs faint b grow" style="letter-spacing:1px">✅ TAREAS BAJADAS (${tasks.length})</div><button class="btn xs g" onclick="UI.close();Ops.editTask(null,{clientId:'${m.clientId||''}',meetingId:'${id}'})">＋ Tarea</button></div>
