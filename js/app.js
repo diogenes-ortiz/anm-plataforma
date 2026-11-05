@@ -275,6 +275,7 @@
 
   // ── Si algo falla, mostrarlo en pantalla (en vez de quedar trabado) ───────────
   function showCrash(msg){
+    Store.logError?.(msg);
     if(document.getElementById('crash')) return;
     document.body.insertAdjacentHTML('beforeend', `<div id="crash" class="toast" style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:990;max-width:min(680px,94vw);flex-wrap:wrap;border-color:var(--red)">
       ⚠️ <span style="flex:1;min-width:200px">Algo falló: <code>${UI.esc(String(msg).slice(0,180))}</code></span>
@@ -285,11 +286,11 @@
   // Reparar: borra solo la copia local del navegador (los datos siguen en la base) y recarga
   App.repair = ()=>{
     if(!confirm('Esto borra la copia guardada en este navegador y vuelve a bajar todo de la base de datos. No se pierde nada de lo que ya se sincronizó. ¿Seguimos?')) return;
-    try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem('anm_doc_'+d)); sessionStorage.clear(); }catch(e){}
+    try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_'+d)); const e = sessionStorage.getItem('anm_entorno'); sessionStorage.clear(); if(e) sessionStorage.setItem('anm_entorno', e); }catch(e){}
     location.href = location.pathname + '#/inicio';
     location.reload();
   };
-  if(/[?&]reparar=1/.test(location.search)){ try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem('anm_doc_'+d)); }catch(e){} history.replaceState(null,'',location.pathname); }
+  if(/[?&]reparar=1/.test(location.search)){ try{ ['ops','growth','team'].forEach(d=>localStorage.removeItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_'+d)); }catch(e){} history.replaceState(null,'',location.pathname); }
 
   // ── Versión: si se publicó algo nuevo, recargar (una vez) o avisar ────────────
   let userActed = false, rendering = false;

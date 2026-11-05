@@ -844,7 +844,7 @@ tr:hover td{background:rgba(26,115,232,.03)}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="js/config.js?v=202610061212"></script>
+<script src="js/config.js?v=202611052053"></script>
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────────────
 // FIX: Separamos claves de datos base vs datos de usuario para que initSeed
@@ -957,12 +957,12 @@ function save(){
 }
 
 function persistLocal(){
-  try{ localStorage.setItem('anm_v7', JSON.stringify(S)); } catch(e){}
+  try{ localStorage.setItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_v7', JSON.stringify(S)); } catch(e){}
 }
 
 function loadLocal(){
   try{
-    const d=localStorage.getItem('anm_v7');
+    const d=localStorage.getItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_v7');
     if(d){ mergeState(JSON.parse(d)); return true; }
     // Migrar desde v6 si existe
     const d6=localStorage.getItem('anm_v6');
@@ -1935,7 +1935,7 @@ function restaurarBackup(input){
 }
 function resetData(){
   if(!confirm('¿Resetear TODO? Esto borrará todos tus datos.'))return;
-  localStorage.removeItem('anm_v7'); localStorage.removeItem('anm_v6');
+  localStorage.removeItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_v7'); localStorage.removeItem('anm_v6');
   Object.assign(S, JSON.parse(JSON.stringify(DEFAULT_STATE)));
   S._seeded=false; initSeed(); saveToSupabase(); render();
 }
@@ -1991,8 +1991,8 @@ loadFromSupabase().then(loaded=>{
   }
 });
 </script>
-<script src="js/store.js?v=202610061212"></script>
+<script src="js/store.js?v=202611052053"></script>
 <script>Store.loadLocal();</script>
-<script src="js/finanzas-extra.js?v=202610061212"></script>
+<script src="js/finanzas-extra.js?v=202611052053"></script>
 </body>
 </html>
