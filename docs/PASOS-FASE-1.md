@@ -6,7 +6,7 @@ Hasta que no estén todos hechos, **no se mergea** el pull request de la Fase 1:
 ## 0. Antes de empezar
 1. Descargá un respaldo: plataforma (Ajustes → "Descargar respaldo") y Finanzas (⚙ → "Descargar backup").
 2. Confirmá que en Crecimiento están los 50 prospectos de la lista Hunter. El archivo con esa lista se borra en esta fase, así que si nunca se importaron, importalos antes desde la versión actual.
-3. Corré `supabase/fase0-historial.sql` (Fase 0) si todavía no lo hiciste.
+3. Corré `supabase/fase0-historial.sql` (Fase 0) en el SQL Editor: activa el historial para poder deshacer cualquier cambio.
 
 ## 1. Google Cloud: crear el "botón" de Google (gratis)
 1. Entrá a https://console.cloud.google.com con tu Gmail → creá un proyecto llamado "ANM Plataforma".
@@ -22,15 +22,21 @@ Hasta que no estén todos hechos, **no se mergea** el pull request de la Fase 1:
 2. **Authentication → URL Configuration**:
    - Site URL: `https://diogenes-ortiz.github.io/anm-plataforma/`
    - Redirect URLs: agregá `https://diogenes-ortiz.github.io/anm-plataforma/**`
-3. Repetí 1 y 2 en el proyecto de prueba (con su propia URL de callback en Google: `https://<proyecto-de-prueba>.supabase.co/auth/v1/callback`).
 
-## 3. Supabase: permisos
-1. Abrí `supabase/fase1-seguridad.sql`, reemplazá `TU_MAIL@gmail.com` por **tu** Gmail (el que vas a usar para entrar).
-2. **Primero en el proyecto de prueba**: SQL Editor → pegar todo → Run. Al final tiene que mostrar tu mail como `owner`.
-3. Probá la versión nueva en `/staging/` o con `?entorno=prueba`: entrá con Google, autorizá un segundo Gmail en Equipo → Accesos, y entrá con ese.
-4. Cuando confirmes que anda: mergear el PR y, en el mismo momento, correr el SQL en **producción**.
+## 3. Supabase: permisos (en dos pasos, sin cortar la plataforma)
+Se usa un solo proyecto, el real (`pxsgqbldbdvbrfwqnvyl`). Para no arriesgar nada, el cierre de la base va en dos pasos:
 
-> Desde que corrés el SQL en producción, la versión vieja deja de poder leer datos. Por eso se hace junto con el merge. Para volver atrás, al final del archivo está el bloque "DESHACER".
+**Paso A (se puede hacer ya; la versión actual sigue andando igual):**
+1. Abrí `supabase/fase1-seguridad.sql` y reemplazá `TU_MAIL@gmail.com` por **tu** Gmail.
+2. Supabase → SQL Editor → New query → pegar todo → Run. Al final tiene que mostrar tu mail como `owner`.
+
+**Publicar la versión nueva:** se mergean los PR de las Fases 0 y 1. La plataforma pasa a pedir "Entrar con Google".
+1. Entrá vos y autorizá en **Equipo → Accesos** el Gmail de cada persona, con su rol.
+2. Cada persona entra una vez con Google.
+
+**Paso B (recién cuando todos entraron):** correr `supabase/fase1b-cerrar-base.sql`. Desde ahí la base no responde a nadie sin sesión, Finanzas solo a socios y se borran las contraseñas viejas. Si algo sale mal, al final de ese archivo está el bloque "DESHACER".
+
+> No hay proyecto de prueba aparte (decisión de Diogenes): la copia `/staging/` trabaja sobre los datos reales y lo avisa con una franja roja. El historial de la Fase 0 permite volver atrás cualquier cambio.
 
 ## 4. Apps Script (recordatorios y respaldo)
 En el proyecto de Apps Script → ⚙ Configuración del proyecto → Propiedades de la secuencia de comandos → agregar:
