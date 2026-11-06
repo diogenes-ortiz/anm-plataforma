@@ -23,7 +23,7 @@
   const clientName = id => client(id)?.name || (id ? '—' : 'Interna');
   const activeClients = () => S('clients').filter(c=>c.active!==false).sort((a,b)=>a.name.localeCompare(b.name));
   const lastUpdate = c => S('updates').filter(u=>u.clientId===c.id).sort((a,b)=>b.at.localeCompare(a.at))[0];
-  const daysSinceUpdate = c => { const u = lastUpdate(c); return u ? UI.diffDays(u.at.slice(0,10)) : 999; };
+  const daysSinceUpdate = c => { const u = lastUpdate(c); return u ? UI.diffDays(UI.day(u.at)) : 999; };
   const openTasks = () => S('tasks').filter(t=>t.status!=='done');
   const overdueTasks = () => openTasks().filter(t=>t.due && t.due<UI.today());
   const needsCal = c => (c.units||[]).some(u=>CAL_UNITS.includes(u));
@@ -79,7 +79,7 @@
   function statusText(cid, { closedDays=30 }={}){
     const c = client(cid); if(!c) return '';
     const since = UI.addDays(UI.today(), -closedDays);
-    const ts = S('tasks').filter(t=>t.clientId===cid && (t.status!=='done' || (t.doneAt||'').slice(0,10)>=since));
+    const ts = S('tasks').filter(t=>t.clientId===cid && (t.status!=='done' || UI.day(t.doneAt)>=since));
     // Área de la tarea; si no tiene, se usa su unidad de negocio (SOCIAL MEDIA, WEB…)
     const areaOf = t => (t.area || (t.unit && App.unit(t.unit)?.label) || '').toUpperCase();
     const order = [...new Set([...(c.areas||[]).map(a=>a.name), ...ts.map(areaOf).filter(Boolean), '' ])];
@@ -101,12 +101,8 @@
   const statusToTasks = p => ({ areas:p.areas.map(a=>({ name:a.name, link:a.link, note:a.note })),
     tasks:p.areas.flatMap(a=>a.items.map(it=>({ text:it.text, note:it.note, link:it.link, area:a.name, status:it.status }))) });
   const minutaData = m => m.statusText ? { ...m, ...statusToTasks(parseStatus(m.statusText)), minuta:m.minuta||m.statusText } : m;
+  // Solo lectura: no escribe nada mientras se dibuja la pantalla (BUG-12)
   function pendingMinutas(){
-    // Si la reunión se cargó y después se borró a propósito, no se recrea ni se vuelve a ofrecer
-    (window.ANM_MINUTAS||[]).forEach(m=>{ if(Store.exists('ops','meetings',m.id)) return;
-      const ts = S('tasks').filter(t=>t.meetingId===m.id); if(!ts.length) return;
-      Store.upsert('ops','meetings',{ id:m.id, title:m.title, clientId:ts[0].clientId||'', type:m.type||'seguimiento', date:m.date, attendees:[App.me().id], topics:m.topics||[], minuta:m.minuta, decisiones:m.decisiones||'', actions:ts.map(t=>({ id:Store.uid(), text:t.title, taskId:t.id })), by:App.me().id });
-    });
     return (window.ANM_MINUTAS||[]).filter(m=>!Store.exists('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)).map(minutaData); }
   const memberByFirst = n => n && App.members().find(m=>norm(m.name.split(' ')[0])===norm(n));
   const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
@@ -159,6 +155,8 @@
 
   // ── Vista principal ──────────────────────────────────────────────────────────
   const TABS = [['seguimiento','Seguimiento'],['tareas','Tareas'],['calendario','Calendario'],['reuniones','Reuniones y minutas'],['alertas','Alertas']];
+  let curTab = '', searchByTab = {}, doneLimit = 20;
+  const searchRender = UI.debounce(()=>{ const pos = document.activeElement?.selectionStart; App.render(); const i = $('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } });
   let search = '', taskMode = localStorage.getItem('anm_taskmode')||'board', taskWho = 'all', calCursor = UI.ym(), meetTopic = '';
   // Filtro global por cliente ('' = todos, '__int' = internas, o id de cliente)
   let cf = localStorage.getItem('anm_opsclient')||'';
@@ -167,6 +165,7 @@
 
   App.route('ops', ([tab='seguimiento', id])=>{
     if(tab==='cliente'){ setCF(id); tab = 'seguimiento'; history.replaceState(null,'','#/ops/seguimiento'); }
+    if(tab!==curTab){ curTab = tab; search = searchByTab[tab]||''; }
     if(cf && cf!=='__int' && !client(cf)) setCF('');
     const al = alerts().filter(a=>a.level!=='info' && cm(a.cid)).length;
     const tabs = `<div class="tabs">${TABS.map(([k,l])=>`<a href="#/ops/${k}" class="${tab===k?'active':''}">${l}${k==='alertas'&&al?`<span class="cnt">${al}</span>`:''}</a>`).join('')}</div>`;
@@ -276,7 +275,7 @@
             return areas.map(a=>{ const g = list.filter(t=>(t.area||'')===a); return g.length ? `<div class="xs faint b" style="letter-spacing:1px;margin:12px 0 2px">${esc(a||'OTROS')}</div>${taskList(g, true)}` : ''; }).join('');
           })()}</div>
           <div class="card"><div class="card-h"><h3>Historial de seguimiento</h3></div>
-            ${ups.length?`<div class="tl">${ups.slice(0,25).map(u=>`<div class="tl-i ${u.health||'ok'}"><div class="when">${UI.fdate(u.at.slice(0,10),{abs:true})} · ${esc(App.member(u.by)?.name||'')}</div><div class="small prewrap">${esc(u.text)}</div>${u.nextStep?`<div class="xs muted">→ ${esc(u.nextStep)}</div>`:''}</div>`).join('')}</div>`:'<div class="empty">Sin historial</div>'}</div>
+            ${ups.length?`<div class="tl">${ups.slice(0,25).map(u=>`<div class="tl-i ${u.health||'ok'}"><div class="when">${UI.fdate(UI.day(u.at),{abs:true})} · ${esc(App.member(u.by)?.name||'')}</div><div class="small prewrap">${esc(u.text)}</div>${u.nextStep?`<div class="xs muted">→ ${esc(u.nextStep)}</div>`:''}</div>`).join('')}</div>`:'<div class="empty">Sin historial</div>'}</div>
         </div>
         <div class="col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>Reuniones</h3><span class="grow"></span><button class="btn xs g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋</button></div>
@@ -343,24 +342,27 @@
       <span class="grow"></span><div class="search"><input class="inp" placeholder="Buscar…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
       <div class="chips"><button class="chip ${taskMode==='board'?'on':''}" onclick="Ops.setMode('board')">▦ Tablero</button><button class="chip ${taskMode==='list'?'on':''}" onclick="Ops.setMode('list')">☰ Lista</button></div>
       <button class="chip ${selMode?'on':''}" onclick="Ops.selMode(${!selMode})">☑ Seleccionar</button>
+      ${Ops.dupGroups().length?`<button class="chip" onclick="Ops.duplicates()" title="Mismo cliente y mismo título">🧹 Repetidas (${Ops.dupGroups().length})</button>`:''}
       <button class="btn p" onclick="Ops.editTask()">＋ Tarea</button></div>`;
     visibleTasks = [];
     if(taskMode==='list'){
       const t = UI.today(), wk = UI.addDays(t,7), open = ts.filter(x=>x.status!=='done').sort(taskSort);
       const groups = [['⏰ Vencidas',open.filter(x=>x.due&&x.due<t)],['📍 Hoy',open.filter(x=>x.due===t)],['📅 Próximos 7 días',open.filter(x=>x.due>t&&x.due<=wk)],['🔭 Más adelante',open.filter(x=>x.due>wk)],['· Sin fecha',open.filter(x=>!x.due)],
-        ['✓ Hechas (últimas)', ts.filter(x=>x.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,15)]];
+        ['✓ Hechas (últimas)', ts.filter(x=>x.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,doneLimit)]];
       groups.forEach(g=>g[1].forEach(x=>visibleTasks.push(x.id)));
-      return { html: bar + (groups.filter(g=>g[1].length).map(([l,g])=>`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${l}</h3><span class="sub">${g.length}</span>${selMode?`<span class="grow"></span><button class="btn xs g" onclick="Ops.pickGroup('${g.map(x=>x.id).join(',')}')">Elegir estas</button>`:''}</div>${selMode?`<div class="list">${g.map(selRow).join('')}</div>`:taskList(g)}</div>`).join('') || '<div class="card empty"><div class="big">🎉</div>No hay tareas</div>') + selBar() };
+      return { html: bar + (groups.filter(g=>g[1].length).map(([l,g])=>`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${l}</h3><span class="sub">${g.length}</span>${selMode?`<span class="grow"></span><button class="btn xs g" onclick="Ops.pickGroup('${g.map(x=>x.id).join(',')}')">Elegir estas</button>`:''}</div>${selMode?`<div class="list">${g.map(selRow).join('')}</div>`:taskList(g)}</div>`).join('') || '<div class="card empty"><div class="big">🎉</div>No hay tareas</div>') + (ts.filter(x=>x.status==='done').length>doneLimit?`<button class="btn g sm" onclick="Ops.moreDone()">Ver más tareas hechas</button>`:'') + selBar() };
     }
     const lanes = TASK_ST.map(([k,l])=>{
       let items = ts.filter(t=>(t.status||'todo')===k).sort(taskSort);
-      if(k==='done') items = items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,20);
+      const totalDone = items.length;
+      if(k==='done') items = items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,doneLimit);
       items.forEach(x=>visibleTasks.push(x.id));
       return `<div class="lane" data-lane="${k}"><div class="lane-h">${l} <span class="n">${items.length}</span></div>
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
           <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}</div></div>`; }).join('')}
-        ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}</div>`;
+        ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}
+        ${k==='done'&&totalDone>items.length?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.moreDone()">Ver más (${totalDone-items.length})</button>`:''}</div>`;
     }).join('');
     return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">${selMode?'Tocá las tarjetas para seleccionarlas.':'Arrastrá las tarjetas entre columnas para cambiar su estado. Con “☑ Seleccionar” podés elegir varias y hacer acciones juntas.'}</p>` + selBar(),
       after:()=>{ if(!selMode) UI.kanban($('#tboard'), (id,st)=>setTaskStatus(id,st)); } };
@@ -459,7 +461,7 @@
         <button class="btn ok" onclick="Reunion.open()">🧠 Ordenar reunión</button><button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
         ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">${m.kind==='status'?'Status para cargar':'Minuta para cargar'}: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
-        ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta suma +${Game.XP.minuta} XP y convierte los acuerdos en tareas.</div></div></div>`:''}
+        ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta convierte los acuerdos en tareas.</div></div></div>`:''}
         <div class="card"><div class="card-h"><h3>Próximas</h3><span class="sub">${up.length}</span></div>${up.length?`<div class="list">${up.map(meetRow).join('')}</div>`:'<div class="empty small">No hay reuniones agendadas</div>'}</div>
         <div class="card"><div class="card-h"><h3>Pasadas</h3><span class="sub">${past.length}</span></div>${past.length?`<div class="list">${past.slice(0,40).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones registradas</div>'}</div>
       </div><div class="col" style="gap:18px">
@@ -499,7 +501,15 @@
     let assigneeId = '', due = '';
     App.members().forEach(m=>{ const re = new RegExp('@'+m.name.split(' ')[0]+'\\b','i'); if(re.test(s)){ assigneeId = m.id; s = s.replace(re,'').trim(); } });
     const dm = s.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
-    if(dm){ const y = dm[3] ? (dm[3].length===2?'20'+dm[3]:dm[3]) : new Date().getFullYear(); due = `${y}-${UI.pad(dm[2])}-${UI.pad(dm[1])}`; s = s.replace(dm[0],'').trim(); }
+    if(dm){
+      // Fecha válida (31/02 no existe) y, si no dice el año y ya pasó hace más de un mes, es la del año que viene (BUG-16)
+      const d = +dm[1], mo = +dm[2]; let y = dm[3] ? +(dm[3].length===2?'20'+dm[3]:dm[3]) : new Date().getFullYear();
+      const ok = yy => { const t = new Date(yy, mo-1, d); return mo>=1 && mo<=12 && t.getMonth()===mo-1 && t.getDate()===d; };
+      if(ok(y)){
+        if(!dm[3] && UI.diffDays(`${y}-${UI.pad(mo)}-${UI.pad(d)}`, UI.today()) > 31 && ok(y+1)) y++;
+        due = `${y}-${UI.pad(mo)}-${UI.pad(d)}`; s = s.replace(dm[0],'').trim();
+      }
+    }
     return { text:s.replace(/\s{2,}/g,' ').replace(/[-–,]\s*$/,'').trim(), assigneeId, due };
   }
 
@@ -517,7 +527,11 @@
       ${aSel.size?`<span class="sep"></span><button class="btn xs d" onclick="Ops.dismissSel(7)">✕ Descartar 7 días</button><button class="btn xs g" onclick="Ops.dismissSel(30)">Descartar 30 días</button><button class="btn xs g" onclick="Ops.downloadAlerts(true)">⇣ Descargar estas</button>`:'<span class="xs faint">Tocá las alertas para elegirlas</span>'}
       <span class="grow"></span><button class="btn xs g" onclick="Ops.aSelMode(false)">✕ Salir</button></div>` : '';
     const foot = hidden ? `<p class="xs faint" style="margin-top:14px">${hidden} alerta${hidden>1?'s':''} descartada${hidden>1?'s':''} · <a href="#" onclick="Ops.restoreAlerts();return false">Volver a mostrarlas</a></p>` : '';
-    return { html: bar + (al.length ? sec('danger','🔴 Urgente') + sec('warn','🟡 Para atender') + sec('info','🔵 Para hoy') : '<div class="card empty"><div class="big">🎉</div>No hay alertas. ¡Todo al día!</div>') + foot + selbar };
+    // Las de Crecimiento también se ven acá (BUG-19)
+    const ga = App.canGrowth() && window.Growth ? Growth.alerts() : [];
+    const gsec = ga.length ? `<div class="sec-t">🎯 Crecimiento · ${ga.length}</div>` + ga.map(a=>alertRow(a)).join('') : '';
+    const filtro = App.unitFilter ? `<div class="alert info" style="margin-bottom:12px"><div class="ai">🔎</div><div class="grow ad">Estás viendo solo <b>${esc(App.unit(App.unitFilter).label)}</b>: puede haber más alertas.</div><button class="btn xs g" onclick="App.setUnit('')">Ver todas</button></div>` : '';
+    return { html: bar + filtro + (al.length||ga.length ? sec('danger','🔴 Urgente') + sec('warn','🟡 Para atender') + sec('info','🔵 Para hoy') + gsec : '<div class="card empty"><div class="big">🎉</div>No hay alertas. ¡Todo al día!</div>') + foot + selbar };
   }
   function alertRow(a, selectable){
     const to = App.member(a.to);
@@ -528,11 +542,14 @@
   }
 
   // ── Formularios / acciones ──────────────────────────────────────────────────
-  const clientOpts = (empty='— Interna / sin cliente —') => [['',empty], ...activeClients().map(c=>[c.id,c.name])];
+  const clientOpts = (empty='— Interna / sin cliente —', cur) => { const o = [['',empty], ...activeClients().map(c=>[c.id,c.name])];
+    if(cur && !o.some(x=>x[0]===cur)) o.push([cur, (client(cur)?.name||'Cliente')+' (dado de baja)']); return o; };   // BUG-02
 
   const Ops = {
     HEALTH, activeClients, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
-    setSearch(v){ search = v; const pos = document.activeElement?.selectionStart; App.render(); const i = $('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
+    // La búsqueda es propia de cada pestaña (BUG-27) y espera a que se deje de escribir (BUG-28)
+    moreDone(){ doneLimit += 50; App.render(); },
+    setSearch(v){ search = v; searchByTab[curTab] = v; searchRender(); },
     setWho(v){ taskWho = v; App.render(); },
     setMode(v){ taskMode = v; localStorage.setItem('anm_taskmode', v); App.render(); },
     setTopic(v){ meetTopic = meetTopic===v ? '' : v; App.render(); },
@@ -573,7 +590,7 @@
       const cs = activeClients();
       if(!cs.length) return Ops.editClient();
       const c = id ? client(id) : null;
-      UI.form({ title:'📡 ¿En qué estamos?', submit:`Guardar (+${Game.XP.client_update} XP)`, values:{ clientId:id||'', health:c?.health||'ok', nextStep:c?.nextStep||'', nextStepDate:c?.nextStepDate||'' }, fields:[
+      UI.form({ title:'📡 ¿En qué estamos?', submit:'Guardar', values:{ clientId:id||'', health:c?.health||'ok', nextStep:c?.nextStep||'', nextStepDate:c?.nextStepDate||'' }, fields:[
         ...(id ? [] : [{ k:'clientId', label:'Cliente', type:'select', options:cs.map(x=>[x.id,x.name]), req:true }]),
         { k:'health', label:'¿Cómo está la cuenta?', type:'select', options:Object.entries(HEALTH).map(([k,[l,e]])=>[k,e+' '+l]) },
         { k:'text', label:'Estado actual', type:'textarea', req:true, placeholder:'Ej: Se aprobó el calendario de octubre. Esperamos fotos de producto para los reels. El cliente pidió sumar una campaña para el Hot Sale.', rows:5 },
@@ -593,7 +610,7 @@
       if(!t.unit && t.clientId) t.unit = (client(t.clientId)?.units||[])[0];
       UI.form({ title: id ? 'Tarea' : 'Nueva tarea', values:t, fields:[
         { k:'title', label:'¿Qué hay que hacer?', req:true },
-        { k:'clientId', label:'Cliente', type:'select', options:clientOpts(), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
+        { k:'clientId', label:'Cliente', type:'select', options:clientOpts(undefined, t.clientId), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
         { k:'assigneeId', label:'Responsable', type:'select', options:(()=>{ const o = App.assignOpts(); return t.assigneeId && !o.some(x=>x[0]===t.assigneeId) ? [...o, [t.assigneeId, App.member(t.assigneeId)?.name||'—']] : o; })(), half:true, hint:App.me().role==='invitado'?'Como invitado/a solo te podés asignar a vos.':'' }, { k:'due', label:'Vence', type:'date', half:true },
         { k:'status', label:'Estado', type:'select', options:TASK_ST, half:true }, { k:'priority', label:'Prioridad', type:'select', options:PRIO, half:true },
         { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
@@ -605,6 +622,8 @@
         v.area = (v.area||'').trim().toUpperCase();
         const r = Store.upsert('ops','tasks',{ ...t, ...v, status:prevStatus });
         if(v.status!==prevStatus || !id) setTaskStatus(r.id, v.status);
+        // Aviso cuando cambia la fecha de una tarea de otra persona (BUG-22)
+        if(id && v.due!==(t.due||'') && v.assigneeId===t.assigneeId && t.assigneeId && t.assigneeId!==App.me().id) App.notify(t.assigneeId, `${App.me().name.split(' ')[0]} cambió la fecha de “${v.title}”: ${v.due?UI.fdate(v.due,{abs:true}):'sin fecha'}`, '#/ops/tareas');
         if(id && v.assigneeId && v.assigneeId!==t.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `${App.me().name.split(' ')[0]} te pasó la tarea: ${v.title}`, '#/ops/tareas');
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
         App.render();
@@ -678,7 +697,7 @@
       const p = id ? Store.get('ops','content',id) : { status:'idea', format:'post', date:UI.today(), assigneeId:App.me().id, clientId:curClient(), ...preset };
       UI.form({ title: id ? 'Pieza de contenido' : 'Nueva pieza de contenido', values:p, fields:[
         { k:'title', label:'Título / idea', req:true, placeholder:'Ej: Reel lanzamiento colección' },
-        { k:'clientId', label:'Cliente', type:'select', options:clientOpts('— Contenido propio ANM —'), half:true }, { k:'date', label:'Fecha de publicación / entrega', type:'date', req:true, half:true },
+        { k:'clientId', label:'Cliente', type:'select', options:clientOpts('— Contenido propio ANM —', p.clientId), half:true }, { k:'date', label:'Fecha de publicación / entrega', type:'date', req:true, half:true },
         { k:'format', label:'Formato', type:'select', options:FORMATS, half:true }, { k:'status', label:'Estado', type:'select', options:CONTENT_ST, half:true },
         { k:'unit', label:'Unidad', type:'select', options:[['','(la del cliente)'],...App.unitOpts()], half:true }, { k:'assigneeId', label:'Responsable', type:'select', options:(()=>{ const o = App.assignOpts(); return t.assigneeId && !o.some(x=>x[0]===t.assigneeId) ? [...o, [t.assigneeId, App.member(t.assigneeId)?.name||'—']] : o; })(), half:true },
         { k:'notes', label:'Copy / brief / links', type:'textarea', rows:4 },
@@ -700,7 +719,7 @@
           ${c.lastStatusAt?`<span>· último enviado ${UI.ago(c.lastStatusAt)}</span>`:''}</div>
         <textarea class="inp" id="cs-text" rows="18" style="font-family:inherit;line-height:1.55"></textarea>
         <p class="xs faint" style="margin-top:6px">Sale de las tareas del cliente: el ícono es su estado (Hecho ✅, En revisión 👀, En curso 🔸, Por hacer ▫️) y se agrupan por <b>Área</b>. Podés editar el texto antes de mandarlo.</p>
-        <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="UI.close();Ops.pasteStatus('${cid}')">⇣ Pegar status existente</button>
+        <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="UI.close(true);Ops.pasteStatus('${cid}')">⇣ Pegar status existente</button>
           <button class="btn g" id="cs-copy">📋 Copiar</button><button class="btn g" id="cs-mail">✉️ Email</button><button class="btn p" id="cs-wa">💬 WhatsApp</button></div>`, true);
       const ta = box.querySelector('#cs-text'), load = ()=>{ ta.value = statusText(cid, { closedDays:+box.querySelector('#cs-days').value }); };
       box.querySelector('#cs-days').onchange = load; load();
@@ -729,15 +748,15 @@
         <div class="row wrap small muted" style="gap:10px;margin:-8px 0 16px"><span class="tag t-blue">${esc(clientName(m.clientId))}</span><span>${UI.fdate((m.date||'').slice(0,10),{abs:true})}${UI.time(m.date)?' · '+UI.time(m.date):''}</span>${people?`<span>👥 ${esc(people)}</span>`:''}${(m.topics||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join('')}${m.link?`<a href="${esc(UI.safeUrl(m.link))}" target="_blank">🔗 grabación / link</a>`:''}</div>
         <div class="card" style="padding:16px 18px;margin-bottom:12px"><div class="xs faint b" style="letter-spacing:1px;margin-bottom:8px">📝 MINUTA</div><div class="small prewrap" style="line-height:1.65">${esc(m.minuta||'Sin minuta cargada.')}</div>
           ${m.decisiones?`<div class="xs faint b" style="letter-spacing:1px;margin:14px 0 6px">✔ DECISIONES</div><div class="small prewrap" style="line-height:1.65">${esc(m.decisiones)}</div>`:''}</div>
-        <div class="card" style="padding:16px 18px"><div class="row" style="margin-bottom:8px"><div class="xs faint b grow" style="letter-spacing:1px">✅ TAREAS BAJADAS (${tasks.length})</div><button class="btn xs g" onclick="UI.close();Ops.editTask(null,{clientId:'${m.clientId||''}',meetingId:'${id}'})">＋ Tarea</button></div>
+        <div class="card" style="padding:16px 18px"><div class="row" style="margin-bottom:8px"><div class="xs faint b grow" style="letter-spacing:1px">✅ TAREAS BAJADAS (${tasks.length})</div><button class="btn xs g" onclick="UI.close(true);Ops.editTask(null,{clientId:'${m.clientId||''}',meetingId:'${id}'})">＋ Tarea</button></div>
           ${tasks.length?`<div class="list">${tasks.map(t=>`<div class="li" style="flex-wrap:wrap">
             <input type="checkbox" ${t.status==='done'?'checked':''} onchange="Ops.toggleTask('${t.id}');Ops.viewMeeting('${id}')" style="width:18px;height:18px">
             <div class="grow" style="min-width:220px"><input class="inp sm" style="width:100%;font-weight:700;${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}" value="${esc(t.title)}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{title:this.value})">${t.alertedTo&&t.alertedTo===t.assigneeId?'<div class="xs" style="color:var(--green);margin-top:2px">✓ avisada</div>':''}</div>
             <select class="inp sm" onchange="Ops.assignFromMeeting('${t.id}','${id}',{assigneeId:this.value})">${[['','— Sin asignar —'],...opts.filter(o=>o[0])].map(([v,l])=>`<option value="${v}" ${t.assigneeId===v?'selected':''}>${esc(l)}</option>`).join('')}${t.assigneeId&&!opts.some(o=>o[0]===t.assigneeId)?`<option selected>${esc(App.member(t.assigneeId)?.name||'—')}</option>`:''}</select>
             <input class="inp sm" type="date" value="${t.due||''}" onchange="Ops.assignFromMeeting('${t.id}','${id}',{due:this.value})"><button class="icon-btn" title="Eliminar tarea" onclick="if(confirm('¿Eliminar esta tarea?')){Store.remove('ops','tasks','${t.id}');Ops.viewMeeting('${id}')}">🗑</button></div>`).join('')}</div>`:'<div class="small faint">Todavía no hay tareas de esta reunión.</div>'}
           ${loose.length?`<div class="xs faint b" style="margin:12px 0 6px">ACUERDOS SIN TAREA</div>${loose.map(a=>`<div class="li"><div class="grow small">${esc(a.text)}</div><button class="btn xs g" onclick="Ops.actionToTask('${id}','${a.id}',true);Ops.viewMeeting('${id}')">→ Tarea</button></div>`).join('')}`:''}</div>
-        <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="Ops.copyMeeting('${id}')">📋 Copiar resumen (WhatsApp)</button><button class="btn g" onclick="UI.close();Ops.editMeeting('${id}')">✎ Editar</button>
-          ${m.clientId?`<button class="btn ok" onclick="UI.close();Ops.clientStatus('${m.clientId}')">📋 Status para el cliente</button>`:''}
+        <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="Ops.copyMeeting('${id}')">📋 Copiar resumen (WhatsApp)</button><button class="btn g" onclick="UI.close(true);Ops.editMeeting('${id}')">✎ Editar</button>
+          ${m.clientId?`<button class="btn ok" onclick="UI.close(true);Ops.clientStatus('${m.clientId}')">📋 Status para el cliente</button>`:''}
           <button class="btn p" onclick="Ops.alertMeeting('${id}')">📣 Mandar alertas de tareas asignadas${pending?` (${pending})`:''}</button></div>`, true);
     },
     assignFromMeeting(tid, mid, patch){
@@ -772,7 +791,7 @@
       const actionsText = (m.actions||[]).map(a=>a.text + (a.taskId?'  ✓':'')).join('\n');
       const box = UI.form({ title: id ? '🤝 '+m.title : 'Nueva reunión', wide:true, submit: id ? 'Guardar' : 'Crear reunión', values:{ ...m, topics:(m.topics||[]).join(', '), actionsText }, fields:[
         { k:'title', label:'Título', req:true, placeholder:'Ej: Revisión mensual de resultados' },
-        { k:'clientId', label:'Cliente', type:'select', options:clientOpts(), half:true }, { k:'type', label:'Tipo', type:'select', options:MEET_TYPES, half:true },
+        { k:'clientId', label:'Cliente', type:'select', options:clientOpts(undefined, m.clientId), half:true }, { k:'type', label:'Tipo', type:'select', options:MEET_TYPES, half:true },
         { k:'date', label:'Fecha y hora', type:'datetime', req:true, half:true }, { k:'link', label:'Link (Meet, grabación, Read AI, Drive…)', half:true },
         { k:'attendees', label:'Participantes ANM', type:'multi', options:App.members().map(x=>[x.id,x.name]) },
         { k:'topics', label:'Temáticas (separadas por coma)', placeholder:'precios, campaña navidad, resultados', hint:'Sirven para encontrar todo lo que se habló de un tema.' },
@@ -782,7 +801,7 @@
         { k:'mkTasks', label:'', type:'check', text:'Crear tareas automáticamente con los acuerdos nuevos', default:true },
       ],
       extra:`<button type="button" class="btn g sm" id="mt-extract" style="margin-bottom:8px">✨ Detectar acuerdos en la minuta</button>`,
-      danger: id ? { label:'Eliminar', confirm:'¿Eliminar la reunión?', fn:()=>{ Store.remove('ops','meetings',id); App.render(); } } : null,
+      danger: id ? { label:'Eliminar', confirm:'¿Eliminar la reunión? Sus tareas se conservan.', fn:()=>{ S('tasks').filter(t=>t.meetingId===id).forEach(t=>Store.upsert('ops','tasks',{ id:t.id, meetingId:'' })); Store.remove('ops','meetings',id); App.render(); } } : null,
       onSubmit:v=>{
         const hadMinuta = !!m.minuta;
         const topics = v.topics.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
@@ -813,6 +832,8 @@
     openImport(m){
       const id = m.id, isStatus = m.kind==='status';
       const cl = (m.clientId && client(m.clientId)) || clientByName(m.client);
+      // Si ya existe una tarea igual de ese cliente (abierta o cerrada), se actualiza en vez de duplicarse (BUG-11)
+      (m.tasks||[]).forEach(t=>{ if(t.existingId) return; const ex = S('tasks').find(x=>x.clientId===(cl?.id||'') && norm(x.title)===norm(t.text)); if(ex){ t.existingId = ex.id; if(!t.status) t.status = ex.status||'todo'; } });
       const members = App.members();
       const taskRow = (t={}, i) => { const ex = t.existingId && Store.get('ops','tasks',t.existingId), as = memberByFirst(t.who)?.id || t.assigneeId || ex?.assigneeId || '';
         return `<div class="li im-row" style="flex-wrap:wrap;gap:8px"><input type="checkbox" checked class="im-on" style="width:18px;height:18px"><input type="hidden" class="im-ex" value="${ex?ex.id:''}">${ex?'<span class="tag t-blue" title="Ya existía: se actualiza su estado">↻ actualiza</span>':''}
@@ -839,7 +860,7 @@
         <div class="mfoot"><button class="btn d sm" id="im-skip" style="margin-right:auto">Descartar</button><button class="btn g" data-close>Cancelar</button>
           <button class="btn g" id="im-go">Cargar</button><button class="btn g" id="im-go-status">Cargar y armar status</button><button class="btn p" id="im-go-alert">Cargar y mandar alertas</button></div>`, true);
       box.querySelector('#im-add').onclick = ()=>{ box.querySelector('#im-tasks').insertAdjacentHTML('beforeend', taskRow({ due:UI.addDays(UI.today(),7) })); box.querySelector('#im-tasks .im-row:last-child .im-text').focus(); };
-      box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(); App.render(); } };
+      box.querySelector('#im-skip').onclick = ()=>{ if(confirm('¿Descartar esta minuta? No se va a volver a mostrar.')){ Store.setSetting('minutasDescartadas', [...Store.setting('minutasDescartadas',[]), id]); UI.close(true); App.render(); } };
       const go = withAlerts => { try {
         let cid = box.querySelector('#im-client').value;
         const val = (r,c) => r.querySelector(c).value.trim();
@@ -857,7 +878,7 @@
         if(isStatus) meeting.type = 'status';
         Store.upsert('ops','meetings', meeting);
         const now = new Date().toISOString();
-        const actions = rows.map(r=>{ const ex = (r.ex && Store.get('ops','tasks',r.ex)) || ((isStatus||m.kind==='ia') && S('tasks').find(t=>t.clientId===cid && t.status!=='done' && norm(t.title)===norm(r.text)));
+        const actions = rows.map(r=>{ const ex = (r.ex && Store.get('ops','tasks',r.ex)) || S('tasks').find(t=>t.clientId===cid && norm(t.title)===norm(r.text));
           const base = ex ? { ...ex } : { title:r.text, clientId:cid, priority:'media', meetingId:m.id, desc:isStatus?`Del status: ${title}`:`De la reunión: ${title}` };
           const tk = Store.upsert('ops','tasks',{ ...base, unit:r.unit||base.unit||'', assigneeId:r.assigneeId||base.assigneeId||'', due:r.due||base.due||'', status:r.status, area:r.area, note:r.note, link:r.link,
             doneAt: r.status==='done' ? (base.doneAt||now) : '' });
@@ -866,7 +887,7 @@
         (m.content||[]).forEach(c=>Store.upsert('ops','content',{ title:c.title, clientId:cid, date:c.date, format:c.format||'post', unit:c.unit||'', status:'idea', assigneeId:App.me().id }));
         Store.syncNow();
         Game.log('minuta', `Minuta cargada: ${title}`, { icon:'📝', silent:true });
-        UI.close(); UI.toast(`${isStatus?'Status':'Minuta'} cargado con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
+        UI.close(true); UI.toast(`${isStatus?'Status':'Minuta'} cargado con ${rows.length} tareas`,'📝'); if(cid){ setCF(cid); }
         if(withAlerts==='status' && cid){ App.go('#/ops/cliente/'+cid); setTimeout(()=>Ops.clientStatus(cid), 120); return; }
         if(isStatus && cid){ App.go('#/ops/cliente/'+cid); if(withAlerts) setTimeout(()=>Ops.alertMeeting(m.id), 80); return; }
         App.go('#/ops/reuniones');
@@ -876,7 +897,20 @@
       box.querySelector('#im-go-alert').onclick = ()=>go(true);
       box.querySelector('#im-go-status').onclick = ()=>{ if(!box.querySelector('#im-client').value) return UI.toast('Elegí el cliente para armar su status','👆'); go('status'); };
     },
-    pendingMinutas, parseStatus, statusToTasks,
+    pendingMinutas, parseStatus, statusToTasks, parseAction, dismissedKeys:()=>dismissed(),
+    // 🧹 Tareas repetidas (mismo cliente y mismo título): se revisan a mano y se borran las que sobran
+    dupGroups(){ const g = {}; S('tasks').forEach(t=>{ const k = (t.clientId||'')+'|'+norm(t.title); (g[k] = g[k]||[]).push(t); }); return Object.values(g).filter(x=>x.length>1); },
+    duplicates(){
+      const groups = Ops.dupGroups();
+      if(!groups.length) return UI.toast('No hay tareas repetidas','✓');
+      const box = UI.modal(`<h2>🧹 Tareas repetidas (${groups.length})<button class="icon-btn x" data-close>✕</button></h2>
+        <p class="small muted" style="margin:-6px 0 12px">Mismo cliente y mismo título. Ya dejé marcadas para borrar las copias y conservé la más avanzada (o la más vieja). Revisá antes de confirmar.</p>
+        ${groups.map(g=>{ const keep = [...g].sort((a,b)=>(b.status==='done')-(a.status==='done') || (a.createdAt||'').localeCompare(b.createdAt||''))[0];
+          return `<div class="card" style="padding:10px 14px;margin-bottom:8px"><div class="b small" style="margin-bottom:6px">${esc(clientName(g[0].clientId))} · ${esc(g[0].title)}</div>${g.map(t=>`<label class="row small" style="gap:8px;padding:3px 0"><input type="checkbox" class="dup-del" value="${t.id}" ${t.id===keep.id?'':'checked'}> Borrar · ${esc(label(TASK_ST,t.status))}${t.due?' · vence '+UI.fdate(t.due,{abs:true}):''}${t.assigneeId?' · '+esc(App.member(t.assigneeId)?.name||''):''} · creada ${UI.fdate(UI.day(t.createdAt),{abs:true})}</label>`).join('')}</div>`; }).join('')}
+        <div class="mfoot"><button class="btn g" data-close>Cancelar</button><button class="btn d" id="dup-go">Borrar las marcadas</button></div>`, true);
+      box.querySelector('#dup-go').onclick = ()=>{ const ids = [...box.querySelectorAll('.dup-del:checked')].map(i=>i.value); if(!ids.length) return UI.close(true);
+        if(!confirm(`¿Borrar ${ids.length} tarea(s) repetida(s)?`)) return; ids.forEach(id=>Store.remove('ops','tasks',id)); UI.close(true); UI.toast(`${ids.length} tarea(s) borradas`,'🧹'); App.render(); };
+    },
 
     actionToTask(meetingId, actionId, quiet){
       const m = Store.get('ops','meetings',meetingId); if(!m) return;

@@ -550,7 +550,7 @@
         if(kind==='fj'){ const g = S.gastos.find(sid); if(k==='mes') ovSet(ym,'fj',id,{ off:true }); else if(g){ if(g.desde && g.desde>=ym) S.gastos = S.gastos.filter(x=>!sid(x)); else g.hasta = ymAdd(ym,-1); } }
         if(kind==='p' || kind==='pc') S.proyectos = S.proyectos.filter(x=>!sid(x));
         if(kind==='ex') S.cierres[ym]?.extras?.splice(+id, 1);
-        UI.close(); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
+        UI.close(true); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
     },
     quitarMes(id, ymArg){ Fin.quitar('c', id, ymArg); },
     volver(kind, id, ymArg){ const ym = ymArg || cursor;
@@ -671,8 +671,8 @@
       UI.modal(`<h2>⚙ Finanzas<button class="icon-btn x" data-close>✕</button></h2><div class="list">
         <div class="li click" onclick="Fin.backup()"><span>⇣</span><div class="grow"><div class="b">Descargar backup</div><div class="xs faint">Archivo .json con todos los datos de Finanzas</div></div></div>
         <label class="li click" style="cursor:pointer"><span>⇡</span><div class="grow"><div class="b">Restaurar backup</div><div class="xs faint">Cargá el archivo de la app anterior o de un backup</div></div><input type="file" accept=".json" style="display:none" onchange="Fin.restore(this)"></label>
-        <div class="li click" onclick="UI.close();Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
-        <div class="li click" onclick="UI.close();FinGate.changePassword()"><span>🔑</span><div class="grow"><div class="b">Cambiar contraseña de Finanzas</div></div></div>
+        <div class="li click" onclick="UI.close(true);Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
+        <div class="li click" onclick="UI.close(true);FinGate.changePassword()"><span>🔑</span><div class="grow"><div class="b">Cambiar contraseña de Finanzas</div></div></div>
         <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a>
         <div class="li click" onclick="FinGate.lock()"><span>🔒</span><div class="grow"><div class="b">Bloquear</div></div></div></div>`);
     },
@@ -682,7 +682,7 @@
       const r = new FileReader();
       r.onload = ()=>{ try{ const d = JSON.parse(r.result); if(!d.clientes) throw 0;
         if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas (la contraseña se mantiene).`)) return;
-        const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(); UI.toast('Backup restaurado','⇡'); render();
+        const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(true); UI.toast('Backup restaurado','⇡'); render();
       }catch(e){ UI.toast('Archivo inválido','⚠️'); } };
       r.readAsText(f);
     },
@@ -730,7 +730,7 @@
         if(await hash(sec.salt+code.trim().toUpperCase())!==sec.recovery) return UI.toast('Código incorrecto','⛔');
         S.seguridad = null; await push(); FinGate.check(); };
     },
-    lock(){ sessionStorage.removeItem(OK_KEY); UI.close(); FinGate.check(); },
+    lock(){ sessionStorage.removeItem(OK_KEY); UI.close(true); FinGate.check(); },
     async changePassword(){ const sec = S.seguridad; if(!sec) return;
       const cur = prompt('Contraseña actual:'); if(cur==null) return; if(await hash(sec.salt+cur)!==sec.hash) return UI.toast('Contraseña incorrecta','⛔');
       const nw = prompt('Nueva contraseña (mínimo 6):'); if(!nw || nw.length<6) return UI.toast('Mínimo 6 caracteres','⚠️');

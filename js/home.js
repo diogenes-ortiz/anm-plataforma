@@ -29,7 +29,7 @@
           <div class="xpbar"><div style="width:${pf.pct??0}%;background:${pf.color}"></div></div>
           <div class="row" style="margin-top:14px;gap:22px"><div><div class="b" style="font-size:20px">✅ ${wxp}</div><div class="xs faint b">HECHAS ESTA SEMANA</div></div>${Game.onTime(me.id)!=null?`<div><div class="b" style="font-size:20px">${Game.onTime(me.id)}%</div><div class="xs faint b">A TIEMPO</div></div>`:''}<div><div class="b" style="font-size:20px">${done}/${ms.length}</div><div class="xs faint b">MISIONES</div></div></div></div>
       </div>
-      ${Ops.pendingMinutas().map(m=>`<div class="alert info" style="margin-bottom:18px"><div class="ai">📥</div><div class="grow"><div class="at">Hay ${m.kind==='status'?'un status':'una minuta'} lista para cargar: ${esc(m.title)} (${esc(m.client||'Interna')})</div><div class="ad">${m.tasks.length} tareas${m.kind==='status'?' ordenadas por área':' con responsable y fecha'}.</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
+      ${Ops.pendingMinutas().map(m=>`<div class="alert info" style="margin-bottom:18px"><div class="ai">📥</div><div class="grow"><div class="at">Hay ${m.kind==='status'?'un status listo':'una minuta lista'} para cargar: ${esc(m.title)} (${esc(m.client||'Interna')})</div><div class="ad">${m.tasks.length} tareas${m.kind==='status'?' ordenadas por área':' con responsable y fecha'}.</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
       <div class="grid g3">
         <div class="span2 col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>🎯 Tu foco de hoy</h3><span class="grow"></span><a class="btn xs g" href="#/ops/tareas">Todas mis tareas</a></div>
@@ -37,17 +37,17 @@
               ${myMeet.map(m=>`<div class="li click" onclick="Ops.viewMeeting('${m.id}')"><span>🤝</span><div class="grow"><div class="b small">${esc(m.title)}</div><div class="xs faint">${UI.time(m.date)} · ${esc(Ops.clientName(m.clientId))}</div></div></div>`).join('')}
               ${myTasks.map(x=>Ops.taskRow(x)).join('')}
               ${myFollow.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><span>📞</span><div class="grow"><div class="b small">Seguimiento: ${esc(l.company)}</div><div class="xs faint">${esc(l.nextAction||'')}</div></div><span class="tag ${l.nextFollowUp<t?'t-red':'t-yellow'}">${UI.fdate(l.nextFollowUp)}</span></div>`).join('')}
-              ${myClients.map(c=>`<div class="li click" onclick="Ops.updateClient('${c.id}')"><span>📡</span><div class="grow"><div class="b small">Actualizar ${esc(c.name)}</div><div class="xs faint">${Ops.daysSinceUpdate(c)>=999?'Sin seguimiento todavía':Ops.daysSinceUpdate(c)+' días sin novedades'}</div></div><span class="tag t-yellow">+${Game.XP.client_update} XP</span></div>`).join('')}
+              ${myClients.map(c=>`<div class="li click" onclick="Ops.updateClient('${c.id}')"><span>📡</span><div class="grow"><div class="b small">Actualizar ${esc(c.name)}</div><div class="xs faint">${Ops.daysSinceUpdate(c)>=999?'Sin seguimiento todavía':Ops.daysSinceUpdate(c)+' días sin novedades'}</div></div></div>`).join('')}
             </div>` : '<div class="empty"><div class="big">🌤️</div>Nada urgente para hoy</div>'}
             ${soon.length?`<div class="sec-t" style="margin-top:18px">Lo que viene</div><div class="list">${soon.map(x=>Ops.taskRow(x)).join('')}</div>`:''}</div>
-          <div class="card"><div class="card-h"><h3>🚨 Alertas del equipo</h3><span class="sub">${alerts.length}</span><span class="grow"></span><a class="btn xs g" href="#/ops/alertas">Ver todas</a></div>
+          <div class="card"><div class="card-h"><h3>🚨 Alertas del equipo</h3><span class="sub">${alerts.length}</span>${App.unitFilter?`<span class="tag t-yellow" title="Hay un filtro de unidad activo">solo ${esc(App.unit(App.unitFilter).label)}</span>`:''}<span class="grow"></span><a class="btn xs g" href="#/ops/alertas">Ver todas</a></div>
             ${alerts.length ? alerts.slice(0,5).map(Ops.alertRow).join('') : '<div class="empty small">Sin alertas. Todo al día 🎉</div>'}</div>
           <div class="card"><div class="card-h"><h3>⚡ Actividad del equipo</h3></div>
             ${feed.length?`<div class="list">${feed.map(a=>`<div class="li">${UI.avatar(App.member(a.by),'sm')}<div class="grow small"><b>${esc(App.member(a.by)?.name||'')}</b> <span class="muted">${esc(a.text)}</span></div><span class="xs faint" style="min-width:70px;text-align:right">${UI.ago(a.at)}</span></div>`).join('')}</div>`:'<div class="empty small">Todavía no hay actividad</div>'}</div>
         </div>
         <div class="col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>🏁 Misiones de la semana</h3><span class="sub">${done}/${ms.length}</span></div>
-            ${ms.map(m=>`<div class="mission ${m.p>=1?'done':''}"><div class="mi">${m.p>=1?'✅':m.e}</div><div class="grow"><div class="b small mt">${esc(m.t)}</div><div class="xs faint">${esc(m.d)}</div>${m.p<1?`<div class="bar" style="margin-top:6px;height:5px"><div style="width:${Math.round(m.p*100)}%"></div></div>`:''}</div></div>`).join('')}</div>
+            ${ms.map(m=>`<div class="mission ${m.p>=1?'done':''}"><div class="mi">${m.p>=1?'✅':m.e}</div><div class="grow"><div class="b small mt">${esc(m.t)}</div><div class="xs faint">${esc(m.d)}</div>${m.p!=null&&m.p<1?`<div class="bar" style="margin-top:6px;height:5px"><div style="width:${Math.round(m.p*100)}%"></div></div>`:''}</div></div>`).join('')}</div>
           <div class="card"><div class="card-h"><h3>🏆 Cómo viene el equipo</h3><span class="sub">este mes</span></div>
             ${board.map((r,i)=>`<div class="rank"><span class="pos">${r.p.pct!=null?(['🥇','🥈','🥉'][i]||i+1):'·'}</span>${UI.avatar(r.m)}<div class="grow"><div class="b small">${esc(r.m.name)}</div><div class="xs faint"><span style="color:${r.p.color}">${esc(r.p.label)}</span>${r.p.pct!=null?` · ${r.p.resolved}/${r.p.assigned} resueltas`:''}${r.p.overdue?` · ${r.p.overdue} vencida${r.p.overdue>1?'s':''}`:''}</div></div><b style="color:${r.p.color}">${r.p.pct!=null?r.p.pct+'%':'—'}</b></div>`).join('')}</div>
           <div class="card"><div class="card-h"><h3>🎖️ Tus insignias</h3><span class="sub">${Game.BADGES.filter(b=>b.ok(me.id)).length}/${Game.BADGES.length}</span></div>
@@ -121,7 +121,7 @@
         { k:'color', label:'Color', type:'color', half:true },
         { k:'emailReminders', label:'Mails', type:'check', text:'Recibir recordatorios y avisos por mail', default:true, half:true },
       ],
-      danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', confirm:`¿Quitar a ${m.name}? Su historial se conserva, pero ya no podrá entrar.`, fn:()=>{ Store.remove('team','members',id); if(App.isOwner() && m.email) Auth.removeAccess(m.email).catch(()=>{}); App.render(); } } : null,
+      danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', fn:()=>setTimeout(()=>Team.removeMember(id), 60) } : null,
       onSubmit:v=>{
         if(v.email) v.email = v.email.trim().toLowerCase();
         const r = Store.upsert('team','members',{ ...m, ...v });
@@ -129,6 +129,19 @@
           if(App.isOwner() && v.email) setTimeout(()=>{ if(confirm(`¿Autorizás ya a ${v.email} para que entre a la plataforma?`)) Team.addAccess({ email:v.email, member_id:r.id }); }, 60); }
         App.render();
       } });
+    },
+    // Quitar a alguien: antes se reasignan sus tareas abiertas (BUG-14)
+    removeMember(id){
+      const m = App.member(id); if(!m) return;
+      const abiertas = Ops.openTasks().filter(t=>t.assigneeId===id);
+      UI.form({ title:`Quitar a ${m.name}`, submit:'Quitar del equipo', fields:[
+        { k:'h', type:'html', html:`<p class="small muted">Su historial se conserva, pero ya no va a poder entrar.${abiertas.length?` Tiene <b>${abiertas.length} tarea${abiertas.length>1?'s':''} abierta${abiertas.length>1?'s':''}</b>: elegí a quién pasárselas.`:''}</p>` },
+        ...(abiertas.length ? [{ k:'to', label:'Pasar sus tareas a', type:'select', options:[['','— Dejarlas sin responsable —'], ...App.members().filter(x=>x.id!==id).map(x=>[x.id,x.name])] }] : []),
+      ], onSubmit:v=>{
+        abiertas.forEach(t=>Store.upsert('ops','tasks',{ id:t.id, assigneeId:v.to||'' }));
+        if(v.to && abiertas.length) App.notify(v.to, `Te pasaron ${abiertas.length} tarea(s) de ${m.name}`, '#/ops/tareas');
+        Store.remove('team','members',id); if(App.isOwner() && m.email) Auth.removeAccess(m.email).catch(()=>{});
+        UI.toast(`${m.name} ya no está en el equipo`,'👋'); App.render(); } });
     },
     // ── Accesos (solo el dueño) ──
     async loadAccess(){
