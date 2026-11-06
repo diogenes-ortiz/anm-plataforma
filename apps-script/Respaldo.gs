@@ -13,14 +13,12 @@
  *   2. ⚙ Configuración del proyecto → Propiedades de la secuencia de comandos → Agregar propiedad:
  *        SUPABASE_SERVICE_KEY = la clave "secret" (o "service_role") de Supabase → Project Settings → API Keys.
  *      (Esta clave NUNCA va en el código de la página: solo acá, en tu Google.)
- *      Mientras no la cargues usa la clave pública, que sirve solo hasta activar el login (Fase 1).
  *   3. Elegí la función "instalarRespaldo" y ▶ Ejecutar (aceptá los permisos de Drive).
  *   4. Para probar ya: elegí "respaldarAhora" y ▶ Ejecutar → mirá la carpeta "ANM respaldos" en tu Drive.
  */
 
 const RESPALDO = {
   SUPABASE_URL: 'https://pxsgqbldbdvbrfwqnvyl.supabase.co',
-  CLAVE_PUBLICA: 'sb_publishable_raHPfxFnjqySQ1QyS75aCw_RywBnd0O',
   CARPETA: 'ANM respaldos',
   DIAS: 30,
   HORA: 4,
@@ -34,7 +32,8 @@ function instalarRespaldo() {
 }
 
 function respaldarAhora() {
-  const clave = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY') || RESPALDO.CLAVE_PUBLICA;
+  const clave = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
+  if (!clave) throw new Error('Falta la propiedad SUPABASE_SERVICE_KEY (ver instrucciones arriba).');
   const res = UrlFetchApp.fetch(RESPALDO.SUPABASE_URL + '/rest/v1/anm_state?select=id,data,updated_at', {
     headers: { apikey: clave, Authorization: 'Bearer ' + clave }, muteHttpExceptions: true,
   });

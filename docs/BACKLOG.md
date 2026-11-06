@@ -57,32 +57,32 @@ Hoy la protección ocurre solo en el navegador. Con la URL y la clave pública, 
 
 ### Exposición de datos
 
-- [ ] **SEG-01 · P0 [Confirmado]** `supabase/setup.sql:31-41` permite a `anon` leer y modificar todo `anm_state`, incluida la fila `main` de Finanzas. Reemplazar por políticas que exijan usuario autenticado y rol.
-- [ ] **SEG-02 · P0 [Confirmado]** Implementar Supabase Auth. `js/app.js` compara el hash en el navegador y la identidad es solo `localStorage.anm_me`. Acepta: no se puede leer ni escribir nada sin sesión válida, aunque se edite `localStorage`.
-- [ ] **SEG-03 · P0 [Confirmado]** Finanzas solo para socios desde la base de datos, no solo ocultando el menú. Hoy `Store.readFinance` y `js/fin.js:37` leen `main` con la clave pública. Acepta: una consulta como rol Equipo a `main` devuelve vacío.
-- [ ] **SEG-04 · P0 [Confirmado]** Sacar del documento `team` todo lo sensible: `passHash`, `passSalt` e `invite` hoy son legibles con la clave pública. El hash es SHA-256 rápido.
-- [ ] **SEG-05 · P0 [Confirmado]** Sacar `aiToken` de `team.settings` (`js/reunion.js:78,122`). Quien lo lea puede usar el puente de `apps-script/IA.gs` y consumir la API de Claude con cargo a ANM.
-- [ ] **SEG-06 · P0 [Confirmado]** `apps-script/IA.gs:34` deja el puente abierto si falta `CLAVE_ANM`. Rechazar siempre si la clave no está configurada. Mover la llamada a una Edge Function con usuario autenticado.
-- [ ] **SEG-07 · P0 [Confirmado]** `js/minutas.js` publica minutas de clientes en un archivo servido por GitHub Pages. Trasladarlas a la base de datos y eliminar el archivo. Preguntar antes de reescribir el historial de git.
-- [ ] **SEG-08 · P0 [Confirmado]** `js/prospects-hunter.js` publica prospectos con datos de contacto y oportunidades detectadas. Trasladar a la base de datos con la misma salvedad.
-- [ ] **SEG-09 · P1** Sacar `js/equipo-inicial.js`: expone nombres y roles del equipo. Usarlo una sola vez y eliminarlo.
-- [ ] **SEG-10 · P0** Después de cerrar lo anterior: rotar claves de Supabase y `CLAVE_ANM`, revisar la clave de la API de Claude y pedir a todos una contraseña nueva. Dar a Diogenes una lista de pasos manuales.
-- [ ] **SEG-11 · P1** Recordatorios: `apps-script/Recordatorios.gs` usa la clave pública para leer. Pasarlo a una Edge Function programada o a una credencial de servidor guardada en propiedades del script.
+- [x] **SEG-01 · P0 [Confirmado]** `supabase/setup.sql:31-41` permite a `anon` leer y modificar todo `anm_state`, incluida la fila `main` de Finanzas. Reemplazar por políticas que exijan usuario autenticado y rol. — hecho: `supabase/fase1-seguridad.sql` (sin acceso anónimo; permisos por rol con `anm_puede`).
+- [x] **SEG-02 · P0 [Confirmado]** Implementar Supabase Auth. `js/app.js` compara el hash en el navegador y la identidad es solo `localStorage.anm_me`. Acepta: no se puede leer ni escribir nada sin sesión válida, aunque se edite `localStorage`. — hecho: login con Google (`js/auth.js`), lista de Gmails autorizados que solo modifica el dueño (`anm_access`).
+- [x] **SEG-03 · P0 [Confirmado]** Finanzas solo para socios desde la base de datos, no solo ocultando el menú. Hoy `Store.readFinance` y `js/fin.js:37` leen `main` con la clave pública. Acepta: una consulta como rol Equipo a `main` devuelve vacío. — hecho: la fila `main` solo la leen dueño y socios desde la base.
+- [x] **SEG-04 · P0 [Confirmado]** Sacar del documento `team` todo lo sensible: `passHash`, `passSalt` e `invite` hoy son legibles con la clave pública. El hash es SHA-256 rápido. — hecho: sin contraseñas ni códigos de invitación; se limpian del documento `team` (app y SQL).
+- [x] **SEG-05 · P0 [Confirmado]** Sacar `aiToken` de `team.settings` (`js/reunion.js:78,122`). Quien lo lea puede usar el puente de `apps-script/IA.gs` y consumir la API de Claude con cargo a ANM. — hecho: se eliminó la IA automática (decisión: nada pago); `aiToken`/`aiUrl` se borran.
+- [x] **SEG-06 · P0 [Confirmado]** `apps-script/IA.gs:34` deja el puente abierto si falta `CLAVE_ANM`. Rechazar siempre si la clave no está configurada. Mover la llamada a una Edge Function con usuario autenticado. — hecho: `apps-script/IA.gs` eliminado; queda el modo manual gratis.
+- [x] **SEG-07 · P0 [Confirmado]** `js/minutas.js` publica minutas de clientes en un archivo servido por GitHub Pages. Trasladarlas a la base de datos y eliminar el archivo. Preguntar antes de reescribir el historial de git. — hecho: `js/minutas.js` eliminado (decisión: borrar y empezar de cero). Historial de git: pendiente, después del merge.
+- [x] **SEG-08 · P0 [Confirmado]** `js/prospects-hunter.js` publica prospectos con datos de contacto y oportunidades detectadas. Trasladar a la base de datos con la misma salvedad. — hecho: `js/prospects-hunter.js` eliminado (los prospectos ya importados quedan en la base).
+- [x] **SEG-09 · P1** Sacar `js/equipo-inicial.js`: expone nombres y roles del equipo. Usarlo una sola vez y eliminarlo. — hecho: `js/equipo-inicial.js` eliminado.
+- [ ] **SEG-10 · P0** Después de cerrar lo anterior: rotar claves de Supabase y `CLAVE_ANM`, revisar la clave de la API de Claude y pedir a todos una contraseña nueva. Dar a Diogenes una lista de pasos manuales. — pasos en `docs/PASOS-FASE-1.md` (punto 6), hacerlo después de activar el login.
+- [x] **SEG-11 · P1** Recordatorios: `apps-script/Recordatorios.gs` usa la clave pública para leer. Pasarlo a una Edge Function programada o a una credencial de servidor guardada en propiedades del script. — hecho: Recordatorios y Respaldo usan `SUPABASE_SERVICE_KEY` desde las propiedades del script.
 
 ### Permisos
 
-- [ ] **SEG-12 · P1** Aplicar los roles en el servidor. Hoy "Equipo" e "Invitado" son solo reglas de interfaz (`App.canGrowth`, `App.assignOpts`).
-- [ ] **SEG-13 · P1** Permisos por cliente: un invitado ve solo sus cuentas. Hoy un freelancer ve toda la operación.
-- [ ] **SEG-14 · P1 [Confirmado]** Unificar permisos sobre tareas: `Ops.bulk` limita las ajenas, pero `Ops.editTask` no. Definir la regla (ver decisiones).
-- [ ] **SEG-15 · P2** Registro de auditoría: quién cambió qué y cuándo.
+- [x] **SEG-12 · P1** Aplicar los roles en el servidor. Hoy "Equipo" e "Invitado" son solo reglas de interfaz (`App.canGrowth`, `App.assignOpts`). — hecho (por documento): invitado sin Crecimiento ni Finanzas; equipo sin Finanzas. Lo fino llega con DATOS-01.
+- [ ] **SEG-13 · P1** Permisos por cliente: un invitado ve solo sus cuentas. Hoy un freelancer ve toda la operación. — pendiente: requiere DATOS-01 (tablas).
+- [x] **SEG-14 · P1 [Confirmado]** Unificar permisos sobre tareas: `Ops.bulk` limita las ajenas, pero `Ops.editTask` no. Definir la regla (ver decisiones). — hecho: decisión de Diogenes, socios y equipo editan, reasignan y vuelven atrás cualquier tarea; invitado solo las suyas.
+- [ ] **SEG-15 · P2** Registro de auditoría: quién cambió qué y cuándo. — parcial: el historial guarda quién hizo cada cambio (`changed_by`).
 
 ### Inyección de código
 
-- [ ] **SEG-16 · P1 [Confirmado]** Validar enlaces: `href="${esc(t.link)}"` acepta `javascript:`. Crear `UI.safeUrl()` que permita solo `http`, `https`, `mailto` y `tel`, y aplicarla en todos los campos `link`, `pptLink`, `web` y `linkedin`.
-- [ ] **SEG-17 · P1 [Confirmado]** Valores sin escapar: `m.color` en `js/ui.js:40`, `u.color` en `js/app.js:36`, `a.link` en `js/ops.js:527` e ids dentro de `onclick`. Validar colores con una expresión regular e ids con una lista de caracteres permitidos.
-- [ ] **SEG-18 · P2** Reemplazar los `onclick` en línea por delegación de eventos y agregar una política CSP.
-- [ ] **SEG-19 · P2** Código de invitación con `crypto.getRandomValues` y vencimiento. Hoy usa `Math.random` y no vence (`js/app.js:115`).
-- [ ] **SEG-20 · P2** Limitar intentos de login y cerrar sesiones inactivas. Hoy la sesión no vence.
+- [x] **SEG-16 · P1 [Confirmado]** Validar enlaces: `href="${esc(t.link)}"` acepta `javascript:`. Crear `UI.safeUrl()` que permita solo `http`, `https`, `mailto` y `tel`, y aplicarla en todos los campos `link`, `pptLink`, `web` y `linkedin`. — hecho: `UI.safeUrl` en todos los links.
+- [ ] **SEG-17 · P1 [Confirmado]** Valores sin escapar: `m.color` en `js/ui.js:40`, `u.color` en `js/app.js:36`, `a.link` en `js/ops.js:527` e ids dentro de `onclick`. Validar colores con una expresión regular e ids con una lista de caracteres permitidos. — parcial: colores validados (`UI.safeColor`) en avatares y unidades; ids pendiente.
+- [x] **SEG-18 · P2** Reemplazar los `onclick` en línea por delegación de eventos y agregar una política CSP. — parcial: política CSP en las tres páginas; los `onclick` en línea quedan para más adelante.
+- [x] **SEG-19 · P2** Código de invitación con `crypto.getRandomValues` y vencimiento. Hoy usa `Math.random` y no vence (`js/app.js:115`). — resuelto: ya no hay códigos de invitación (los reemplaza la lista de Gmails autorizados).
+- [x] **SEG-20 · P2** Limitar intentos de login y cerrar sesiones inactivas. Hoy la sesión no vence. — hecho: los intentos los controla Google; la sesión se cierra sola tras 14 días sin uso.
 
 ---
 
@@ -90,7 +90,7 @@ Hoy la protección ocurre solo en el navegador. Con la URL y la clave pública, 
 
 ### Se pierden o alteran datos
 
-- [ ] **BUG-01 · P0 [Confirmado]** Editar una tarea ajena reasigna sin aviso. Un usuario de rol Equipo solo tiene su nombre en el selector (`js/app.js:35`, `js/ops.js:597`); al guardar, la tarea pasa a ser suya. Acepta: la persona actual se conserva como opción.
+- [x] **BUG-01 · P0 [Confirmado]** Editar una tarea ajena reasigna sin aviso. Un usuario de rol Equipo solo tiene su nombre en el selector (`js/app.js:35`, `js/ops.js:597`); al guardar, la tarea pasa a ser suya. Acepta: la persona actual se conserva como opción. — hecho: el selector conserva al responsable actual y el equipo puede asignar a cualquiera.
 - [ ] **BUG-02 · P0 [Confirmado]** Editar una tarea de un cliente dado de baja la convierte en interna, porque `clientOpts` solo lista activos (`js/ops.js:531`). Conservar el cliente actual como opción. Revisar el mismo caso en contenido y reuniones.
 - [ ] **BUG-03 · P0 [Confirmado]** `Store.upsert` pisa `createdAt` en cada actualización parcial (`js/store.js:141-144`); se reprodujo en una prueba. Afecta "Alta", "Ciclo de venta" (`js/growth.js:202`) y las alertas que usan `createdAt`. Acepta: se conserva la fecha original. Evaluar si se puede reconstruir la fecha perdida desde `interactions`.
 - [ ] **BUG-04 · P0 [Confirmado]** Escape o un clic fuera del formulario lo cierran sin avisar y se pierde lo escrito (`js/ui.js:93-94`). Pedir confirmación si hubo cambios y guardar borrador de minutas y formularios largos.
@@ -578,6 +578,13 @@ Sin esto, las demás fases no resuelven el problema de uso.
 ---
 
 ## Decisiones de Diogenes
+
+Respondidas (5/11/2026):
+- **Permisos de tareas (1):** el equipo puede editar, reasignar y volver atrás cualquier tarea.
+- **Autenticación (4):** cuenta de Google; solo el dueño autoriza qué Gmails entran.
+- **Datos públicos en git (5):** las minutas se borran y se empieza de cero.
+- **Costos (9):** nada pago. Se usan solo servicios gratuitos (Supabase free, Apps Script, Drive, GitHub Actions en repo público).
+
 
 Preguntar antes de implementar:
 
