@@ -80,8 +80,13 @@
       catch(e){ console.error(e); showCrash(e.message); out = { title:'Ups', html:`<div class="card empty"><div class="big">⚠️</div>Esta sección tuvo un error: <code>${UI.esc(e.message)}</code><br><br><button class="btn p" onclick="location.reload()">Recargar</button> <button class="btn g" onclick="App.repair()">Reparar</button> <a class="btn g" href="#/inicio">Ir a Inicio</a></div>` }; }
       $('#title').textContent = out.title || '';
       $('#crumb').textContent = out.crumb || '';
+      // Se conserva el desplazamiento interno de tableros y listas al redibujar la misma pantalla (BUG-29)
+      const SCR = '.board, .lane, .tbl-wrap, .list, .kanban', sameView = page.dataset.view===location.hash;
+      const scr = sameView ? [...page.querySelectorAll(SCR)].map(el=>[el.scrollTop, el.scrollLeft]) : [];
       if(out.html!=null) page.innerHTML = out.html;
+      page.dataset.view = location.hash;
       out.after?.();
+      if(scr.length) page.querySelectorAll(SCR).forEach((el,i)=>{ if(scr[i]){ el.scrollTop = scr[i][0]; el.scrollLeft = scr[i][1]; } });
     },
   };
 
@@ -92,7 +97,8 @@
     const g = App.canGrowth() ? Growth.alerts().length : 0;
     const unread = App.myNotifications().filter(n=>!(n.readBy||[]).includes(me.id)).length;
     const item = (href, ic, label, key, extra='') => `<a href="${href}" class="${active===key?'active':''}" onclick="App.closeSidebar()"><span class="ic">${ic}</span>${label}${extra}</a>`;
-    $('#nav').innerHTML = `
+    // Si hay un filtro de unidad activo, se avisa siempre: los contadores muestran solo esa unidad (BUG-20)
+    $('#nav').innerHTML = `${App.unitFilter?`<div class="small" style="margin:6px 10px 10px;padding:8px 10px;border-radius:10px;background:var(--yellow-d);color:var(--yellow)">🔎 Viendo solo <b>${esc(App.unit(App.unitFilter).label)}</b> · <a href="#" style="color:inherit" onclick="App.setUnit('');return false">ver todo</a></div>`:''}
       <div class="nav-s">General</div>
       ${item('#/inicio','◈','Inicio','inicio', unread?`<span class="cnt">${unread}</span>`:'')}
       <div class="nav-s">Agencia</div>
@@ -180,12 +186,17 @@
     const me = App.me(), list = App.myNotifications().slice(0,40);
     UI.modal(`<h2>🔔 Avisos para vos<button class="icon-btn x" data-close>✕</button></h2>
       ${list.length ? `<div class="list">${list.map(n=>{ const from=App.member(n.from); const unread=!(n.readBy||[]).includes(me.id);
-        return `<div class="li">${UI.avatar(from,'sm')}<div class="grow"><div class="${unread?'b':''} prewrap">${esc(n.text)}</div><div class="xs faint">${esc(from?.name||'')} · ${UI.ago(n.at)}${n.to==='all'?' · para todo el equipo':''}</div></div>
-        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="UI.close()">Ver</a>`:''}</div>`; }).join('')}</div>`
+        return `<div class="li">${UI.avatar(from,'sm')}<div class="grow"><div class="${unread?'b':''} prewrap">${unread?'<span style="color:var(--blue)">● </span>':''}${esc(n.text)}</div><div class="xs faint">${esc(from?.name||'')} · ${UI.ago(n.at)}${n.to==='all'?' · para todo el equipo':''}</div></div>
+        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="App.readNotif('${n.id}');UI.close(true)">Ver</a>`:''}${unread?`<button class="btn xs g" title="Marcar como leído" onclick="App.readNotif('${n.id}');App.openNotifications()">✓</button>`:''}</div>`; }).join('')}</div>`
         : '<div class="empty"><div class="big">🔕</div>No tenés avisos</div>'}
-      <div class="mfoot"><button class="btn g" data-close>Cerrar</button></div>`);
-    list.forEach(n=>{ if(!(n.readBy||[]).includes(me.id)) Store.upsert('team','notifications',{ id:n.id, readBy:[...(n.readBy||[]), me.id] }); });
+      <div class="mfoot">${list.some(n=>!(n.readBy||[]).includes(me.id))?'<button class="btn g" style="margin-right:auto" onclick="App.readNotif();App.openNotifications()">Marcar todo como leído</button>':''}<button class="btn g" data-close>Cerrar</button></div>`);
   };
+  // Cada aviso se marca leído al verlo o con ✓ (BUG-23); antes se marcaban todos al abrir la campana
+  App.readNotif = id=>{ const me = App.me();
+    App.myNotifications().filter(n=>(!id || n.id===id) && !(n.readBy||[]).includes(me.id)).forEach(n=>Store.upsert('team','notifications',{ id:n.id, readBy:[...(n.readBy||[]), me.id] })); };
+  // Los avisos de más de 90 días se archivan (BUG-24)
+  function archiveOld(){ try{ const lim = new Date(Date.now()-90*864e5).toISOString();
+    Store.all('team','notifications').filter(n=>(n.at||'')<lim).forEach(n=>Store.remove('team','notifications',n.id)); }catch(e){} }
 
   // Enviar un aviso manual (a una persona, por la app / WhatsApp / mail)
   App.sendAlert = (text, toId, link)=>{
@@ -206,7 +217,7 @@
 
   // ── Alta rápida ──────────────────────────────────────────────────────────────
   App.quickAdd = ()=>{
-    const opt = (ic, t, d, fn) => `<div class="li click" onclick="UI.close();${fn}"><span style="font-size:20px">${ic}</span><div class="grow"><div class="b">${t}</div><div class="xs faint">${d}</div></div></div>`;
+    const opt = (ic, t, d, fn) => `<div class="li click" onclick="UI.close(true);${fn}"><span style="font-size:20px">${ic}</span><div class="grow"><div class="b">${t}</div><div class="xs faint">${d}</div></div></div>`;
     UI.modal(`<h2>＋ Crear<button class="icon-btn x" data-close>✕</button></h2><div class="list">
       ${opt('📡','Actualización de cliente','¿En qué estamos con un cliente?','Ops.updateClient()')}
       ${opt('✅','Tarea','Algo que hay que hacer, con responsable y fecha','Ops.editTask()')}
@@ -266,7 +277,7 @@
     });
     checkVersion(true); setInterval(()=>checkVersion(false), 5*60*1000);
     // Navegación y re-render listos ANTES de sincronizar (así los clics funcionan desde el primer segundo)
-    window.addEventListener('hashchange', ()=>{ UI.close(); App.render(); window.scrollTo(0,0); });
+    window.addEventListener('hashchange', ()=>{ UI.close(true); App.render(); window.scrollTo(0,0); });
     let pending = false;
     Store.on(ev=>{ if(ev.type!=='change' || rendering) return; if(pending) return; pending = true;
       requestAnimationFrame(()=>{ pending = false; if(!$('#modal').classList.contains('open') && !document.activeElement?.matches('input,textarea,select')) App.render(); }); });
@@ -284,6 +295,7 @@
     if(known && bindMember(acc)){ gateState = 'ok'; App.render(); }
     await ready;
     if(gateState!=='ok' && bindMember(acc)) gateState = 'ok';
+    if(gateState==='ok') archiveOld();
     App.render();
   }
   window.App = App;

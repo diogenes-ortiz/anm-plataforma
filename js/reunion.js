@@ -12,7 +12,7 @@
 
   function prompt({ cid, date, text }){
     const c = cid && Store.get('ops','clients',cid);
-    const tasks = cid ? Store.all('ops','tasks').filter(t=>t.clientId===cid && (t.status!=='done' || (t.doneAt||'').slice(0,10)>=UI.addDays(UI.today(),-30))) : [];
+    const tasks = cid ? Store.all('ops','tasks').filter(t=>t.clientId===cid && (t.status!=='done' || UI.day(t.doneAt)>=UI.addDays(UI.today(),-30))) : [];
     const who = id => (App.member(id)?.name||'').split(' ')[0];
     const team = App.members().map(m=>`- ${m.name.split(' ')[0]} (${m.name}) — ${m.title || (m.role==='admin'?'Socio':'Equipo')}`).join('\n');
     const areas = [...new Set([...(c?.areas||[]).map(a=>a.name), ...tasks.map(t=>t.area).filter(Boolean)])];
@@ -88,9 +88,9 @@ ${text}
       const done = (raw, c)=>{
         let r; try { r = parse(raw); } catch(e){
           // Si en vez de JSON pegaron un status con ✅ 👀 🔸 ▫️, también sirve
-          const st = Ops.parseStatus(raw); if(st.areas.some(a=>a.items.length)){ UI.close(); return Ops.openImport({ id:'st-'+Store.uid(), kind:'status', clientId:c.cid, client:Store.get('ops','clients',c.cid)?.name, title:'Status', date:(c.date||UI.today())+'T12:00', minuta:raw, ...Ops.statusToTasks(st) }); }
+          const st = Ops.parseStatus(raw); if(st.areas.some(a=>a.items.length)){ UI.close(true); return Ops.openImport({ id:'st-'+Store.uid(), kind:'status', clientId:c.cid, client:Store.get('ops','clients',c.cid)?.name, title:'Status', date:(c.date||UI.today())+'T12:00', minuta:raw, ...Ops.statusToTasks(st) }); }
           return window.alert('No pude leer la respuesta: '+e.message+'\n\nAsegurate de pegar la respuesta completa de Claude.'); }
-        UI.close(); setTimeout(()=>Ops.openImport(toImport(r, c)), 60);
+        UI.close(true); setTimeout(()=>Ops.openImport(toImport(r, c)), 60);
       };
       box.querySelector('#rn-copy').onclick = ()=>{ const c = need(); if(c){ UI.copy(prompt(c)); UI.toast('Instrucciones copiadas: pegalas en Claude','📋'); box.querySelector('#rn-manual').style.display='block'; box.querySelector('#rn-read').style.display=''; } };
       box.querySelector('#rn-read').onclick = ()=>{ const c = need(), raw = box.querySelector('#rn-resp').value; if(!c) return; if(!raw.trim()) return UI.toast('Pegá la respuesta de Claude','👆'); done(raw, c); };

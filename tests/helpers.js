@@ -4,7 +4,8 @@ const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const fakeJwt = (email, name='Prueba Socio') => `${b64({ alg:'none' })}.${b64({ email, exp: Math.floor(Date.now()/1000)+3600, user_metadata:{ full_name:name } })}.x`;
 
 async function mockSupabase(page, { seed = {}, access = [{ email:'socio@gmail.com', role:'owner' }] } = {}) {
-  const DB = JSON.parse(JSON.stringify(seed)), ACC = JSON.parse(JSON.stringify(access));
+  const DB = JSON.parse(JSON.stringify(seed)), ACC = JSON.parse(JSON.stringify(access)), AT = {}; let seq = 0;
+  Object.keys(DB).forEach(k => AT[k] = '2026-01-01T00:00:00.000Z');
   const roleOf = req => { const t = (req.headers()['authorization']||'').replace('Bearer ',''); try{ const e = JSON.parse(Buffer.from(t.split('.')[1],'base64url')).email; return ACC.find(a=>a.email===e)?.role || null; }catch(e){ return null; } };
   const puede = (id, r) => id==='main' ? ['owner','socio'].includes(r) : id==='growth' ? ['owner','socio','equipo'].includes(r) : ['ops','team'].includes(id) && !!r;
   await page.route('**/*.supabase.co/**', async route => {
@@ -19,11 +20,17 @@ async function mockSupabase(page, { seed = {}, access = [{ email:'socio@gmail.co
       if (m === 'DELETE') { const i = ACC.findIndex(a=>a.email===email && a.role!=='owner'); if(i>=0) ACC.splice(i,1); return route.fulfill({ status: 204, body: '' }); }
     }
     const id = (url.searchParams.get('id') || '').replace('eq.', '');
-    if (m === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(id && DB[id] && puede(id, role) ? [{ data: DB[id] }] : []) });
+    if (m === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(id && DB[id] && puede(id, role) ? [{ data: DB[id], updated_at: AT[id] }] : []) });
     const body = JSON.parse(req.postData() || '{}'), target = body.id || id;
     if (!puede(target, role)) return route.fulfill({ status: 403, body: '' });
-    if (m === 'POST') { DB[body.id] = body.data; return route.fulfill({ status: 201, body: '' }); }
-    if (m === 'PATCH') { if (DB[id]) DB[id] = body.data; return route.fulfill({ status: DB[id] ? 204 : 404, body: '' }); }
+    const stamp = () => new Date(Date.now() + (++seq)).toISOString();
+    if (m === 'POST') { if (DB[body.id]) return route.fulfill({ status: 409, body: '' }); DB[body.id] = body.data; AT[body.id] = stamp(); return route.fulfill({ status: 201, body: '' }); }
+    if (m === 'PATCH') {
+      const cond = url.searchParams.get('updated_at');
+      if (!DB[id] || (cond && cond.replace('eq.', '') !== AT[id])) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      DB[id] = body.data; AT[id] = stamp();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id }]) });
+    }
     return route.fulfill({ status: 405, body: '' });
   });
   await page.route('**/fonts.googleapis.com/**', r => r.abort());
