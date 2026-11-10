@@ -160,6 +160,7 @@
 
   // ── Vista principal ──────────────────────────────────────────────────────────
   const TABS = [['seguimiento','Seguimiento'],['tareas','Tareas'],['calendario','Calendario'],['reuniones','Reuniones y minutas'],['alertas','Alertas']];
+  let doneOpen = localStorage.getItem('anm_doneopen')==='1';
   let search = '', taskMode = localStorage.getItem('anm_taskmode')||'board', taskWho = 'all', calCursor = UI.ym(), meetTopic = '';
   // Filtro global por cliente ('' = todos, '__int' = internas, o id de cliente)
   let cf = localStorage.getItem('anm_opsclient')||'';
@@ -363,9 +364,12 @@
     }
     const lanes = TASK_ST.map(([k,l])=>{
       let items = ts.filter(t=>(t.status||'todo')===k).sort(taskSort);
-      if(k==='done') items = items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,20);
+      // "Hecho" va plegado: no es el foco. Se despliega a pedido (y se puede soltar una tarjeta igual)
+      const totalK = items.length, plegada = k==='done' && !doneOpen;
+      if(k==='done') items = plegada ? [] : items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,20);
       items.forEach(x=>visibleTasks.push(x.id));
-      return `<div class="lane" data-lane="${k}"><div class="lane-h">${l} <span class="n">${items.length}</span></div>
+      return `<div class="lane ${plegada?'lane-folded':''}" data-lane="${k}"><div class="lane-h">${l} <span class="n">${totalK}</span>${k==='done'?`<button class="btn xs g" style="margin-left:auto" onclick="Ops.toggleDone()">${doneOpen?'Ocultar':'Ver'}</button>`:''}</div>
+        ${plegada?'<div class="xs faint" style="padding:8px 2px">Las tareas terminadas quedan acá, ocultas. Tocá “Ver” para mostrarlas.</div>':''}
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
           <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
@@ -740,6 +744,7 @@
         else Store.upsert('ops','clients',{ id:cid, [kind==='cal'?'cal':'rep']:'no' });
         UI.close(); UI.toast(el.dataset.q==='mes' ? `${nom[0].toUpperCase()+nom.slice(1)} de ${L}: no aplica` : `${c.name} ya no lleva ${nom}`,'🗑'); App.render(); });
     },
+    toggleDone(){ doneOpen = !doneOpen; try{ localStorage.setItem('anm_doneopen', doneOpen?'1':''); }catch(e){} App.render(); },
     deleteTask(id){ const t = Store.get('ops','tasks',id); if(!t || !confirm(`¿Borrar la tarea “${t.title}”?`)) return; Store.remove('ops','tasks',id); UI.toast('Tarea borrada','🗑'); App.render(); },
     viewMeeting(id){
       const m = Store.get('ops','meetings',id); if(!m) return;
