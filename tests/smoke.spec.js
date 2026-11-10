@@ -78,3 +78,24 @@ test('asignar equipo a un cliente y que aparezca primero al crear tareas', async
   expect(await page.$$eval('#f_assigneeId option', o => o.some(x => x.textContent.includes('trabaja la cuenta')))).toBe(false);
   expect(errores).toEqual([]);
 });
+
+test('tocar el avatar de una tarea para cambiar quién se encarga', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page);
+  await entrar(page);
+  const ids = await page.evaluate(() => {
+    const luli = Store.upsert('team','members',{ name:'Luli Pagui', role:'member', color:'#3366ff' });
+    const t = Store.upsert('ops','tasks',{ title:'Armar calendario', status:'todo', assigneeId:App.me().id });
+    return { luli:luli.id, t:t.id };
+  });
+  await page.goto('/#/ops/tareas');
+  for (const modo of ['list', 'board']) {
+    await page.evaluate(m => Ops.setMode(m), modo);
+    await page.locator('.av-btn').first().click();
+    await page.click('#modal >> text=' + (modo === 'list' ? 'Luli Pagui' : 'Prueba Socio'));
+    const quien = await page.evaluate(id => Store.get('ops','tasks',id).assigneeId, ids.t);
+    expect(quien).toBe(modo === 'list' ? ids.luli : await page.evaluate(() => App.me().id));
+    await expect(page.locator('#modal.open')).toHaveCount(0);
+  }
+  expect(errores).toEqual([]);
+});

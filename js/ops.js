@@ -324,6 +324,8 @@
   const prioN = { alta:0, media:1, baja:2 };
   function taskSort(a,b){ return (a.status==='done')-(b.status==='done') || (a.due||'9999').localeCompare(b.due||'9999') || prioN[a.priority||'media']-prioN[b.priority||'media']; }
 
+  // Avatar del responsable: tocándolo se elige quién se encarga
+  const assignBtn = t => `<button type="button" class="av-btn" title="Cambiar responsable" onclick="event.stopPropagation();Ops.pickAssignee('${t.id}')">${UI.avatar(App.member(t.assigneeId),'sm')}</button>`;
   function taskRow(t, showClient=true){
     const over = t.status!=='done' && t.due && t.due<UI.today();
     const m = App.member(t.assigneeId);
@@ -331,7 +333,7 @@
       <div class="grow" style="cursor:pointer" onclick="Ops.editTask('${t.id}')"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
       <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
       ${UI.safeUrl(t.link)?`<a href="${esc(UI.safeUrl(t.link))}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
-      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}<button class="icon-btn" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button></div>`;
+      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${assignBtn(t)}<button class="icon-btn" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button></div>`;
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
 
@@ -394,7 +396,7 @@
         ${plegada?'<div class="xs faint" style="padding:8px 2px">Las tareas terminadas quedan acá, ocultas. Tocá “Ver” para mostrarlas.</div>':''}
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
-          <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
+          <div class="m">${selMode?UI.avatar(App.member(t.assigneeId),'sm'):assignBtn(t)}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
         ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}</div>`;
     }).join('');
     return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">${selMode?'Tocá las tarjetas para seleccionarlas.':'Arrastrá las tarjetas entre columnas para cambiar su estado. Con “☑ Seleccionar” podés elegir varias y hacer acciones juntas.'}</p>` + selBar(),
@@ -626,6 +628,22 @@
       } });
     },
 
+    pickAssignee(id){
+      const t = Store.get('ops','tasks',id); if(!t) return;
+      const team = clientTeam(t.clientId);
+      const opts = assigneeOpts(t.clientId, t.assigneeId);
+      const box = UI.modal(`<h2>¿Quién se encarga?<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="small muted" style="margin:-6px 0 12px">${esc(t.title)}</div>
+        <div class="list">${opts.map(([v,l])=>{ const m = App.member(v);
+          return `<div class="li click ${v===(t.assigneeId||'')?'picked':''}" data-v="${esc(v)}">${m?UI.avatar(m,'sm'):'<span class="av sm" style="background:var(--surface3);color:var(--text3)">–</span>'}<div class="grow b small">${esc(m?m.name:'Sin asignar')}</div>${m&&team.includes(v)?'<span class="xs faint">trabaja la cuenta</span>':''}${v===(t.assigneeId||'')?'<span>✓</span>':''}</div>`; }).join('')}</div>`);
+      box.querySelectorAll('[data-v]').forEach(el=>el.onclick = ()=>Ops.assign(id, el.dataset.v));
+    },
+    assign(id, mid){
+      const t = Store.get('ops','tasks',id); UI.close(true); if(!t || (t.assigneeId||'')===mid) return;
+      Store.upsert('ops','tasks',{ id, assigneeId:mid });
+      if(mid && mid!==App.me().id) App.notify(mid, `${App.me().name.split(' ')[0]} te pasó la tarea: ${t.title}`, '#/ops/tareas');
+      UI.toast(mid ? `Ahora se encarga ${(App.member(mid)?.name||'').split(' ')[0]}` : 'Tarea sin responsable','👤'); App.render();
+    },
     editClientTeam(id){
       const c = client(id); if(!c) return;
       UI.form({ title:`Equipo de ${c.name}`, values:{ ownerId:c.ownerId||'', teamIds:clientTeam(id) }, fields:[
