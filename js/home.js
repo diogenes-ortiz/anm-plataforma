@@ -74,7 +74,7 @@
         ${App.canManage(m)||m.id===App.me().id?`<div class="row wrap"><button class="btn sm g" onclick="Team.edit('${m.id}', ${m.id===App.me().id})">✎ Editar</button></div>`:''}</div>`;
     }).join('');
     return { title:'Equipo', crumb:'Invitá a colaborar', html:`
-      <div class="toolbar"><div class="small muted grow">Cada persona entra con su cuenta de Google. Solo pueden entrar los Gmails que autorizó el 👑 dueño principal, y él define el rol de cada uno: <b>Socio/a</b> (todo + Finanzas), <b>Equipo</b> (Operaciones y Crecimiento; puede editar y reasignar tareas) o <b>Invitado/a</b> (solo Operaciones, ideal freelancers).</div>
+      <div class="toolbar"><div class="small muted grow">Cada persona entra con su cuenta de Google. Solo pueden entrar los Gmails que autorizó el 👑 dueño principal, y él define el rol de cada uno: <b>Socio/a</b> (todo + Finanzas), <b>Equipo</b> (Operaciones y Ventas; puede editar y reasignar tareas) o <b>Invitado/a</b> (solo Operaciones, ideal freelancers).</div>
       ${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
       ${App.isOwner()?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>🔐 Accesos: Gmails que pueden entrar</h3><span class="grow"></span><button class="btn sm p" onclick="Team.addAccess()">＋ Autorizar un Gmail</button></div>
         <div id="acc-list"><div class="small faint">Cargando…</div></div>
@@ -92,7 +92,7 @@
         <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
       <div class="card"><div class="card-h"><h3>Unidades de negocio</h3>${admin?'<span class="grow"></span><button class="btn xs g" onclick="Team.editUnits()">Editar</button>':''}</div>
         <div class="row wrap">${App.unitTags(App.units().map(u=>u.id))}</div>
-        <p class="xs faint" style="margin-top:12px">Sirven para filtrar Operaciones y Crecimiento (Social Media, Pauta, Branding, Web…).</p></div>
+        <p class="xs faint" style="margin-top:12px">Sirven para filtrar Operaciones y Ventas (Social Media, Pauta, Branding, Web…).</p></div>
       <div class="card"><div class="card-h"><h3>Datos y respaldo</h3><span class="grow"></span><span class="sync" id="sync2">${esc(Store.status)}</span></div>
         <p class="small muted" style="margin-bottom:14px">Todo se guarda en la nube (Supabase) y se sincroniza entre el equipo cada ~20 segundos. También queda una copia en este navegador por si se corta internet.</p>
         <div class="row wrap"><button class="btn g" onclick="Store.syncNow().then(()=>UI.toast('Sincronizado','☁️'))">⟳ Sincronizar ahora</button><button class="btn g" onclick="App.repair()">🛠 Reparar (si algo se traba)</button><button class="btn g" onclick="UI.download('anm-plataforma-'+UI.today()+'.json', Store.exportAll())">⇣ Descargar respaldo</button>
@@ -152,7 +152,7 @@
       const sin = App.members().filter(x=>!x.email || x.email===pre.email);
       UI.form({ title:'＋ Autorizar un Gmail', submit:'Autorizar', values:{ role:'equipo', ...pre }, fields:[
         { k:'email', label:'Gmail', type:'email', req:true, placeholder:'nombre@gmail.com' },
-        { k:'role', label:'Rol', type:'select', options:[['equipo','Equipo (Operaciones y Crecimiento)'],['invitado','Invitado/a (solo Operaciones)'],['socio','Socio/a (todo + Finanzas)']] },
+        { k:'role', label:'Rol', type:'select', options:[['equipo','Equipo (Operaciones y Ventas)'],['invitado','Invitado/a (solo Operaciones)'],['socio','Socio/a (todo + Finanzas)']] },
         { k:'member_id', label:'Perfil del equipo (opcional)', type:'select', options:[['','— Lo elige al entrar —'], ...App.members().filter(x=>!x.email || x.email===pre.email || x.id===pre.member_id).map(x=>[x.id,x.name])] },
       ], onSubmit:v=>{ (async()=>{
           try{ await Auth.saveAccess(v); if(v.member_id) Store.upsert('team','members',{ id:v.member_id, email:v.email.trim().toLowerCase() });
