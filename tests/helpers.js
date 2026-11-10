@@ -41,5 +41,7 @@ async function entrar(page, email) {
   await sesion(page, email);
   await page.goto('/');
   await page.waitForSelector('.hero');
+  // Esperar a que termine el arranque (primera sincronización), así las pruebas no compiten con él
+  await page.waitForFunction(() => window.Store && Store.status === 'synced');
 }
 module.exports = { mockSupabase, sesion, entrar, fakeJwt };
