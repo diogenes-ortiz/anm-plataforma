@@ -27,7 +27,7 @@
   const openTasks = () => S('tasks').filter(t=>t.status!=='done');
   const overdueTasks = () => openTasks().filter(t=>t.due && t.due<UI.today());
   // Entregables: automático según las unidades, o forzado por cliente (cal/rep = 'si' | 'no')
-  // Tipo de cliente: mensual (abono) u one shot (proyecto puntual). Los one shot no llevan entregables mensuales por defecto.
+  // Tipo de cliente: mensual (todos los meses) u one shot (proyecto puntual). Los one shot no llevan entregables mensuales por defecto.
   const isOneShot = c => c?.kind==='oneshot';
   const needsCal = c => c.cal==='no' ? false : c.cal==='si' ? true : !isOneShot(c) && (c.units||[]).some(u=>CAL_UNITS.includes(u));
   const calRec = (cid, month) => Store.get('ops','calendars', cid+'_'+month);
@@ -194,13 +194,14 @@
   // ── Seguimiento ──────────────────────────────────────────────────────────────
   function viewFollow(){
     const cs = activeClients().filter(c=>App.matchUnit(c.units||[])).filter(c=>!search || c.name.toLowerCase().includes(search.toLowerCase()));
-    const fresh = cs.filter(c=>daysSinceUpdate(c)<=7).length;
-    const pct = cs.length ? Math.round(fresh/cs.length*100) : 100;
+    // Tareas de quien está mirando: resueltas / asignadas este mes, y cuántas le quedan abiertas
+    const me = App.me(), my = me ? Game.perf(me.id) : { assigned:0, resolved:0, pct:null, pending:0, overdue:0 };
+    const pct = my.pct ?? 100;
     const cnt = h => cs.filter(c=>(c.health||'ok')===h).length;
     const al = alerts();
     const top = `<div class="grid g4" style="margin-bottom:22px">
-      <div class="card row" style="gap:18px"><div class="ring" style="--p:${pct}"><div>${pct}%<small>AL DÍA</small></div></div>
-        <div><div class="b">Salud del seguimiento</div><div class="small muted">${fresh} de ${cs.length} clientes actualizados en los últimos 7 días</div></div></div>
+      <div class="card row hover" style="gap:18px" onclick="App.go('#/ops/tareas')"><div class="ring" style="--p:${pct}"><div>${pct}%<small>HECHAS</small></div></div>
+        <div><div class="b">Tus tareas por completar</div><div class="small muted"><b>${my.pending}</b> abierta${my.pending===1?'':'s'}${my.overdue?` · <span style="color:var(--red)">${my.overdue} vencida${my.overdue===1?'':'s'}</span>`:''}<br>${my.resolved} de ${my.assigned} resueltas este mes</div></div></div>
       <div class="card kpi"><div class="l">🟢 En curso</div><div class="v" style="color:var(--green)">${cnt('ok')}</div><div class="s">clientes sin problemas</div></div>
       <div class="card kpi"><div class="l">🟡 Atención</div><div class="v" style="color:var(--yellow)">${cnt('atencion')}</div><div class="s">hay que mirar de cerca</div></div>
       <div class="card kpi hover" onclick="App.go('#/ops/alertas')"><div class="l">🔴 Riesgo · alertas</div><div class="v" style="color:var(--red)">${cnt('riesgo')} · ${al.filter(a=>a.level==='danger').length}</div><div class="s">ver todas las alertas →</div></div>
@@ -210,7 +211,7 @@
       <button class="btn p" onclick="Ops.editClient()">＋ Cliente</button></div>`;
     const mens = cs.filter(c=>!isOneShot(c)), once = cs.filter(isOneShot);
     const sec = (t, sub, xs) => xs.length ? `<div class="sec-t" style="margin-top:22px">${t} · ${xs.length}<span class="faint" style="text-transform:none;letter-spacing:0;font-weight:600"> — ${sub}</span></div><div class="grid g-auto">${xs.map(clientCard).join('')}</div>` : '';
-    const cards = cs.length ? sec('🔁 Mensuales', 'abono todos los meses', mens) + sec('⚡ One shot', 'proyectos puntuales', once)
+    const cards = cs.length ? sec('🔁 Mensuales', 'trabajamos con ellos todos los meses', mens) + sec('⚡ One shot', 'proyectos puntuales', once)
       : `<div class="card empty"><div class="big">🗂️</div>Todavía no hay clientes${App.unitFilter?' en esta unidad':''}.<br><br><button class="btn p" onclick="Ops.editClient()">＋ Agregar el primero</button></div>`;
     return { html: top + bar + cards };
   }
@@ -579,7 +580,7 @@
       const c = id ? client(id) : {};
       UI.form({ title: id ? 'Editar cliente' : 'Nuevo cliente', values:c, fields:[
         { k:'name', label:'Nombre', req:true },
-        { k:'kind', label:'Tipo de cliente', type:'select', options:[['mensual','🔁 Mensual (abono)'],['oneshot','⚡ One shot (proyecto puntual)']], default:'mensual' },
+        { k:'kind', label:'Tipo de cliente', type:'select', options:[['mensual','🔁 Mensual (todos los meses)'],['oneshot','⚡ One shot (proyecto puntual)']], default:'mensual' },
         { k:'units', label:'Unidades de negocio', type:'multi', options:App.unitOpts(), req:true },
         { k:'ownerId', label:'Responsable', type:'select', options:App.memberOpts(), half:true },
         { k:'health', label:'Estado', type:'select', options:Object.entries(HEALTH).map(([k,[l,e]])=>[k,e+' '+l]), half:true, default:'ok' },
