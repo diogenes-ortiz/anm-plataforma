@@ -679,7 +679,7 @@
       const f = input.files[0]; if(!f) return;
       const r = new FileReader();
       r.onload = ()=>{ try{ const d = JSON.parse(r.result); if(!d.clientes) throw 0;
-        if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas .`)) return;
+        if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas.`)) return;
         const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(); UI.toast('Backup restaurado','⇡'); render();
       }catch(e){ UI.toast('Archivo inválido','⚠️'); } };
       r.readAsText(f);
