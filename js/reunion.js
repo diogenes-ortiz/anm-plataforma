@@ -25,7 +25,7 @@ EQUIPO (usá el primer nombre como responsable):
 ${team}
 
 ${areas.length ? `ÁREAS QUE YA USAMOS CON ESTE CLIENTE (reusalas con el mismo nombre; podés crear otras nuevas en MAYÚSCULAS):\n${areas.join(' · ')}\n` : 'ÁREAS: agrupá las tareas en áreas cortas en MAYÚSCULAS (ej: CONTENIDO, GOOGLE ADS, WEB, CRM Y ATENCIÓN AL CLIENTE, INFLUENCERS Y CANJES, SEGUIMIENTO COMERCIAL).\n'}
-${tasks.length ? `TAREAS QUE YA EXISTEN PARA ESTE CLIENTE (id · estado · área · responsable · fecha · título):\n${tasks.map(t=>`${t.id} · ${t.status||'todo'} · ${t.area||'-'} · ${who(t.assigneeId)||'-'} · ${t.due||'-'} · ${t.title}${t.note?' — '+t.note:''}`).join('\n')}\n` : ''}
+${(c?.pins||[]).length ? `NO OLVIDAR CON ESTE CLIENTE (prioridades que marcaron los socios):\n${c.pins.map(p=>'- '+p.text).join('\n')}\n\n` : ''}${tasks.length ? `TAREAS QUE YA EXISTEN PARA ESTE CLIENTE (id · estado · área · responsable · fecha · título):\n${tasks.map(t=>`${t.id} · ${t.status||'todo'} · ${t.area||'-'} · ${who(t.assigneeId)||'-'} · ${t.due||'-'} · ${t.title}${t.note?' — '+t.note:''}`).join('\n')}\n` : ''}
 QUÉ NECESITO:
 1. "minuta": lo que se habló, ordenado por tema, en viñetas "• " cortas y claras (sin relleno, sin repetir). Nombrá quién se encarga cuando se dijo.
 2. "decisiones": solo lo que quedó decidido, en viñetas "• ".

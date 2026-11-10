@@ -300,6 +300,8 @@
     if(gateState!=='ok' && bindMember(acc)) gateState = 'ok';
     if(gateState==='ok') archiveOld();
     App.render();
+    // El dueño: crear/vincular los perfiles de los Gmails autorizados (para poder asignarles tareas antes de que entren)
+    if(gateState==='ok' && window.Asignar) Asignar.ensureProfiles();
   }
   window.App = App;
   document.addEventListener('DOMContentLoaded', boot);

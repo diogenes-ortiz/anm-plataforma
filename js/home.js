@@ -7,8 +7,8 @@
     const me = App.me(), t = UI.today();
     const pf = Game.perf(me.id), wk = Game.weekStart();
     const h = new Date().getHours(), hi = h<12?'Buen día':h<20?'Buenas tardes':'Buenas noches';
-    const myTasks = Ops.openTasks().filter(x=>x.assigneeId===me.id && x.due && x.due<=t).sort((a,b)=>a.due.localeCompare(b.due));
-    const soon = Ops.openTasks().filter(x=>x.assigneeId===me.id && (!x.due || x.due>t)).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9')).slice(0,4);
+    const myTasks = Ops.openTasks().filter(x=>Ops.isMine(x, me.id) && x.due && x.due<=t).sort((a,b)=>a.due.localeCompare(b.due));
+    const soon = Ops.openTasks().filter(x=>Ops.isMine(x, me.id) && (!x.due || x.due>t)).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9')).slice(0,4);
     const myMeet = Store.all('ops','meetings').filter(m=>m.date?.slice(0,10)===t && (m.attendees||[]).includes(me.id));
     const myFollow = App.canGrowth() ? Store.all('growth','leads').filter(l=>l.ownerId===me.id && l.nextFollowUp && l.nextFollowUp<=t && Growth.OPEN.includes(l.stage)) : [];
     const myClients = Ops.activeClients().filter(c=>c.ownerId===me.id && Ops.daysSinceUpdate(c)>7);
@@ -65,7 +65,7 @@
     const ms = App.members(), admin = App.isAdmin();
     const cards = ms.map(m=>{
       const pf = Game.perf(m.id);
-      const tasks = Ops.openTasks().filter(t=>t.assigneeId===m.id).length;
+      const tasks = Ops.openTasks().filter(t=>Ops.isMine(t, m.id)).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
       return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div>${m.title?`<div class="small muted">${esc(m.title)}</div>`:''}<div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.joinedAt?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin Gmail</span>'}</div></div><span class="lvl" title="${esc(pf.label)} este mes" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
@@ -79,6 +79,7 @@
       ${App.isOwner()?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>🔐 Accesos: Gmails que pueden entrar</h3><span class="grow"></span><button class="btn sm p" onclick="Team.addAccess()">＋ Autorizar un Gmail</button></div>
         <div id="acc-list"><div class="small faint">Cargando…</div></div>
         <p class="xs faint" style="margin-top:10px">Solo vos ves y cambiás esta lista: la base de datos rechaza cualquier cambio que no venga de tu cuenta. Si sacás a alguien, deja de poder entrar al instante.</p></div>`:''}
+      ${window.Asignar?Asignar.card():''}
       <div class="grid g-auto">${cards}</div>`, after:()=>{ if(App.isOwner()) Team.loadAccess(); } };
   });
 
