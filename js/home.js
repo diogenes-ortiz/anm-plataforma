@@ -16,7 +16,13 @@
     const board = Game.leaderboard(wk);
     const alerts = [...Ops.alerts(), ...(App.canGrowth()?Growth.alerts():[])].filter(a=>a.level!=='info');
     const notes = App.myNotifications().filter(n=>!(n.readBy||[]).includes(me.id));
-    const feed = Store.all('team','activity').sort((a,b)=>b.at.localeCompare(a.at)).slice(0,14);
+    // Próximamente: tareas abiertas que vencen en los próximos 14 días (de todo el equipo) y reuniones de la semana
+    const hasta = UI.addDays(t, 14);
+    const prox = [
+      ...Ops.openTasks().filter(x=>x.due && x.due>t && x.due<=hasta).map(x=>({ d:x.due, html:Ops.taskRow(x) })),
+      ...Store.all('ops','meetings').filter(m=>(m.date||'').slice(0,10)>t && (m.date||'').slice(0,10)<=UI.addDays(t,7)).map(m=>({ d:m.date.slice(0,10), html:`<div class="li click" onclick="Ops.viewMeeting('${m.id}')"><span>🤝</span><div class="grow"><div class="b small">${esc(m.title)}</div><div class="xs faint">${esc(Ops.clientName(m.clientId))}${UI.time(m.date)?' · '+UI.time(m.date):''}</div></div></div>` })),
+    ].sort((a,b)=>a.d.localeCompare(b.d));
+    const porDia = {}; prox.forEach(x=>{ (porDia[x.d] = porDia[x.d]||[]).push(x.html); });
 
     const html = `
       <div class="hero" style="margin-bottom:24px">
@@ -40,8 +46,8 @@
             ${soon.length?`<div class="sec-t" style="margin-top:18px">Lo que viene</div><div class="list">${soon.map(x=>Ops.taskRow(x)).join('')}</div>`:''}</div>
           <div class="card"><div class="card-h"><h3>🚨 Alertas del equipo</h3><span class="sub">${alerts.length}</span><span class="grow"></span><a class="btn xs g" href="#/ops/alertas">Ver todas</a></div>
             ${alerts.length ? alerts.slice(0,5).map(Ops.alertRow).join('') : '<div class="empty small">Sin alertas. Todo al día 🎉</div>'}</div>
-          <div class="card"><div class="card-h"><h3>⚡ Actividad del equipo</h3></div>
-            ${feed.length?`<div class="list">${feed.map(a=>`<div class="li">${UI.avatar(App.member(a.by),'sm')}<div class="grow small"><b>${esc(App.member(a.by)?.name||'')}</b> <span class="muted">${esc(a.text)}</span></div><span class="xs faint" style="min-width:70px;text-align:right">${UI.ago(a.at)}</span></div>`).join('')}</div>`:'<div class="empty small">Todavía no hay actividad</div>'}</div>
+          <div class="card"><div class="card-h"><h3>📅 Próximamente</h3><span class="sub">próximos 14 días</span><span class="grow"></span><a class="btn xs g" href="#/ops/calendario">Calendario</a></div>
+            ${prox.length ? Object.entries(porDia).map(([d,items])=>`<div class="xs faint b" style="margin:14px 0 4px">${d===UI.addDays(t,1)?'Mañana':UI.DAYS[UI.parse(d).getDay()]+' '+UI.parse(d).getDate()+'/'+(UI.parse(d).getMonth()+1)}</div><div class="list">${items.join('')}</div>`).join('') : '<div class="empty small">No hay nada que venza en los próximos 14 días</div>'}</div>
         </div>
         <div class="col" style="gap:18px">
           <div class="card"><div class="card-h"><h3>📊 Cómo viene el equipo</h3><span class="sub">este mes</span></div>
