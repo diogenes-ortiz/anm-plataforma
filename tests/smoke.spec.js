@@ -55,3 +55,28 @@ test('abrir Finanzas', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
   expect(errores).toEqual([]);
 });
+
+test('asignar equipo a un cliente y que aparezca primero al crear tareas', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page);
+  await entrar(page);
+  const ids = await page.evaluate(() => {
+    const luli = Store.upsert('team','members',{ name:'Luli Pagui', role:'member', color:'#3366ff' });
+    const otra = Store.upsert('team','members',{ name:'Ana Otra', role:'member', color:'#33aa66' });
+    const c = Store.upsert('ops','clients',{ name:'Mipileta', active:true, units:['social'], health:'ok' });
+    return { luli:luli.id, otra:otra.id, c:c.id };
+  });
+  await page.goto('/#/ops/cliente/' + ids.c);
+  await page.click('text=＋ Equipo');
+  await page.click('#f_teamIds >> text=Luli Pagui');
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('.hero')).toContainText('Luli');
+  await page.click('.hero >> text=＋ Agregar tarea');
+  const opciones = await page.$$eval('#f_assigneeId option', o => o.map(x => x.textContent));
+  const primeraDelEquipo = opciones.findIndex(t => t.includes('trabaja la cuenta'));
+  expect(opciones[primeraDelEquipo]).toContain('Luli Pagui');
+  expect(primeraDelEquipo).toBeLessThan(opciones.findIndex(t => t.includes('Ana Otra')));
+  await page.selectOption('#f_clientId', '');
+  expect(await page.$$eval('#f_assigneeId option', o => o.some(x => x.textContent.includes('trabaja la cuenta')))).toBe(false);
+  expect(errores).toEqual([]);
+});
