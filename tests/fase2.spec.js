@@ -25,6 +25,8 @@ test('CSV con comas entre comillas (BUG-30)', async ({ page }) => {
 test('cerrar un formulario con cambios pide confirmación y guarda borrador (BUG-04)', async ({ page }) => {
   await mockSupabase(page); await entrar(page);
   await page.evaluate(() => Ops.editMeeting());
+  // El formulario pone el foco en el primer campo a los 30 ms: se espera eso antes de escribir
+  await page.waitForFunction(() => document.activeElement?.id === 'f_title');
   await page.fill('#f_minuta', 'Notas importantes');
   let pregunto = false; page.once('dialog', d => { pregunto = true; d.dismiss(); });
   await page.keyboard.press('Escape');

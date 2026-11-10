@@ -90,8 +90,8 @@
     const clearDrafts = ()=>longs.forEach(f=>{ try{ localStorage.removeItem(dkey(f.k)); }catch(e){} });
     let recovered = false;
     longs.forEach(f=>{ const el = box.querySelector('#f_'+f.k); if(!el) return;
-      try{ const d = localStorage.getItem(dkey(f.k)); if(d && d!==el.value && !el.value.trim()){ el.value = d; recovered = true; } }catch(e){}
-      el.addEventListener('input', ()=>{ try{ el.value.trim() ? localStorage.setItem(dkey(f.k), el.value) : localStorage.removeItem(dkey(f.k)); }catch(e){} }); });
+      el.dataset.draft = dkey(f.k);   // lo guarda el escucha general de abajo, aunque el campo se vuelva a dibujar
+      try{ const d = localStorage.getItem(dkey(f.k)); if(d && d!==el.value && !el.value.trim()){ el.value = d; recovered = true; } }catch(e){} });
     if(recovered) toast('Recuperé lo que habías escrito antes','📝');
     if(danger) box.querySelector('#mdanger').onclick = ()=>{ if(!danger.confirm || confirm(danger.confirm)){ danger.fn(); close(true); } };
     setTimeout(()=>box.querySelector('input:not([type=checkbox]),textarea')?.focus(), 30);
@@ -113,6 +113,9 @@
     if(force!==true && modalDirty && !confirm('Hay cambios sin guardar. ¿Cerrar igual?')) return;
     mo.classList.remove('open'); mo.innerHTML=''; modalDirty = false;
   }
+  // Borradores: cualquier campo con data-draft se guarda mientras se escribe
+  document.addEventListener('input', e=>{ const k = e.target?.dataset?.draft; if(!k) return;
+    try{ e.target.value.trim() ? localStorage.setItem(k, e.target.value) : localStorage.removeItem(k); }catch(err){} }, true);
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') close(); });
   document.addEventListener('mousedown', e=>{ if(e.target.id==='modal') close(); });
 
