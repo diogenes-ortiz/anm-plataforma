@@ -25,6 +25,22 @@
   const lastUpdate = c => S('updates').filter(u=>u.clientId===c.id).sort((a,b)=>b.at.localeCompare(a.at))[0];
   const daysSinceUpdate = c => { const u = lastUpdate(c); return u ? UI.diffDays(u.at.slice(0,10)) : 999; };
   const openTasks = () => S('tasks').filter(t=>t.status!=='done');
+  // Equipo que trabaja una cuenta (responsable + asignados)
+  const clientTeam = cid => { const c = cid && S('clients').find(x=>x.id===cid); return c ? [...new Set([c.ownerId, ...(c.teamIds||[])].filter(Boolean))] : []; };
+  // Opciones de "Responsable": primero quienes trabajan esa cuenta
+  function assigneeOpts(cid, cur){
+    let o = App.assignOpts(); const team = clientTeam(cid);
+    if(cur && !o.some(x=>x[0]===cur)) o = [...o, [cur, App.member(cur)?.name||'—']];
+    if(!team.length) return o;
+    const inTeam = o.filter(x=>x[0] && team.includes(x[0])).map(([v,l])=>[v, l+' · trabaja la cuenta']);
+    return [...o.filter(x=>!x[0]), ...inTeam, ...o.filter(x=>x[0] && !team.includes(x[0]))];
+  }
+  // En el formulario de tarea: al cambiar el cliente se reordena la lista de responsables
+  function wireAssignee(box){
+    const cs = box?.querySelector('#f_clientId'), as = box?.querySelector('#f_assigneeId'); if(!cs || !as) return;
+    cs.addEventListener('change', ()=>{ const cur = as.value;
+      as.innerHTML = assigneeOpts(cs.value, cur).map(([v,l])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(l)}</option>`).join(''); });
+  }
   const overdueTasks = () => openTasks().filter(t=>t.due && t.due<UI.today());
   // Entregables: automático según las unidades, o forzado por cliente (cal/rep = 'si' | 'no')
   // Tipo de cliente: mensual (todos los meses) u one shot (proyecto puntual). Los one shot no llevan entregables mensuales por defecto.
@@ -270,6 +286,7 @@
       <div class="hero" style="margin-bottom:22px">
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
+          <div class="row wrap" style="margin-top:12px;gap:8px"><span class="small muted">Equipo:</span>${clientTeam(id).map(App.member).filter(Boolean).map(m=>`<span class="row" style="gap:6px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:99px">${UI.avatar(m,'sm')}<span class="small b">${esc(m.name.split(' ')[0])}</span>${m.id===c.ownerId?'<span class="xs faint">resp.</span>':''}</span>`).join('') || '<span class="small faint">nadie asignado todavía</span>'}${App.me()?.role==='invitado'?'':`<button class="btn xs g" onclick="Ops.editClientTeam('${id}')">＋ Equipo</button>`}</div>
           <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(UI.safeUrl(c.link))}" target="_blank">Carpeta ↗</a>`:''}</div></div>
         <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Agregar tarea</button><button class="btn g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">📝 Minuta de reunión</button><button class="btn g" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
           <a href="#" class="xs faint" style="text-align:center;margin-top:2px" onclick="Ops.editClient('${id}');return false">✎ Editar datos del cliente</a></div>
@@ -609,13 +626,21 @@
       } });
     },
 
+    editClientTeam(id){
+      const c = client(id); if(!c) return;
+      UI.form({ title:`Equipo de ${c.name}`, values:{ ownerId:c.ownerId||'', teamIds:clientTeam(id) }, fields:[
+        { k:'teamIds', label:'¿Quiénes trabajan esta cuenta?', type:'multi', options:App.members().map(m=>[m.id,m.name]), hint:'Aparecen primero al asignar tareas de este cliente y ven la cuenta en su inicio.' },
+        { k:'ownerId', label:'Responsable principal', type:'select', options:[['','—'],...App.members().map(m=>[m.id,m.name])] },
+      ], onSubmit:v=>{ const team = [...new Set([...(v.teamIds||[]), v.ownerId].filter(Boolean))];
+        Store.upsert('ops','clients',{ id, teamIds:team, ownerId:v.ownerId||'' }); UI.toast('Equipo actualizado','👥'); App.render(); } });
+    },
     editTask(id, preset={}){
       const t = id ? Store.get('ops','tasks',id) : { status:'todo', priority:'media', assigneeId:App.me().id, clientId:curClient(), ...preset };
       if(!t.unit && t.clientId) t.unit = (client(t.clientId)?.units||[])[0];
-      UI.form({ title: id ? 'Tarea' : 'Nueva tarea', values:t, fields:[
+      const box = UI.form({ title: id ? 'Tarea' : 'Nueva tarea', values:t, fields:[
         { k:'title', label:'¿Qué hay que hacer?', req:true },
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts(), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
-        { k:'assigneeId', label:'Responsable', type:'select', options:(()=>{ const o = App.assignOpts(); return t.assigneeId && !o.some(x=>x[0]===t.assigneeId) ? [...o, [t.assigneeId, App.member(t.assigneeId)?.name||'—']] : o; })(), half:true, hint:App.me().role==='invitado'?'Como invitado/a solo te podés asignar a vos.':'' }, { k:'due', label:'Vence', type:'date', half:true },
+        { k:'assigneeId', label:'Responsable', type:'select', options:assigneeOpts(t.clientId, t.assigneeId), half:true, hint:App.me().role==='invitado'?'Como invitado/a solo te podés asignar a vos.':'' }, { k:'due', label:'Vence', type:'date', half:true },
         { k:'status', label:'Estado', type:'select', options:TASK_ST, half:true }, { k:'priority', label:'Prioridad', type:'select', options:PRIO, half:true },
         { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
         { k:'note', label:'Nota para el cliente', placeholder:'Ej: falta OK final para empezar a salir' },
@@ -630,6 +655,7 @@
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
         App.render();
       } });
+      wireAssignee(box);
     },
     dismiss(key, days=7){ Store.upsert('ops','dismissed',{ id:key, until:UI.addDays(UI.today(), days), by:App.me().id }); UI.toast(`Alerta descartada por ${days} días`,'✕'); App.render(); },
     aSelMode(on){ aSelMode = !!on; aSel.clear(); App.render(); },
