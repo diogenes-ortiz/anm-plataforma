@@ -270,8 +270,8 @@
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
           <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(c.link)}" target="_blank">Carpeta ↗</a>`:''}</div></div>
-        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button><button class="btn ok" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button><button class="btn g" onclick="Reunion.open('${id}')">🧠 Ordenar reunión</button>
-          <div class="row"><button class="btn g sm" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Tarea</button><button class="btn g sm" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋ Reunión</button><button class="btn g sm" onclick="Ops.editClient('${id}')">✎</button></div></div>
+        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Agregar tarea</button><button class="btn g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">📝 Minuta de reunión</button><button class="btn g" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
+          <a href="#" class="xs faint" style="text-align:center;margin-top:2px" onclick="Ops.editClient('${id}');return false">✎ Editar datos del cliente</a></div>
       </div>
       ${deliverables}
       <div class="grid g3">
@@ -476,7 +476,7 @@
         <button class="btn ok" onclick="Reunion.open()">🧠 Ordenar reunión</button><button class="btn p" onclick="Ops.editMeeting()">＋ Reunión</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
         ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">${m.kind==='status'?'Status para cargar':'Minuta para cargar'}: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
-        ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta suma +${Game.XP.minuta} XP y convierte los acuerdos en tareas.</div></div></div>`:''}
+        ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta convierte los acuerdos en tareas.</div></div></div>`:''}
         <div class="card"><div class="card-h"><h3>Próximas</h3><span class="sub">${up.length}</span></div>${up.length?`<div class="list">${up.map(meetRow).join('')}</div>`:'<div class="empty small">No hay reuniones agendadas</div>'}</div>
         <div class="card"><div class="card-h"><h3>Pasadas</h3><span class="sub">${past.length}</span></div>${past.length?`<div class="list">${past.slice(0,40).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones registradas</div>'}</div>
       </div><div class="col" style="gap:18px">
@@ -593,7 +593,7 @@
       const cs = activeClients();
       if(!cs.length) return Ops.editClient();
       const c = id ? client(id) : null;
-      UI.form({ title:'📡 ¿En qué estamos?', submit:`Guardar (+${Game.XP.client_update} XP)`, values:{ clientId:id||'', health:c?.health||'ok', nextStep:c?.nextStep||'', nextStepDate:c?.nextStepDate||'' }, fields:[
+      UI.form({ title:'📡 ¿En qué estamos?', submit:'Guardar', values:{ clientId:id||'', health:c?.health||'ok', nextStep:c?.nextStep||'', nextStepDate:c?.nextStepDate||'' }, fields:[
         ...(id ? [] : [{ k:'clientId', label:'Cliente', type:'select', options:cs.map(x=>[x.id,x.name]), req:true }]),
         { k:'health', label:'¿Cómo está la cuenta?', type:'select', options:Object.entries(HEALTH).map(([k,[l,e]])=>[k,e+' '+l]) },
         { k:'text', label:'Estado actual', type:'textarea', req:true, placeholder:'Ej: Se aprobó el calendario de octubre. Esperamos fotos de producto para los reels. El cliente pidió sumar una campaña para el Hot Sale.', rows:5 },

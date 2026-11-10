@@ -96,7 +96,7 @@
   function toast(msg, icon='✓', xp){
     const t = document.createElement('div');
     t.className = 'toast';
-    t.innerHTML = `<span>${icon}</span><span>${esc(msg)}</span>${xp?`<span class="xp">+${xp} XP</span>`:''}`;
+    t.innerHTML = `<span>${icon}</span><span>${esc(msg)}</span>`;
     const box = $('#toasts'); box.appendChild(t);
     while(box.children.length>4) box.firstChild.remove();
     setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2800);
