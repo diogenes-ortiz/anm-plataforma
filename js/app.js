@@ -54,7 +54,7 @@
     },
     myNotifications(){
       const me = this.me(); if(!me) return [];
-      return Store.all('team','notifications').filter(n=>(n.to===me.id||n.to==='all') && n.from!==me.id).sort((a,b)=>b.at.localeCompare(a.at));
+      return Store.all('team','notifications').filter(n=>(n.to===me.id||n.to==='all') && n.from!==me.id && !(n.hiddenBy||[]).includes(me.id)).sort((a,b)=>b.at.localeCompare(a.at));
     },
 
     render(){
@@ -177,15 +177,25 @@
 
   // ── Notificaciones ───────────────────────────────────────────────────────────
   App.openNotifications = ()=>{
-    const me = App.me(), list = App.myNotifications().slice(0,40);
+    const me = App.me(), list = App.myNotifications().slice(0,60), unreadAny = list.some(n=>!(n.readBy||[]).includes(me.id));
     UI.modal(`<h2>🔔 Avisos para vos<button class="icon-btn x" data-close>✕</button></h2>
-      ${list.length ? `<div class="list">${list.map(n=>{ const from=App.member(n.from); const unread=!(n.readBy||[]).includes(me.id);
-        return `<div class="li">${UI.avatar(from,'sm')}<div class="grow"><div class="${unread?'b':''} prewrap">${esc(n.text)}</div><div class="xs faint">${esc(from?.name||'')} · ${UI.ago(n.at)}${n.to==='all'?' · para todo el equipo':''}</div></div>
-        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="UI.close()">Ver</a>`:''}</div>`; }).join('')}</div>`
+      ${list.length ? `<div class="row" style="gap:8px;margin:-6px 0 10px"><label class="check small"><input type="checkbox" id="nt-all" onchange="document.querySelectorAll('.nt-sel').forEach(c=>c.checked=this.checked)"> Seleccionar todos</label><span class="grow"></span>
+          <button class="btn xs d" onclick="App.deleteNotif([...document.querySelectorAll('.nt-sel:checked')].map(c=>c.value))">🗑 Borrar seleccionados</button></div>
+        <div class="list">${list.map(n=>{ const from=App.member(n.from); const unread=!(n.readBy||[]).includes(me.id);
+        return `<div class="li"><input type="checkbox" class="nt-sel" value="${n.id}" style="width:17px;height:17px">${UI.avatar(from,'sm')}<div class="grow"><div class="${unread?'b':''} prewrap">${unread?'<span style="color:var(--blue)">● </span>':''}${esc(n.text)}</div><div class="xs faint">${esc(from?.name||'')} · ${UI.ago(n.at)}${n.to==='all'?' · para todo el equipo':''}</div></div>
+        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="App.readNotif('${n.id}');UI.close()">Ver</a>`:''}${unread?`<button class="btn xs g" title="Marcar como leído" onclick="App.readNotif('${n.id}');App.openNotifications()">✓</button>`:''}<button class="icon-btn" title="Borrar" onclick="App.deleteNotif(['${n.id}'])">🗑</button></div>`; }).join('')}</div>`
         : '<div class="empty"><div class="big">🔕</div>No tenés avisos</div>'}
-      <div class="mfoot"><button class="btn g" data-close>Cerrar</button></div>`);
-    list.forEach(n=>{ if(!(n.readBy||[]).includes(me.id)) Store.upsert('team','notifications',{ id:n.id, readBy:[...(n.readBy||[]), me.id] }); });
+      <div class="mfoot">${unreadAny?'<button class="btn g" onclick="App.readNotif();App.openNotifications()">Marcar todo como leído</button>':''}${list.length?'<button class="btn d" style="margin-right:auto" onclick="App.deleteNotif(\'all\')">Borrar todos</button>':''}<button class="btn g" data-close>Cerrar</button></div>`);
   };
+  // Cada aviso se marca leído al verlo o con ✓
+  App.readNotif = id=>{ const me = App.me();
+    App.myNotifications().filter(n=>(!id || n.id===id) && !(n.readBy||[]).includes(me.id)).forEach(n=>Store.upsert('team','notifications',{ id:n.id, readBy:[...(n.readBy||[]), me.id] })); };
+  // Borrar avisos (de a uno, seleccionados o todos). Solo se borran para vos: si era para todo el equipo, los demás lo siguen viendo
+  App.deleteNotif = ids=>{ const me = App.me(), list = App.myNotifications(), sel = ids==='all' ? list : list.filter(n=>ids.includes(n.id));
+    if(!sel.length) return UI.toast('No seleccionaste ningún aviso','👆');
+    if(sel.length>1 && !confirm(`¿Borrar ${sel.length} avisos?`)) return;
+    sel.forEach(n=>{ if(n.to===me.id) Store.remove('team','notifications',n.id); else Store.upsert('team','notifications',{ id:n.id, hiddenBy:[...(n.hiddenBy||[]), me.id] }); });
+    UI.toast(sel.length>1 ? `${sel.length} avisos borrados` : 'Aviso borrado','🗑'); App.openNotifications(); App.render(); };
 
   // Enviar un aviso manual (a una persona, por la app / WhatsApp / mail)
   App.sendAlert = (text, toId, link)=>{
