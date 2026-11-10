@@ -126,7 +126,7 @@
         ${(()=>{ const ppts = leads.filter(l=>l.stage==='ppt').sort(byGanas); return `<div class="card"><div class="card-h"><h3>🖼️ PPTs en armado</h3><span class="sub">${ppts.length}</span></div>${ppts.length?`<div class="list">${ppts.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><div class="grow"><div class="small b ellip">${esc(l.company)}</div><div class="xs faint">${esc(label(PPT_ST,l.pptStatus||'armar'))} · hace ${UI.diffDays((l.stageAt||l.createdAt).slice(0,10))} días</div></div>${l.pptLink?'<span class="tag t-green">link ✓</span>':''}</div>`).join('')}</div>`:'<div class="small faint">Cuando alguien se interese, pasalo a “Armando la PPT” y se crea la tarea sola.</div>'}</div>`; })()}
         <div class="card"><div class="card-h"><h3>📅 Próximos 7 días</h3></div>${week.length?`<div class="list">${week.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><div class="grow small b ellip">${esc(l.company)}</div><span class="tag">${UI.fdate(l.nextFollowUp)}</span></div>`).join('')}</div>`:'<div class="small faint">Sin seguimientos agendados.</div>'}</div>
         <div class="card small"><div class="card-h"><h3>Cómo funciona la secuencia</h3></div>
-          <div class="muted" style="line-height:1.7">1º toque: una observación concreta de su negocio.<br>2º toque (4 días después): aportar una idea, no “¿viste mi mensaje?”.<br>3º toque: credencial del rubro (MiPileta).<br>Cada envío suma +${Game.XP.interaction} XP y agenda solo el próximo contacto.</div></div>
+          <div class="muted" style="line-height:1.7">1º toque: una observación concreta de su negocio.<br>2º toque (4 días después): aportar una idea, no “¿viste mi mensaje?”.<br>3º toque: credencial del rubro (MiPileta).<br>Cada envío queda registrado y agenda solo el próximo contacto.</div></div>
       </div></div>` };
   }
 
@@ -333,7 +333,7 @@
           <button class="btn p" id="cm-mail" ${l.email?'':'disabled style="opacity:.4" title="No hay email cargado"'}>✉️ Email</button>
           <button class="btn g" id="cm-li">in LinkedIn</button>
           <button class="btn g" id="cm-copy">📋 Copiar</button></div>
-        <p class="xs faint" style="margin-top:12px">Al enviar se registra el toque (+${Game.XP.interaction} XP), pasa a “Contactado” y se agenda el próximo contacto en 4 días.</p>`, true);
+        <p class="xs faint" style="margin-top:12px">Al enviar se registra el toque, pasa a “Contactado” y se agenda el próximo contacto en 4 días.</p>`, true);
       const ta = box.querySelector('#cm-text'), sel = box.querySelector('#cm-tpl');
       const load = ()=>{ ta.value = fill(tpls.find(t=>t.id===sel.value).text, l); };
       sel.onchange = load; load();
@@ -405,7 +405,7 @@
       const leads = L().filter(l=>l.stage!=='perdido').sort((a,b)=>a.company.localeCompare(b.company));
       if(!leads.length) return Growth.editLead();
       const l = id ? Store.get('growth','leads',id) : null;
-      UI.form({ title:'Registrar contacto', submit:`Guardar (+${Game.XP.interaction} XP)`, values:{ leadId:id||'', type:'llamada', nextFollowUp:UI.addDays(UI.today(),4), nextAction:l?.nextAction||'' }, fields:[
+      UI.form({ title:'Registrar contacto', submit:'Guardar', values:{ leadId:id||'', type:'llamada', nextFollowUp:UI.addDays(UI.today(),4), nextAction:l?.nextAction||'' }, fields:[
         ...(id ? [] : [{ k:'leadId', label:'Con quién', type:'select', options:leads.map(x=>[x.id,x.company]), req:true }]),
         { k:'type', label:'Canal', type:'select', options:TOUCH },
         { k:'text', label:'¿Qué pasó?', type:'textarea', req:true, rows:3, placeholder:'Atendió el dueño, pidió que le mandemos el caso MiPileta.' },
