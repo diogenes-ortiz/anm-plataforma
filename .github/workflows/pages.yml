@@ -1,9 +1,9 @@
 # Publicación (BASE-07): main → sitio real; staging → /staging/ (usa la base de PRUEBA).
 # Para que funcione: GitHub → Settings → Pages → Source: "GitHub Actions" (una sola vez).
 name: Publicar
+# Por ahora solo a mano: el sitio se sigue publicando desde la rama main (Settings → Pages → "Deploy from a branch").
+# Cuando se cambie a "GitHub Actions", volver a agregar:  push: { branches: [main, staging] }
 on:
-  push:
-    branches: [main, staging]
   workflow_dispatch:
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: false }
