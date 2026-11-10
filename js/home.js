@@ -118,13 +118,19 @@
         { k:'name', label:'Nombre', req:true, half:true }, { k:'title', label:'Puesto', half:true, placeholder:'Ej: Social Media Manager' },
         { k:'email', label:'Gmail', type:'email', half:true, hint:App.isOwner()?'Para que pueda entrar, autorizalo en “Accesos”.':'' }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
+        ...(admin ? [{ k:'cuentas', label:'Cuentas que trabaja', type:'multi', options:Ops.activeClients().map(c=>[c.id,c.name]), default:id ? Ops.activeClients().filter(c=>c.ownerId===id || (c.teamIds||[]).includes(id)).map(c=>c.id) : [], hint:'Podés asignarlas antes de que entre: cuando entre ya ve sus cuentas y tareas.' }] : []),
         { k:'color', label:'Color', type:'color', half:true },
         { k:'emailReminders', label:'Mails', type:'check', text:'Recibir recordatorios y avisos por mail', default:true, half:true },
       ],
       danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', fn:()=>setTimeout(()=>Team.removeMember(id), 60) } : null,
       onSubmit:v=>{
         if(v.email) v.email = v.email.trim().toLowerCase();
+        const cuentas = v.cuentas; delete v.cuentas;
         const r = Store.upsert('team','members',{ ...m, ...v });
+        // Cuentas asignadas: se suma/saca a la persona del equipo de cada cliente (antes de que entre, así ya ve todo)
+        if(cuentas) Ops.activeClients().forEach(c=>{ const tiene = (c.teamIds||[]).includes(r.id), quiere = cuentas.includes(c.id);
+          if(quiere && !tiene) Store.upsert('ops','clients',{ id:c.id, teamIds:[...(c.teamIds||[]), r.id] });
+          if(!quiere && tiene && c.ownerId!==r.id) Store.upsert('ops','clients',{ id:c.id, teamIds:(c.teamIds||[]).filter(x=>x!==r.id) }); });
         if(!id){ Game.log('member_invited', `Sumó a ${v.name} al equipo`, { icon:'👋' }); UI.toast(`${v.name} ya está cargado: le podés asignar tareas`,'👤');
           if(App.isOwner() && v.email) setTimeout(()=>{ if(confirm(`¿Autorizás ya a ${v.email} para que entre a la plataforma?`)) Team.addAccess({ email:v.email, member_id:r.id }); }, 60); }
         App.render();
