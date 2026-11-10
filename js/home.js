@@ -85,7 +85,7 @@
     return { title:'Ajustes', crumb:'', html:`<div class="grid g2">
       <div class="card"><div class="card-h"><h3>Mi perfil</h3></div>
         <div class="row" style="margin-bottom:16px">${UI.avatar(me,'lg')}<div><div class="b">${esc(me.name)}</div><div class="xs faint">${esc(App.ROLES[me.role])}</div></div></div>
-        <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn g" onclick="App.changePassword()">🔑 Cambiar contraseña</button><button class="btn g" onclick="App.toggleTheme()">◐ Modo claro / oscuro</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
+        <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn g" onclick="App.changePassword()">🔑 Cambiar contraseña</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
       <div class="card"><div class="card-h"><h3>Unidades de negocio</h3>${admin?'<span class="grow"></span><button class="btn xs g" onclick="Team.editUnits()">Editar</button>':''}</div>
         <div class="row wrap">${App.unitTags(App.units().map(u=>u.id))}</div>
         <p class="xs faint" style="margin-top:12px">Sirven para filtrar Operaciones y Crecimiento (Social Media, Pauta, Branding, Web…).</p></div>

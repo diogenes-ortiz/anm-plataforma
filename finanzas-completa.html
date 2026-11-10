@@ -8,20 +8,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#111113;--surface:#18181c;--surface2:#1f1f24;--surface3:#26262d;--border:#2a2a32;
-  --blue:#1A73E8;--blue-l:#4d96ff;--blue-d:rgba(26,115,232,0.14);--blue-dd:rgba(26,115,232,0.07);
-  --text:#EFEEEA;--text2:#7a7a8c;--text3:#404050;
-  --green:#2dca72;--green-d:rgba(45,202,114,0.13);
-  --red:#e8484a;--red-d:rgba(232,72,74,0.13);
-  --yellow:#e8b84a;--yellow-d:rgba(232,184,74,0.13);
-  --purple:#9b6fe8;--purple-d:rgba(155,111,232,0.13);
-  --teal:#2dcab4;--teal-d:rgba(45,202,180,0.13);
+  color-scheme:light;
+  --bg:#f7f7f5;--surface:#ffffff;--surface2:#f3f3f1;--surface3:#ebebe8;--border:#e7e7e3;
+  --blue:#1a5fd1;--blue-l:#1a5fd1;--blue-d:#ebf2fd;--blue-dd:#f4f8fe;
+  --text:#18181b;--text2:#4b4b55;--text3:#6b6b75;
+  --green:#157a42;--green-d:#e8f5ee;
+  --red:#c2302b;--red-d:#fdeceb;
+  --yellow:#8a5a00;--yellow-d:#fdf4de;
+  --purple:#6b46c1;--purple-d:#f2edfb;
+  --teal:#0f766e;--teal-d:#e6f4f2;
   --r:12px;--sidebar:240px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{max-width:100%;overflow-x:hidden}
-body{background:var(--bg);color:var(--text);font-family:'Montserrat',sans-serif;font-size:13px;display:flex;min-height:100vh}
-.sidebar{width:var(--sidebar);background:#0c0c0e;border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+body{background:var(--bg);color:var(--text);font-family:'Montserrat',sans-serif;font-size:14px;display:flex;min-height:100vh}
+.sidebar{width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
 .logo{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
 .logo-anm{font-size:28px;font-weight:900;color:var(--blue);letter-spacing:4px;line-height:1}
 .logo-sub{font-size:8.5px;color:var(--text3);letter-spacing:2.5px;text-transform:uppercase;margin-top:3px;font-weight:700}
@@ -70,7 +71,7 @@ tr:hover td{background:rgba(26,115,232,.03)}
 .b-y{background:var(--yellow-d);color:var(--yellow)}.b-bl{background:var(--blue-d);color:var(--blue-l)}
 .b-gr{background:var(--surface3);color:var(--text2)}.b-p{background:var(--purple-d);color:var(--purple)}
 .b-t{background:var(--teal-d);color:var(--teal)}
-.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.mo{display:none;position:fixed;inset:0;background:rgba(24,24,27,.32);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
 .mo.open{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto}
 .mtitle{font-size:15px;font-weight:800;margin-bottom:18px}
@@ -151,14 +152,14 @@ tr:hover td{background:rgba(26,115,232,.03)}
 .menu-btn{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;cursor:pointer;flex-direction:column;gap:4px;flex-shrink:0;}
 .menu-btn span{display:block;width:16px;height:2px;background:var(--text);border-radius:2px}
 .hamburger-close{display:none;background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;line-height:1;flex-shrink:0}
-.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99;backdrop-filter:blur(3px)}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(24,24,27,.3);z-index:99;backdrop-filter:blur(3px)}
 @media(max-width:900px){
   .crow.c4{grid-template-columns:1fr 1fr}
   .chart3{grid-template-columns:1fr}
 }
 @media(max-width:768px){
   :root{--sidebar:0px;--r:10px}
-  .sidebar{transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);width:260px;z-index:150;box-shadow:4px 0 30px rgba(0,0,0,.6);position:fixed;overflow:visible}
+  .sidebar{transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);width:260px;z-index:150;box-shadow:4px 0 30px rgba(24,24,27,.12);position:fixed;overflow:visible}
   .sidebar.open{transform:translateX(0)}
   .sidebar-overlay.open{display:block}
   .menu-btn{display:flex}
@@ -844,7 +845,7 @@ tr:hover td{background:rgba(26,115,232,.03)}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="js/config.js?v=202611052053"></script>
+<script src="js/config.js?v=202611101441"></script>
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────────────
 // FIX: Separamos claves de datos base vs datos de usuario para que initSeed
@@ -1405,14 +1406,14 @@ function renderDashCharts(){
   const ctxCl=document.getElementById('ch-clientes'); if(!ctxCl)return;
   destroyChart('cl');
   const activos=S.clientes.filter(c=>clienteVigenteEnMes(c));
-  if(activos.length) charts.cl=new Chart(ctxCl.getContext('2d'),{type:'doughnut',data:{labels:activos.map(c=>c.nombre),datasets:[{data:activos.map(c=>retainer(c)),backgroundColor:COLS,borderWidth:0,hoverOffset:6}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#7a7a8c',font:{family:'Montserrat',size:10},boxWidth:10,padding:8}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}}}});
+  if(activos.length) charts.cl=new Chart(ctxCl.getContext('2d'),{type:'doughnut',data:{labels:activos.map(c=>c.nombre),datasets:[{data:activos.map(c=>retainer(c)),backgroundColor:COLS,borderWidth:0,hoverOffset:6}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#6b6b75',font:{family:'Montserrat',size:10},boxWidth:10,padding:8}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}}}});
 
   const ctxT=document.getElementById('ch-tipos'); if(!ctxT)return;
   destroyChart('tipos');
   const rrss=S.clientes.filter(c=>clienteVigenteEnMes(c)&&(c.tipo==='rrss'||c.tipo==='rrss+pauta')).reduce((s,c)=>s+retainer(c),0);
   const pauta=S.clientes.filter(c=>clienteVigenteEnMes(c)&&(c.tipo==='pauta'||c.tipo==='rrss+pauta')).reduce((s,c)=>s+retainer(c)/(c.tipo==='rrss+pauta'?2:1),0);
   const oneshot=getOneShotsMes();
-  if(rrss||pauta||oneshot) charts.tipos=new Chart(ctxT.getContext('2d'),{type:'bar',data:{labels:['Redes Sociales','Pauta / Ads','Puntual'],datasets:[{data:[rrss,pauta,oneshot],backgroundColor:['#1A73E8','#9b6fe8','#2dca72'],borderRadius:8,borderSkipped:false}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000).toFixed(0)+'k'}}}}});
+  if(rrss||pauta||oneshot) charts.tipos=new Chart(ctxT.getContext('2d'),{type:'bar',data:{labels:['Redes Sociales','Pauta / Ads','Puntual'],datasets:[{data:[rrss,pauta,oneshot],backgroundColor:['#1A73E8','#9b6fe8','#2dca72'],borderRadius:8,borderSkipped:false}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000).toFixed(0)+'k'}}}}});
 
   const ctxC=document.getElementById('ch-costos'); if(!ctxC)return;
   destroyChart('costos');
@@ -1422,7 +1423,7 @@ function renderDashCharts(){
     const labels=[...eActivos.map(e=>e.nombre),'Gastos Fijos'];
     const data=[...eActivos.map(e=>getSueldoEnMes(e)),Math.round(fijos)];
     const bg=[...eActivos.map((_,i)=>COLS[i%COLS.length]),'#e8484a'];
-    charts.costos=new Chart(ctxC.getContext('2d'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:bg,borderWidth:0,hoverOffset:6}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#7a7a8c',font:{family:'Montserrat',size:10},boxWidth:10,padding:8}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}}}});
+    charts.costos=new Chart(ctxC.getContext('2d'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:bg,borderWidth:0,hoverOffset:6}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#6b6b75',font:{family:'Montserrat',size:10},boxWidth:10,padding:8}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}}}});
   }
 }
 
@@ -1778,7 +1779,7 @@ function renderProyeccion(){
 
     const datasets=[{label:'Facturación real',data:dataReal,borderColor:'#2dca72',backgroundColor:'rgba(45,202,114,.12)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#2dca72',borderWidth:2.5,spanGaps:false},{label:'Proyección (retainers vigentes)',data:dataProyectado,borderColor:'#1A73E8',backgroundColor:'rgba(26,115,232,.08)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#1A73E8',borderWidth:2,spanGaps:false}];
     if(metaMensual)datasets.push({label:`Meta mensual ${fmt(metaMensual)} (anual ${fmt(metaAnual)})`,data:dataMeta,borderColor:'rgba(232,184,74,.9)',backgroundColor:'transparent',borderDash:[6,4],tension:0,pointRadius:0,borderWidth:2,spanGaps:true});
-    charts.proyNueva=new Chart(ctxPN.getContext('2d'),{type:'line',data:{labels:allLabels,datasets},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000000).toFixed(1)+'M'},beginAtZero:true}},plugins:{legend:{labels:{color:'#7a7a8c',font:{family:'Montserrat',size:11},usePointStyle:true,padding:14}},tooltip:{callbacks:{label:ctx=>ctx.raw!=null?' '+fmt(ctx.raw):''}}}}});
+    charts.proyNueva=new Chart(ctxPN.getContext('2d'),{type:'line',data:{labels:allLabels,datasets},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000000).toFixed(1)+'M'},beginAtZero:true}},plugins:{legend:{labels:{color:'#6b6b75',font:{family:'Montserrat',size:11},usePointStyle:true,padding:14}},tooltip:{callbacks:{label:ctx=>ctx.raw!=null?' '+fmt(ctx.raw):''}}}}});
 
     const ctxObj=document.getElementById('ch-objetivos'); destroyChart('objetivos');
     if(ctxObj){
@@ -1795,7 +1796,7 @@ function renderProyeccion(){
       }
       const dsObj=[{label:'Facturación acumulada real',data:dataRealAcum,borderColor:'#2dca72',backgroundColor:'rgba(45,202,114,.1)',tension:.4,fill:true,pointRadius:3,pointBackgroundColor:'#2dca72',borderWidth:2.5,spanGaps:false}];
       if(metaAnual>0)dsObj.push({label:`Meta acumulada (${fmt(metaAnual)}/año)`,data:dataMetaAcum,borderColor:'rgba(232,184,74,.9)',backgroundColor:'transparent',borderDash:[6,4],tension:0,pointRadius:0,borderWidth:2,spanGaps:true});
-      charts.objetivos=new Chart(ctxObj.getContext('2d'),{type:'line',data:{labels:labelsObj,datasets:dsObj},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000000).toFixed(0)+'M'},beginAtZero:true}},plugins:{legend:{labels:{color:'#7a7a8c',font:{family:'Montserrat',size:11},usePointStyle:true,padding:14}},tooltip:{callbacks:{label:ctx=>ctx.raw!=null?' '+fmt(ctx.raw):''}}}}});
+      charts.objetivos=new Chart(ctxObj.getContext('2d'),{type:'line',data:{labels:labelsObj,datasets:dsObj},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000000).toFixed(0)+'M'},beginAtZero:true}},plugins:{legend:{labels:{color:'#6b6b75',font:{family:'Montserrat',size:11},usePointStyle:true,padding:14}},tooltip:{callbacks:{label:ctx=>ctx.raw!=null?' '+fmt(ctx.raw):''}}}}});
     }
 
     const facturadoAnio=histData.filter(m=>m.anio===savedAnio).reduce((s,m)=>s+m.ing,0);
@@ -1814,7 +1815,7 @@ function renderProyeccion(){
     const range=window._flujoRange||6;
     const dataSlice=histData.slice(-range);
     ['3','6','12','all'].forEach(r=>{ const btn=document.getElementById(`btn-flujo-${r}`); if(!btn)return; const active=(r==='all'?range>=999:parseInt(r)===range); btn.className=`btn bsm ${active?'bp':'bg'}`; btn.style.fontSize='10px'; btn.style.padding='4px 10px'; });
-    charts.flujo=new Chart(ctxF.getContext('2d'),{type:'bar',data:{labels:dataSlice.map(m=>m.label),datasets:[{label:'Ingresos',data:dataSlice.map(m=>m.ing),backgroundColor:'rgba(26,115,232,.6)',borderRadius:6,borderSkipped:false,order:2},{label:'Costos',data:dataSlice.map(m=>m.costos),backgroundColor:'rgba(232,72,74,.45)',borderRadius:6,borderSkipped:false,order:2},{label:'Neto',data:dataSlice.map(m=>m.neto),type:'line',borderColor:'#2dca72',backgroundColor:'rgba(45,202,114,.1)',tension:.4,fill:true,pointRadius:5,pointBackgroundColor:'#2dca72',borderWidth:2.5,order:1}]},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#7a7a8c',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000000).toFixed(1)+'M'}}},plugins:{legend:{labels:{color:'#7a7a8c',font:{family:'Montserrat',size:11},usePointStyle:true,padding:14}}}}});
+    charts.flujo=new Chart(ctxF.getContext('2d'),{type:'bar',data:{labels:dataSlice.map(m=>m.label),datasets:[{label:'Ingresos',data:dataSlice.map(m=>m.ing),backgroundColor:'rgba(26,115,232,.6)',borderRadius:6,borderSkipped:false,order:2},{label:'Costos',data:dataSlice.map(m=>m.costos),backgroundColor:'rgba(232,72,74,.45)',borderRadius:6,borderSkipped:false,order:2},{label:'Neto',data:dataSlice.map(m=>m.neto),type:'line',borderColor:'#2dca72',backgroundColor:'rgba(45,202,114,.1)',tension:.4,fill:true,pointRadius:5,pointBackgroundColor:'#2dca72',borderWidth:2.5,order:1}]},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#6b6b75',font:{family:'Montserrat',size:10},callback:v=>'$'+Number(v/1000000).toFixed(1)+'M'}}},plugins:{legend:{labels:{color:'#6b6b75',font:{family:'Montserrat',size:11},usePointStyle:true,padding:14}}}}});
   }
 
   // FIX: Proyección 6 meses con ingresos reales por mes futuro
@@ -1991,8 +1992,8 @@ loadFromSupabase().then(loaded=>{
   }
 });
 </script>
-<script src="js/store.js?v=202611052053"></script>
+<script src="js/store.js?v=202611101441"></script>
 <script>Store.loadLocal();</script>
-<script src="js/finanzas-extra.js?v=202611052053"></script>
+<script src="js/finanzas-extra.js?v=202611101441"></script>
 </body>
 </html>

@@ -251,10 +251,10 @@
         { label:'Neto', data:A.ms.map(m=>m.neto), type:'line', borderColor:'#2dca72', backgroundColor:'rgba(45,202,114,.1)', tension:.35, pointRadius:4, borderWidth:2.5, order:1 },
       ];
       if(B && B.ms.length===A.ms.length) ds.push({ label:'Ingresos '+(AN.cmp==='yoy'?'año anterior':'período anterior'), data:B.ms.map(m=>m.ing), type:'line', borderColor:'rgba(232,184,74,.9)', borderDash:[6,4], pointRadius:3, borderWidth:2, tension:.35, fill:false, order:0 });
-      const tk = { color:'#7a7a8c', font:{ family:'Montserrat', size:10 } };
+      const tk = { color:'#6b6b75', font:{ family:'Montserrat', size:10 } };
       charts.an = new Chart(ctx.getContext('2d'), { type:'bar', data:{ labels:A.ms.map(m=>ymLabel(m.ym,1)), datasets:ds },
         options:{ responsive:true, interaction:{ mode:'index', intersect:false }, scales:{ x:{ grid:{ display:false }, ticks:tk }, y:{ grid:{ color:'rgba(255,255,255,.04)' }, ticks:{ ...tk, callback:v=>'$'+(v/1e6).toFixed(1)+'M' } } },
-          plugins:{ legend:{ labels:{ color:'#7a7a8c', font:{ family:'Montserrat', size:11 }, usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } } });
+          plugins:{ legend:{ labels:{ color:'#6b6b75', font:{ family:'Montserrat', size:11 }, usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } } });
     }
   }
 
