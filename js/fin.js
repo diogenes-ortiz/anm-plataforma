@@ -352,14 +352,14 @@
       <div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Mes</th><th style="text-align:right">Retainers</th><th style="text-align:right">Puntuales</th><th style="text-align:right">Gastos</th><th style="text-align:right">Ganancia</th></tr></thead><tbody>
         ${fut.map(m=>`<tr><td class="b">${ymLabel(m.ym)}</td><td style="text-align:right">${fmt(m.ret)}${extraCliente&&m.ym>now?` <span class="xs" style="color:var(--green)">+${fmt(extraCliente)}</span>`:''}</td><td style="text-align:right">${m.proy?fmt(m.proy):'—'}</td><td style="text-align:right">${fmt(m.gas)}</td><td style="text-align:right;color:${m.neto>=0?'var(--blue-l)':'var(--red)'}" class="b">${fmt(m.neto)}</td></tr>`).join('')}</tbody></table></div>`,
       after:()=>{ const ctx = $('#ch-proj'); if(!ctx || !window.Chart) return;
-        const tk = { color:'#7a7a8c', font:{ family:'Montserrat', size:10 } };
+        const tk = { color:'#6b6b75', font:{ family:'Montserrat', size:10 } };
         charts.proj = new Chart(ctx, { type:'bar', data:{ labels:[...past.map(m=>ymLabel(m.ym,1)), ...fut.map(m=>ymLabel(m.ym,1))], datasets:[
           { label:'Ingresos', data:[...past.map(m=>m.ing), ...fut.map(m=>m.ing)], backgroundColor:[...past.map(()=>'rgba(26,115,232,.3)'), ...fut.map(()=>'rgba(26,115,232,.7)')], borderRadius:6, order:2 },
           { label:'Gastos', data:[...past.map(m=>m.gas), ...fut.map(m=>m.gas)], backgroundColor:'rgba(232,72,74,.45)', borderRadius:6, order:2 },
           { label:'Ganancia', data:[...past.map(m=>m.neto), ...fut.map(m=>m.neto)], type:'line', borderColor:'#2dca72', tension:.35, pointRadius:3, borderWidth:2.5, order:1 },
           ...(meta?[{ label:'Meta mensual', data:[...past, ...fut].map(()=>meta/12), type:'line', borderColor:'rgba(232,184,74,.9)', borderDash:[6,4], pointRadius:0, borderWidth:2, order:0 }]:[]),
         ] }, options:{ responsive:true, interaction:{ mode:'index', intersect:false }, scales:{ x:{ grid:{ display:false }, ticks:tk }, y:{ grid:{ color:'rgba(128,128,128,.12)' }, ticks:{ ...tk, callback:v=>'$'+(v/1e6).toFixed(1)+'M' } } },
-          plugins:{ legend:{ labels:{ color:'#7a7a8c', usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } } }); } };
+          plugins:{ legend:{ labels:{ color:'#6b6b75', usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } } }); } };
   }
 
   // ── ✅ Cierre del mes (preguntas guiadas) ──────────────────────────────────
@@ -741,7 +741,7 @@
   setInterval(()=>{ const l = +sessionStorage.getItem(OK_KEY)||0; if(l && Date.now()-l > IDLE_MIN*6e4) FinGate.lock(); }, 30000);
 
   document.addEventListener('DOMContentLoaded', async ()=>{
-    try{ const t = localStorage.getItem('anm_theme'); if(t) document.documentElement.dataset.theme = t; }catch(e){}
+    try{ localStorage.removeItem('anm_theme'); }catch(e){}
     if(window.Store) Store.loadLocal();
     try{ const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); const { v } = await r.json();
       if(v && window.ANM_VERSION && v!==window.ANM_VERSION && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); return location.reload(); } }catch(e){}
