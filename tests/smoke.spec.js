@@ -33,7 +33,7 @@ test('crear una reunión y convertir un acuerdo en tarea', async ({ page }) => {
   await mockSupabase(page);
   await entrar(page);
   await page.evaluate(() => Ops.editMeeting());
-  await page.waitForFunction(() => document.activeElement?.id === 'f_title');
+  await page.waitForFunction(() => document.activeElement?.id === 'f_title');   // el formulario pone el foco a los 30 ms
   await page.fill('#f_title', 'Reunión de prueba');
   await page.fill('#f_actionsText', 'Mandar propuesta 15/12');
   await page.click('#mform button[type=submit]');

@@ -158,6 +158,7 @@
   const TABS = [['seguimiento','Seguimiento'],['tareas','Tareas'],['calendario','Calendario'],['reuniones','Reuniones y minutas'],['alertas','Alertas']];
   let curTab = '', searchByTab = {}, doneLimit = 20;
   const searchRender = UI.debounce(()=>{ const pos = document.activeElement?.selectionStart; App.render(); const i = $('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } });
+  let doneOpen = localStorage.getItem('anm_doneopen')==='1';
   let search = '', taskMode = localStorage.getItem('anm_taskmode')||'board', taskWho = 'all', calCursor = UI.ym(), meetTopic = '';
   // Filtro global por cliente ('' = todos, '__int' = internas, o id de cliente)
   let cf = localStorage.getItem('anm_opsclient')||'';
@@ -247,12 +248,17 @@
       <span style="font-size:20px">${icon}</span><div class="grow" style="min-width:180px"><div class="b small">${name}</div><div class="xs faint">Fecha: ${dueTag(date, okList.includes(st))}</div></div>
       <select class="inp sm" style="${okList.includes(st)?'border-color:var(--green)':st==='enviado'||st==='correcciones'||st==='corregir'?'border-color:var(--yellow)':''}" onchange="${fn}">${opts.map(([k,l])=>`<option value="${k}" ${k===st?'selected':''}>${l}</option>`).join('')}</select>
       <input class="inp sm" style="width:190px" placeholder="Link (Drive, Canva…)" value="${esc(rec?.link||'')}" onchange="Ops.setDelivLink('${kind}','${id}','${month}',this.value)">${rec?.link?`<a class="btn xs g" href="${esc(UI.safeUrl(rec.link))}" target="_blank">Abrir ↗</a>`:''}<button class="icon-btn" title="Quitar este entregable" onclick="Ops.quitarEntregable('${id}','${kind}','${month}')">🗑</button></div>`;
+    const delivDone = st => ['cerrado','presentado','na'].includes(st);
+    // Entregables: a la vista solo lo abierto o en proceso; lo cerrado / presentado / no aplica queda plegado aparte
+    const dl = [];
+    if(needsCal(c) && !CAL_OK.includes(calRec(id,UI.ym())?.stage)) dl.push({ st:calRec(id,UI.ym())?.stage||'planificar', html:delivRow('🗓️', `Calendario de ${UI.ymLabel(UI.ym())} <span class="tag t-red">atrasado</span>`, calDue(c, prevYm()), calRec(id,UI.ym())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${UI.ym()}',this.value)`, calRec(id,UI.ym()), 'cal', UI.ym()) });
+    if(needsCal(c)) dl.push({ st:calRec(id,nextYm())?.stage||'planificar', html:delivRow('🗓️', `Calendario de ${UI.ymLabel(nextYm())}`, calDue(c), calRec(id,nextYm())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${nextYm()}',this.value)`, calRec(id,nextYm()), 'cal', nextYm()) });
+    if(needsRep(c)) dl.push({ st:repRec(id,prevYm())?.stage||'pendiente', html:delivRow('📊', `Reporte de ${UI.ymLabel(prevYm())}`, repDue(c), repRec(id,prevYm())?.stage||'pendiente', REP_ST, REP_OK, `Ops.setRep('${id}','${prevYm()}',this.value)`, repRec(id,prevYm()), 'rep', prevYm()) });
+    const dlOpen = dl.filter(x=>!delivDone(x.st)), dlDone = dl.filter(x=>delivDone(x.st));
     const deliverables = (needsCal(c)||needsRep(c)) ? `<div class="card" style="margin-bottom:18px;border-color:color-mix(in srgb,var(--blue) 35%,transparent)"><div class="card-h"><h3>📦 Entregables del mes</h3><span class="grow"></span>
         <span class="xs faint">Calendario: día ${c.calendarDay||25} · Reporte: día ${c.reportDay||5}</span><button class="btn xs g" onclick="Ops.editClient('${id}')">Cambiar fechas</button></div><div class="list">
-      ${needsCal(c) && !CAL_OK.includes(calRec(id,UI.ym())?.stage) ? delivRow('🗓️', `Calendario de ${UI.ymLabel(UI.ym())} <span class="tag t-red">atrasado</span>`, calDue(c, prevYm()), calRec(id,UI.ym())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${UI.ym()}',this.value)`, calRec(id,UI.ym()), 'cal', UI.ym()) : ''}
-      ${needsCal(c) ? delivRow('🗓️', `Calendario de ${UI.ymLabel(nextYm())}`, calDue(c), calRec(id,nextYm())?.stage||'planificar', CAL_ST, CAL_OK, `Ops.setCal('${id}','${nextYm()}',this.value)`, calRec(id,nextYm()), 'cal', nextYm()) : ''}
-      ${needsRep(c) ? delivRow('📊', `Reporte de ${UI.ymLabel(prevYm())}`, repDue(c), repRec(id,prevYm())?.stage||'pendiente', REP_ST, REP_OK, `Ops.setRep('${id}','${prevYm()}',this.value)`, repRec(id,prevYm()), 'rep', prevYm()) : ''}
-      </div></div>` : '';
+      ${dlOpen.length ? dlOpen.map(x=>x.html).join('') : '<div class="small" style="color:var(--green);padding:6px 0">✓ Todo entregado este mes</div>'}
+      </div>${dlDone.length ? `<details style="margin-top:10px"><summary class="small muted" style="cursor:pointer;font-weight:700">✓ Completos (${dlDone.length})</summary><div class="list" style="margin-top:6px">${dlDone.map(x=>x.html).join('')}</div></details>` : ''}</div>` : '';
     const html = `
       <div class="row" style="margin-bottom:20px"><button class="btn g sm" onclick="Ops.setClient('')">← Todos los clientes</button></div>
       <div class="hero" style="margin-bottom:22px">
@@ -269,11 +275,13 @@
             <div class="prewrap">${esc(c.status||'Sin actualizaciones todavía.')}</div>
             ${c.nextStep?`<div class="alert info" style="margin:14px 0 0"><div class="ai">⏭️</div><div><div class="at">${esc(c.nextStep)}</div><div class="ad">${c.nextStepDate?UI.fdate(c.nextStepDate,{abs:true}):'Sin fecha'}</div></div></div>`:''}</div>
           <div class="card"><div class="card-h"><h3>Tareas</h3><span class="sub">${tasks.filter(t=>t.status!=='done').length} abiertas</span><span class="grow"></span><button class="btn xs g" onclick="Ops.pasteStatus('${id}')">⇣ Pegar status</button>${tasks.length?`<button class="btn xs g" onclick="Ops.selectHere()">☑ Seleccionar varias</button>`:''}</div>${(()=>{
-            const open = tasks.filter(t=>t.status!=='done'), done = tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,8);
-            const list = [...open, ...done];
-            if(!list.some(t=>t.area)) return taskList(list.slice(0,20), true);
-            const areas = [...new Set([...(c.areas||[]).map(a=>a.name), ...list.map(t=>t.area||'')])];
-            return areas.map(a=>{ const g = list.filter(t=>(t.area||'')===a); return g.length ? `<div class="xs faint b" style="letter-spacing:1px;margin:12px 0 2px">${esc(a||'OTROS')}</div>${taskList(g, true)}` : ''; }).join('');
+            const open = tasks.filter(t=>t.status!=='done'), done = tasks.filter(t=>t.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||''));
+            const porArea = list => { if(!list.some(t=>t.area)) return taskList(list, true);
+              const areas = [...new Set([...(c.areas||[]).map(a=>a.name), ...list.map(t=>t.area||'')])];
+              return areas.map(a=>{ const g = list.filter(t=>(t.area||'')===a); return g.length ? `<div class="xs faint b" style="letter-spacing:1px;margin:12px 0 2px">${esc(a||'OTROS')}</div>${taskList(g, true)}` : ''; }).join(''); };
+            // Solo lo abierto a la vista; lo realizado queda aparte, plegado
+            return (open.length ? porArea(open) : '<div class="empty small">No hay tareas abiertas 🎉</div>')
+              + (done.length ? `<details style="margin-top:14px"><summary class="small muted" style="cursor:pointer;font-weight:700">✓ Realizadas (${done.length})</summary><div style="margin-top:8px">${taskList(done.slice(0,50), true)}</div></details>` : '');
           })()}</div>
           <div class="card"><div class="card-h"><h3>Historial de seguimiento</h3></div>
             ${ups.length?`<div class="tl">${ups.slice(0,25).map(u=>`<div class="tl-i ${u.health||'ok'}"><div class="when">${UI.fdate(UI.day(u.at),{abs:true})} · ${esc(App.member(u.by)?.name||'')}</div><div class="small prewrap">${esc(u.text)}</div>${u.nextStep?`<div class="xs muted">→ ${esc(u.nextStep)}</div>`:''}</div>`).join('')}</div>`:'<div class="empty">Sin historial</div>'}</div>
@@ -300,7 +308,7 @@
       <div class="grow" style="cursor:pointer" onclick="Ops.editTask('${t.id}')"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
       <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
       ${UI.safeUrl(t.link)?`<a href="${esc(UI.safeUrl(t.link))}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
-      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}</div>`;
+      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}<button class="icon-btn" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button></div>`;
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
 
@@ -342,28 +350,31 @@
       ${App.members().filter(m=>m.id!==me.id).map(m=>`<button class="chip ${taskWho===m.id?'on':''}" onclick="Ops.setWho('${m.id}')">${esc(m.name)}</button>`).join('')}</div>
       <span class="grow"></span><div class="search"><input class="inp" placeholder="Buscar…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
       <div class="chips"><button class="chip ${taskMode==='board'?'on':''}" onclick="Ops.setMode('board')">▦ Tablero</button><button class="chip ${taskMode==='list'?'on':''}" onclick="Ops.setMode('list')">☰ Lista</button></div>
-      <button class="chip ${selMode?'on':''}" onclick="Ops.selMode(${!selMode})">☑ Seleccionar</button>
+      <button class="chip ${selMode?'on':''}" onclick="Ops.selMode(${!selMode})">☑ Seleccionar varias</button>
       ${Ops.dupGroups().length?`<button class="chip" onclick="Ops.duplicates()" title="Mismo cliente y mismo título">🧹 Repetidas (${Ops.dupGroups().length})</button>`:''}
       <button class="btn p" onclick="Ops.editTask()">＋ Tarea</button></div>`;
     visibleTasks = [];
     if(taskMode==='list'){
       const t = UI.today(), wk = UI.addDays(t,7), open = ts.filter(x=>x.status!=='done').sort(taskSort);
       const groups = [['⏰ Vencidas',open.filter(x=>x.due&&x.due<t)],['📍 Hoy',open.filter(x=>x.due===t)],['📅 Próximos 7 días',open.filter(x=>x.due>t&&x.due<=wk)],['🔭 Más adelante',open.filter(x=>x.due>wk)],['· Sin fecha',open.filter(x=>!x.due)],
-        ['✓ Hechas (últimas)', ts.filter(x=>x.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,doneLimit)]];
+        ['✓ Realizadas', ts.filter(x=>x.status==='done').sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,50)]];
       groups.forEach(g=>g[1].forEach(x=>visibleTasks.push(x.id)));
-      return { html: bar + (groups.filter(g=>g[1].length).map(([l,g])=>`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${l}</h3><span class="sub">${g.length}</span>${selMode?`<span class="grow"></span><button class="btn xs g" onclick="Ops.pickGroup('${g.map(x=>x.id).join(',')}')">Elegir estas</button>`:''}</div>${selMode?`<div class="list">${g.map(selRow).join('')}</div>`:taskList(g)}</div>`).join('') || '<div class="card empty"><div class="big">🎉</div>No hay tareas</div>') + (ts.filter(x=>x.status==='done').length>doneLimit?`<button class="btn g sm" onclick="Ops.moreDone()">Ver más tareas hechas</button>`:'') + selBar() };
+      const plegar = (l, html) => l==='✓ Realizadas' && !selMode ? `<details class="card" style="margin-bottom:16px"><summary class="b" style="cursor:pointer">✓ Realizadas</summary><div style="margin-top:10px">${html}</div></details>` : null;
+      return { html: bar + (groups.filter(g=>g[1].length).map(([l,g])=>plegar(l, taskList(g)) || `<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${l}</h3><span class="sub">${g.length}</span>${selMode?`<span class="grow"></span><button class="btn xs g" onclick="Ops.pickGroup('${g.map(x=>x.id).join(',')}')">Elegir estas</button>`:''}</div>${selMode?`<div class="list">${g.map(selRow).join('')}</div>`:taskList(g)}</div>`).join('') || '<div class="card empty"><div class="big">🎉</div>No hay tareas</div>') + selBar() };
     }
     const lanes = TASK_ST.map(([k,l])=>{
       let items = ts.filter(t=>(t.status||'todo')===k).sort(taskSort);
-      const totalDone = items.length;
-      if(k==='done') items = items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,doneLimit);
+      // "Hecho" va plegado: no es el foco. Se despliega a pedido (y se puede soltar una tarjeta igual)
+      const totalK = items.length, plegada = k==='done' && !doneOpen;
+      if(k==='done') items = plegada ? [] : items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||'')).slice(0,doneLimit);
       items.forEach(x=>visibleTasks.push(x.id));
-      return `<div class="lane" data-lane="${k}"><div class="lane-h">${l} <span class="n">${items.length}</span></div>
+      return `<div class="lane ${plegada?'lane-folded':''}" data-lane="${k}"><div class="lane-h">${l} <span class="n">${totalK}</span>${k==='done'?`<button class="btn xs g" style="margin-left:auto" onclick="Ops.toggleDone()">${doneOpen?'Ocultar':'Ver'}</button>`:''}</div>
+        ${plegada?'<div class="xs faint" style="padding:8px 2px">Las tareas terminadas quedan acá, ocultas. Tocá “Ver” para mostrarlas.</div>':''}
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
-          <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}</div></div>`; }).join('')}
+          <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
         ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}
-        ${k==='done'&&totalDone>items.length?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.moreDone()">Ver más (${totalDone-items.length})</button>`:''}</div>`;
+        ${k==='done'&&!plegada&&totalK>items.length?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.moreDone()">Ver más (${totalK-items.length})</button>`:''}</div>`;
     }).join('');
     return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">${selMode?'Tocá las tarjetas para seleccionarlas.':'Arrastrá las tarjetas entre columnas para cambiar su estado. Con “☑ Seleccionar” podés elegir varias y hacer acciones juntas.'}</p>` + selBar(),
       after:()=>{ if(!selMode) UI.kanban($('#tboard'), (id,st)=>setTaskStatus(id,st)); } };
@@ -752,6 +763,8 @@
         else Store.upsert('ops','clients',{ id:cid, [kind==='cal'?'cal':'rep']:'no' });
         UI.close(); UI.toast(el.dataset.q==='mes' ? `${nom[0].toUpperCase()+nom.slice(1)} de ${L}: no aplica` : `${c.name} ya no lleva ${nom}`,'🗑'); App.render(); });
     },
+    toggleDone(){ doneOpen = !doneOpen; try{ localStorage.setItem('anm_doneopen', doneOpen?'1':''); }catch(e){} App.render(); },
+    deleteTask(id){ const t = Store.get('ops','tasks',id); if(!t || !confirm(`¿Borrar la tarea “${t.title}”?`)) return; Store.remove('ops','tasks',id); UI.toast('Tarea borrada','🗑'); App.render(); },
     viewMeeting(id){
       const m = Store.get('ops','meetings',id); if(!m) return;
       const tasks = S('tasks').filter(t=>t.meetingId===id).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9'));
