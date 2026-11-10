@@ -5,7 +5,7 @@
   // ── Inicio ───────────────────────────────────────────────────────────────────
   App.route('inicio', ()=>{
     const me = App.me(), t = UI.today();
-    const pf = Game.perf(me.id), wk = Game.weekStart(), wxp = Game.xpOf(me.id, wk);
+    const pf = Game.perf(me.id), wk = Game.weekStart();
     const h = new Date().getHours(), hi = h<12?'Buen día':h<20?'Buenas tardes':'Buenas noches';
     const myTasks = Ops.openTasks().filter(x=>x.assigneeId===me.id && x.due && x.due<=t).sort((a,b)=>a.due.localeCompare(b.due));
     const soon = Ops.openTasks().filter(x=>x.assigneeId===me.id && (!x.due || x.due>t)).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9')).slice(0,4);
@@ -13,7 +13,6 @@
     const myFollow = App.canGrowth() ? Store.all('growth','leads').filter(l=>l.ownerId===me.id && l.nextFollowUp && l.nextFollowUp<=t && Growth.OPEN.includes(l.stage)) : [];
     const myClients = Ops.activeClients().filter(c=>c.ownerId===me.id && Ops.daysSinceUpdate(c)>7);
     const focus = myTasks.length + myMeet.length + myFollow.length + myClients.length;
-    const ms = Game.missions(), done = ms.filter(m=>m.p>=1).length;
     const board = Game.leaderboard(wk);
     const alerts = [...Ops.alerts(), ...(App.canGrowth()?Growth.alerts():[])].filter(a=>a.level!=='info');
     const notes = App.myNotifications().filter(n=>!(n.readBy||[]).includes(me.id));
@@ -26,8 +25,7 @@
           <div class="muted" style="margin-top:4px">${focus ? `Tenés <b style="color:var(--text)">${focus} cosa${focus>1?'s':''}</b> para hoy.` : 'No tenés pendientes urgentes. ¡Buen momento para adelantar!'}</div>
           <div class="row wrap" style="margin-top:16px"><button class="btn p" onclick="App.quickAdd()">＋ Crear</button><button class="btn g" onclick="Ops.updateClient()">📡 Actualizar un cliente</button>${notes.length?`<button class="btn g" onclick="App.openNotifications()">🔔 ${notes.length} aviso${notes.length>1?'s':''}</button>`:''}</div></div>
         <div style="min-width:260px;flex:0 1 340px"><div class="xs faint b" style="letter-spacing:1px;margin-bottom:6px">CÓMO VENÍS ESTE MES</div><div class="row" style="margin-bottom:10px"><span class="lvl" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span><div class="grow"><div class="b" style="color:${pf.color}">${esc(pf.label)}</div><div class="xs faint b">${pf.pct!=null?`${pf.resolved} de ${pf.assigned} tareas asignadas resueltas`:'Todavía no te vencieron tareas este mes'}${pf.overdue?` · ${pf.overdue} vencida${pf.overdue>1?'s':''}`:''}</div></div></div>
-          <div class="xpbar"><div style="width:${pf.pct??0}%;background:${pf.color}"></div></div>
-          <div class="row" style="margin-top:14px;gap:22px"><div><div class="b" style="font-size:20px">✅ ${wxp}</div><div class="xs faint b">HECHAS ESTA SEMANA</div></div>${Game.onTime(me.id)!=null?`<div><div class="b" style="font-size:20px">${Game.onTime(me.id)}%</div><div class="xs faint b">A TIEMPO</div></div>`:''}<div><div class="b" style="font-size:20px">${done}/${ms.length}</div><div class="xs faint b">MISIONES</div></div></div></div>
+          <div class="xpbar"><div style="width:${pf.pct??0}%;background:${pf.color}"></div></div></div>
       </div>
       ${Ops.pendingMinutas().map(m=>`<div class="alert info" style="margin-bottom:18px"><div class="ai">📥</div><div class="grow"><div class="at">Hay ${m.kind==='status'?'un status':'una minuta'} lista para cargar: ${esc(m.title)} (${esc(m.client||'Interna')})</div><div class="ad">${m.tasks.length} tareas${m.kind==='status'?' ordenadas por área':' con responsable y fecha'}.</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
       <div class="grid g3">
@@ -46,12 +44,8 @@
             ${feed.length?`<div class="list">${feed.map(a=>`<div class="li">${UI.avatar(App.member(a.by),'sm')}<div class="grow small"><b>${esc(App.member(a.by)?.name||'')}</b> <span class="muted">${esc(a.text)}</span></div><span class="xs faint" style="min-width:70px;text-align:right">${UI.ago(a.at)}</span></div>`).join('')}</div>`:'<div class="empty small">Todavía no hay actividad</div>'}</div>
         </div>
         <div class="col" style="gap:18px">
-          <div class="card"><div class="card-h"><h3>🏁 Misiones de la semana</h3><span class="sub">${done}/${ms.length}</span></div>
-            ${ms.map(m=>`<div class="mission ${m.p>=1?'done':''}"><div class="mi">${m.p>=1?'✅':m.e}</div><div class="grow"><div class="b small mt">${esc(m.t)}</div><div class="xs faint">${esc(m.d)}</div>${m.p<1?`<div class="bar" style="margin-top:6px;height:5px"><div style="width:${Math.round(m.p*100)}%"></div></div>`:''}</div></div>`).join('')}</div>
-          <div class="card"><div class="card-h"><h3>🏆 Cómo viene el equipo</h3><span class="sub">este mes</span></div>
-            ${board.map((r,i)=>`<div class="rank"><span class="pos">${r.p.pct!=null?(['🥇','🥈','🥉'][i]||i+1):'·'}</span>${UI.avatar(r.m)}<div class="grow"><div class="b small">${esc(r.m.name)}</div><div class="xs faint"><span style="color:${r.p.color}">${esc(r.p.label)}</span>${r.p.pct!=null?` · ${r.p.resolved}/${r.p.assigned} resueltas`:''}${r.p.overdue?` · ${r.p.overdue} vencida${r.p.overdue>1?'s':''}`:''}</div></div><b style="color:${r.p.color}">${r.p.pct!=null?r.p.pct+'%':'—'}</b></div>`).join('')}</div>
-          <div class="card"><div class="card-h"><h3>🎖️ Tus insignias</h3><span class="sub">${Game.BADGES.filter(b=>b.ok(me.id)).length}/${Game.BADGES.length}</span></div>
-            <div class="badge-g">${Game.BADGES.map(b=>`<div class="bdg ${b.ok(me.id)?'':'locked'}" title="${esc(b.d)}"><div class="e">${b.e}</div><div class="n">${esc(b.n)}</div></div>`).join('')}</div></div>
+          <div class="card"><div class="card-h"><h3>📊 Cómo viene el equipo</h3><span class="sub">este mes</span></div>
+            ${board.map((r,i)=>`<div class="rank">${UI.avatar(r.m)}<div class="grow"><div class="b small">${esc(r.m.name)}</div><div class="xs faint"><span style="color:${r.p.color}">${esc(r.p.label)}</span>${r.p.pct!=null?` · ${r.p.resolved}/${r.p.assigned} resueltas`:''}${r.p.overdue?` · ${r.p.overdue} vencida${r.p.overdue>1?'s':''}`:''}</div></div><b style="color:${r.p.color}">${r.p.pct!=null?r.p.pct+'%':'—'}</b></div>`).join('')}</div>
           <div class="card small"><div class="card-h"><h3>📈 Cómo se mide</h3></div>
             <p class="xs muted" style="margin-bottom:10px">Tareas <b>resueltas</b> sobre tareas <b>asignadas</b> en el mes: cuentan las que te vencían hasta hoy y las que resolviste. Se reinicia cada mes.</p>
             ${Game.SCALE.map(([min,name,col])=>{ const cur = pf.label===name; return `<div class="row" style="padding:5px 8px;border-radius:8px;${cur?'background:var(--blue-d)':''}"><span class="health" style="background:${col};box-shadow:none"></span><span class="grow ${cur?'b':'muted'}">${name}</span><b class="${cur?'':'faint'}">${min?min+'% o más':'menos de 40%'}</b></div>`; }).join('')}</div>

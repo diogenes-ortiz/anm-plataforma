@@ -42,7 +42,7 @@
     const p = perf(memberId);
     if(p.pct>=90 && (beforePct==null || beforePct<90) && p.assigned>=3){
       const mine = memberId===App.me()?.id, who = (App.member(memberId)?.name||'alguien').split(' ')[0];
-      UI.confetti(); setTimeout(()=>UI.toast(mine ? '¡Estás en Excelente este mes!' : `${who} está en Excelente este mes`,'🎉'), 400);
+      UI.toast(mine ? 'Llegaste a Excelente este mes' : `${who} llegó a Excelente este mes`,'📊');
     }
   }
 
@@ -86,13 +86,11 @@
   function log(type, text, extra={}){
     const me = App.me(); if(!me) return 0;
     const xp = extra.xp ?? XP[type] ?? 0;
-    const beforeBadges = BADGES.filter(b=>b.ok(me.id)).map(b=>b.id);
     Store.upsert('team','activity',{ type, text, by:me.id, at:new Date().toISOString(), xp, ref:extra.ref||null });
     // Mantener el log acotado (los más viejos se descartan)
     const all = Store.all('team','activity');
     if(all.length>1500) all.sort((a,b)=>a.at.localeCompare(b.at)).slice(0, all.length-1500).forEach(a=>Store.remove('team','activity',a.id));
     if(!extra.silent) UI.toast(text, extra.icon||'✨');
-    BADGES.filter(b=>b.ok(me.id) && !beforeBadges.includes(b.id)).forEach(b=>{ UI.confetti(40); setTimeout(()=>UI.toast(`Nueva insignia: ${b.n}`, b.e), 700); });
     return xp;
   }
 

@@ -301,7 +301,7 @@
       <div class="grow" style="cursor:pointer" onclick="Ops.editTask('${t.id}')"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
       <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
       ${t.link?`<a href="${esc(t.link)}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
-      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}</div>`;
+      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(m,'sm')}<button class="icon-btn" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button></div>`;
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
 
@@ -343,7 +343,7 @@
       ${App.members().filter(m=>m.id!==me.id).map(m=>`<button class="chip ${taskWho===m.id?'on':''}" onclick="Ops.setWho('${m.id}')">${esc(m.name)}</button>`).join('')}</div>
       <span class="grow"></span><div class="search"><input class="inp" placeholder="Buscar…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
       <div class="chips"><button class="chip ${taskMode==='board'?'on':''}" onclick="Ops.setMode('board')">▦ Tablero</button><button class="chip ${taskMode==='list'?'on':''}" onclick="Ops.setMode('list')">☰ Lista</button></div>
-      <button class="chip ${selMode?'on':''}" onclick="Ops.selMode(${!selMode})">☑ Seleccionar</button>
+      <button class="chip ${selMode?'on':''}" onclick="Ops.selMode(${!selMode})">☑ Seleccionar varias</button>
       <button class="btn p" onclick="Ops.editTask()">＋ Tarea</button></div>`;
     visibleTasks = [];
     if(taskMode==='list'){
@@ -360,7 +360,7 @@
       return `<div class="lane" data-lane="${k}"><div class="lane-h">${l} <span class="n">${items.length}</span></div>
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
-          <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}</div></div>`; }).join('')}
+          <div class="m">${UI.avatar(App.member(t.assigneeId),'sm')}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
         ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}</div>`;
     }).join('');
     return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">${selMode?'Tocá las tarjetas para seleccionarlas.':'Arrastrá las tarjetas entre columnas para cambiar su estado. Con “☑ Seleccionar” podés elegir varias y hacer acciones juntas.'}</p>` + selBar(),
@@ -732,6 +732,7 @@
         else Store.upsert('ops','clients',{ id:cid, [kind==='cal'?'cal':'rep']:'no' });
         UI.close(); UI.toast(el.dataset.q==='mes' ? `${nom[0].toUpperCase()+nom.slice(1)} de ${L}: no aplica` : `${c.name} ya no lleva ${nom}`,'🗑'); App.render(); });
     },
+    deleteTask(id){ const t = Store.get('ops','tasks',id); if(!t || !confirm(`¿Borrar la tarea “${t.title}”?`)) return; Store.remove('ops','tasks',id); UI.toast('Tarea borrada','🗑'); App.render(); },
     viewMeeting(id){
       const m = Store.get('ops','meetings',id); if(!m) return;
       const tasks = S('tasks').filter(t=>t.meetingId===id).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9'));
