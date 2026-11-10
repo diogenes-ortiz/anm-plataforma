@@ -270,8 +270,8 @@
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
           <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(UI.safeUrl(c.link))}" target="_blank">Carpeta ↗</a>`:''}</div></div>
-        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.updateClient('${id}')">📡 Actualizar estado</button><button class="btn ok" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button><button class="btn g" onclick="Reunion.open('${id}')">🧠 Ordenar reunión</button>
-          <div class="row"><button class="btn g sm" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Tarea</button><button class="btn g sm" onclick="Ops.editMeeting(null,{clientId:'${id}'})">＋ Reunión</button><button class="btn g sm" onclick="Ops.editClient('${id}')">✎</button></div></div>
+        <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Agregar tarea</button><button class="btn g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">📝 Minuta de reunión</button><button class="btn g" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
+          <a href="#" class="xs faint" style="text-align:center;margin-top:2px" onclick="Ops.editClient('${id}');return false">✎ Editar datos del cliente</a></div>
       </div>
       ${deliverables}
       <div class="grid g3">
