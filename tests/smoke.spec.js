@@ -145,3 +145,20 @@ test('asignación automática por temática y No olvidar del cliente', async ({ 
   expect([t.assigneeId, ...t.alsoIds]).toEqual([ids.me, ids.santi]);
   expect(errores).toEqual([]);
 });
+
+test('borrar reuniones pasadas de a una y varias juntas', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page);
+  await entrar(page);
+  await page.evaluate(() => { ['A','B','C'].forEach((x,i) => Store.upsert('ops','meetings',{ title:'Reunión '+x, date:UI.addDays(UI.today(),-(i+2))+'T10:00', type:'cliente' }));
+    Store.upsert('ops','meetings',{ title:'Reunión futura', date:UI.addDays(UI.today(),3)+'T10:00', type:'cliente' }); });
+  await page.goto('/#/ops/reuniones');
+  await page.locator('.li:has-text("Reunión A") button[title="Borrar reunión"]').click();
+  await expect(page.locator('text=Reunión A')).toHaveCount(0);
+  await page.click('text=☑ Seleccionar para borrar');
+  await page.click('text=Seleccionar todas');
+  await page.click('button:has-text("🗑 Borrar 2")');
+  const quedan = await page.evaluate(() => Store.all('ops','meetings').map(m => m.title));
+  expect(quedan).toEqual(['Reunión futura']);
+  expect(errores).toEqual([]);
+});
