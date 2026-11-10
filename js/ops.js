@@ -7,11 +7,11 @@
   const HEALTH = { ok:['En curso','🟢'], atencion:['Atención','🟡'], riesgo:['En riesgo','🔴'] };
   const TASK_ST = [['todo','Por hacer'],['doing','En curso'],['review','En revisión / cliente'],['done','Hecho']];
   const PRIO = [['media','Media'],['alta','Alta 🔥'],['baja','Baja']];
-  const CAL_ST = [['planificar','Sin empezar'],['borrador','Creándose'],['enviado','Enviado para corregir'],['correcciones','Con correcciones'],['aprobado','Aprobado ✓'],['en_curso','En publicación'],['cerrado','Cerrado']];
-  const REP_ST = [['pendiente','Sin empezar'],['armando','Creándose'],['enviado','Enviado para revisar'],['corregir','Con correcciones'],['presentado','Presentado ✓']];
-  const REP_OK = ['presentado'];
+  const CAL_ST = [['planificar','Sin empezar'],['borrador','Creándose'],['enviado','Enviado para corregir'],['correcciones','Con correcciones'],['aprobado','Aprobado ✓'],['en_curso','En publicación'],['cerrado','Cerrado'],['na','No aplica este mes']];
+  const REP_ST = [['pendiente','Sin empezar'],['armando','Creándose'],['enviado','Enviado para revisar'],['corregir','Con correcciones'],['presentado','Presentado ✓'],['na','No aplica este mes']];
+  const REP_OK = ['presentado','na'];
   const REP_UNITS = ['social','pauta','contenido'];
-  const CAL_OK = ['aprobado','en_curso','cerrado'];
+  const CAL_OK = ['aprobado','en_curso','cerrado','na'];
   const FORMATS = [['post','Post'],['carrusel','Carrusel'],['reel','Reel / video'],['story','Story'],['campana','Campaña de pauta'],['entrega','Entrega (branding/web)'],['otro','Otro']];
   const CONTENT_ST = [['idea','Idea'],['produccion','En producción'],['revision','En revisión'],['aprobado','Aprobado'],['publicado','Publicado']];
   const CONTENT_COL = { idea:'var(--text3)', produccion:'var(--yellow)', revision:'var(--orange)', aprobado:'var(--blue)', publicado:'var(--green)' };
@@ -26,10 +26,11 @@
   const daysSinceUpdate = c => { const u = lastUpdate(c); return u ? UI.diffDays(u.at.slice(0,10)) : 999; };
   const openTasks = () => S('tasks').filter(t=>t.status!=='done');
   const overdueTasks = () => openTasks().filter(t=>t.due && t.due<UI.today());
-  const needsCal = c => (c.units||[]).some(u=>CAL_UNITS.includes(u));
+  // Entregables: automático según las unidades, o forzado por cliente (cal/rep = 'si' | 'no')
+  const needsCal = c => c.cal==='no' ? false : c.cal==='si' ? true : (c.units||[]).some(u=>CAL_UNITS.includes(u));
   const calRec = (cid, month) => Store.get('ops','calendars', cid+'_'+month);
   const repRec = (cid, month) => Store.get('ops','reports', cid+'_'+month);
-  const needsRep = c => (c.units||[]).some(u=>REP_UNITS.includes(u));
+  const needsRep = c => c.rep==='no' ? false : c.rep==='si' ? true : (c.units||[]).some(u=>REP_UNITS.includes(u));
   const prevYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return UI.ym(d); };
   // Fechas clave de cada cliente: el día del mes en que se entrega el calendario (del mes siguiente) y el reporte (del mes anterior)
   const dayIn = (ym, day) => { const [y,m] = ym.split('-').map(Number); return `${ym}-${UI.pad(Math.min(+day||1, new Date(y,m,0).getDate()))}`; };
@@ -424,13 +425,13 @@
   function setRep(cid, month, stage){
     const prev = repRec(cid, month)?.stage;
     Store.upsert('ops','reports',{ id:cid+'_'+month, clientId:cid, month, stage });
-    if(REP_OK.includes(stage) && !REP_OK.includes(prev)) Game.log('report_done', `Reporte presentado: ${clientName(cid)} (${UI.ymLabel(month)})`, { icon:'📊' });
+    if(stage!=='na' && REP_OK.includes(stage) && !REP_OK.includes(prev)) Game.log('report_done', `Reporte presentado: ${clientName(cid)} (${UI.ymLabel(month)})`, { icon:'📊' });
     App.render();
   }
   function setCal(cid, month, stage){
     const prev = calRec(cid, month)?.stage;
     Store.upsert('ops','calendars',{ id:cid+'_'+month, clientId:cid, month, stage });
-    if(CAL_OK.includes(stage) && !CAL_OK.includes(prev)) Game.log('calendar_approved', `Calendario aprobado: ${clientName(cid)} (${UI.ymLabel(month)})`, { icon:'🗓️' });
+    if(stage!=='na' && CAL_OK.includes(stage) && !CAL_OK.includes(prev)) Game.log('calendar_approved', `Calendario aprobado: ${clientName(cid)} (${UI.ymLabel(month)})`, { icon:'🗓️' });
     App.render();
   }
 
@@ -554,6 +555,8 @@
         { k:'contactEmail', label:'Email', type:'email', half:true }, { k:'link', label:'Link a carpeta / Drive', half:true },
         { k:'calendarDay', label:'Día de entrega del calendario', type:'number', half:true, default:25, hint:'Día del mes en que se entrega el calendario del mes siguiente' },
         { k:'reportDay', label:'Día del reporte', type:'number', half:true, default:5, hint:'Día del mes en que se presenta el reporte del mes anterior' },
+        { k:'cal', label:'¿Lleva calendario mensual?', type:'select', half:true, options:[['','Automático (según unidades)'],['si','Sí'],['no','No lleva']] },
+        { k:'rep', label:'¿Lleva reporte mensual?', type:'select', half:true, options:[['','Automático (según unidades)'],['si','Sí'],['no','No lleva']] },
         { k:'notes', label:'Notas (accesos, tono de marca, particularidades)', type:'textarea', rows:3 },
       ],
       danger: id ? (c.active===false ? { label:'Reactivar', fn:()=>{ Store.upsert('ops','clients',{ id, active:true }); App.render(); } }
@@ -718,6 +721,18 @@
         setTimeout(()=>Ops.openImport({ id:'st-'+Store.uid(), kind:'status', client:c?.name, clientId:cid, title:`Status ${c?.name||''}`, date:UI.today()+'T12:00', minuta:v.txt, ...statusToTasks(p) }), 50); } });
     },
 
+    // 🗑 en un entregable: no aplica solo ese mes, o el cliente no lo lleva más
+    quitarEntregable(cid, kind, month){
+      const c = client(cid); if(!c) return; const nom = kind==='cal' ? 'calendario' : 'reporte', L = UI.ymLabel(month);
+      const box = UI.modal(`<h2>🗑 Quitar ${nom}<button class="icon-btn x" data-close>✕</button></h2><div class="list">
+        <div class="li click" data-q="mes" style="cursor:pointer"><div class="grow"><div class="b">Solo el de ${L}</div><div class="xs faint">Queda como “No aplica este mes”. Los otros meses siguen igual.</div></div><span>›</span></div>
+        <div class="li click" data-q="siempre" style="cursor:pointer"><div class="grow"><div class="b">${esc(c.name)} no lleva ${nom}</div><div class="xs faint">Deja de aparecer y de generar alertas. Se puede volver a activar en “Editar cliente”.</div></div><span>›</span></div></div>
+        <div class="mfoot"><button class="btn g" data-close>Cancelar</button></div>`);
+      box.querySelectorAll('[data-q]').forEach(el=>el.onclick = ()=>{
+        if(el.dataset.q==='mes') kind==='cal' ? Ops.setCal(cid, month, 'na') : Ops.setRep(cid, month, 'na');
+        else Store.upsert('ops','clients',{ id:cid, [kind==='cal'?'cal':'rep']:'no' });
+        UI.close(); UI.toast(el.dataset.q==='mes' ? `${nom[0].toUpperCase()+nom.slice(1)} de ${L}: no aplica` : `${c.name} ya no lleva ${nom}`,'🗑'); App.render(); });
+    },
     viewMeeting(id){
       const m = Store.get('ops','meetings',id); if(!m) return;
       const tasks = S('tasks').filter(t=>t.meetingId===id).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9'));
