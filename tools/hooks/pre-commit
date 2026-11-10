@@ -1,6 +1,0 @@
-#!/bin/sh
-# Si el commit toca css/ o js/, actualiza la versión sola (BASE-08).
-if git diff --cached --name-only | grep -qE '^(css|js)/'; then
-  sh tools/bump-version.sh >/dev/null
-  git add index.html finanzas.html finanzas-completa.html version.json
-fi

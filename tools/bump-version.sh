@@ -1,7 +1,7 @@
 #!/bin/sh
 # Marca una versión nueva: fuerza a los navegadores a bajar los archivos actualizados.
 # Uso: sh tools/bump-version.sh   (antes de cada commit que cambie css/js)
-V=$(date -u +%Y%m%d%H%M%S)   # con segundos: dos ramas actualizadas en el mismo minuto no quedan con la misma versión
+V=$(date -u +%Y%m%d%H%M)
 cd "$(dirname "$0")/.."
 for f in index.html finanzas.html finanzas-completa.html; do
   sed -i -E "s#((src|href)=\"(js|css)/[^\"?]+\.(js|css))(\?v=[0-9]+)?\"#\1?v=$V\"#g" "$f"

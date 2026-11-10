@@ -35,13 +35,9 @@
   const time = iso => iso && iso.length>10 ? iso.slice(11,16) : '';
   const initials = n => (n||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
 
-  // Seguridad: solo links http(s), mailto y tel (bloquea javascript: y similares); colores solo #hex
-  const safeUrl = u => { const v = String(u||'').trim(); if(!v) return ''; if(/^(https?:|mailto:|tel:)/i.test(v)) return v; if(/^#\//.test(v)) return v; if(/^[a-z][a-z0-9+.-]*:/i.test(v)) return ''; return 'https://'+v.replace(/^\/+/,''); };
-  const safeColor = c => /^#[0-9a-f]{3,8}$/i.test(String(c||'')) ? c : COLORS[0];
-  const safeId = v => String(v??'').replace(/[^A-Za-z0-9_-]/g,'');
   function avatar(m, cls=''){
     if(!m) return `<span class="av ${cls}" style="background:var(--surface3);color:var(--text3)">?</span>`;
-    return `<span class="av ${cls}" title="${esc(m.name)}" style="background:${safeColor(m.color)}">${esc(initials(m.name))}</span>`;
+    return `<span class="av ${cls}" title="${esc(m.name)}" style="background:${m.color||COLORS[0]}">${esc(initials(m.name))}</span>`;
   }
 
   // ── Modal genérico con formulario ─────────────────────────────────────────
@@ -146,5 +142,5 @@
   }
 
   window.UI = { $, esc, MONTHS, DAYS, COLORS, pad, ymd, today, parse, addDays, diffDays, ym, ymLabel, fdate, ago, time, initials,
-    safeUrl, safeColor, safeId, avatar, form, modal, close, toast, confetti, copy, waLink, mailLink, download, kanban };
+    avatar, form, modal, close, toast, confetti, copy, waLink, mailLink, download, kanban };
 })();

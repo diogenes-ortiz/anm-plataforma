@@ -15,6 +15,7 @@ Plataforma de la agencia con tres áreas + equipo. No necesita instalación ni c
 | `js/game.js` | Gamificación: XP, niveles, rachas, insignias, misiones semanales |
 | `js/ops.js` | Operaciones |
 | `js/growth.js` | Crecimiento / CRM |
+| `js/prospects-hunter.js` | Base de 50 prospectos del informe Hunter |
 | `js/home.js` | Inicio, Equipo y Ajustes |
 | `js/finanzas-extra.js` | Contraseña, Análisis y Cierre del mes de Finanzas |
 
@@ -68,4 +69,4 @@ Antes de cada commit que toque `css/` o `js/`, correr `sh tools/bump-version.sh`
 ## Datos
 Todo vive en la tabla `anm_state` de Supabase (la misma de siempre): `main` = Finanzas (sin cambios de formato), `ops`, `growth`, `team` = plataforma. Varias personas pueden editar a la vez: los cambios se fusionan registro por registro y se sincronizan cada ~20 s. Hay respaldo descargable en Ajustes.
 
-**Seguridad:** cada persona entra con Google y solo si el dueño autorizó su Gmail (Equipo → Accesos). La base de datos rechaza todo pedido sin sesión, Finanzas solo la leen los socios y Crecimiento no lo ven los invitados (`supabase/fase1-seguridad.sql`). Pasos de activación en `docs/PASOS-FASE-1.md`. El plan completo de mejoras está en `docs/BACKLOG.md`.
+**Seguridad:** la clave de Supabase es pública (está en el código), así que la contraseña y los roles evitan accesos casuales pero no son protección fuerte. Próximo paso recomendado: activar login por email de Supabase (Auth) y reglas RLS por rol.

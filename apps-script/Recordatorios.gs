@@ -12,8 +12,6 @@
  *   1. Entrá a https://script.google.com con la cuenta de Gmail que va a mandar los mails → "Nuevo proyecto".
  *   2. Borrá lo que aparece y pegá TODO este archivo. Guardá (💾).
  *   3. ⚙ Configuración del proyecto → Zona horaria: "(GMT-03:00) Buenos Aires".
- *   3b. En esa misma pantalla, "Propiedades de la secuencia de comandos" → Agregar propiedad:
- *      SUPABASE_SERVICE_KEY = clave "secret" de Supabase (Project Settings → API Keys). Solo acá, nunca en el código.
  *   4. Arriba elegí la función "instalar" y tocá ▶ Ejecutar. Aceptá los permisos que pide Google
  *      (leer datos externos y enviar mails como vos).
  *   5. Para probar: elegí "probarConmigo" y ▶ Ejecutar → te llega un resumen de ejemplo.
@@ -22,6 +20,7 @@
 
 const CONFIG = {
   SUPABASE_URL: 'https://pxsgqbldbdvbrfwqnvyl.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_raHPfxFnjqySQ1QyS75aCw_RywBnd0O',
   PLATAFORMA: 'https://diogenes-ortiz.github.io/anm-plataforma/',
   HORA_RESUMEN: 8,              // hora del resumen diario (0-23)
   RESUMEN_FINDE: false,         // true = también sábados y domingos
@@ -71,12 +70,8 @@ function probarConmigo() {
 
 // ── Lectura de datos (misma base que la plataforma) ─────────────────────────
 function leer(id) {
-  // Desde que hay login con Google, la base no responde a la clave pública: se usa la clave
-  // de servidor guardada en las propiedades del script (nunca en el código).
-  const key = PropertiesService.getScriptProperties().getProperty('SUPABASE_SERVICE_KEY');
-  if (!key) throw new Error('Falta la propiedad SUPABASE_SERVICE_KEY (⚙ Configuración del proyecto → Propiedades de la secuencia de comandos).');
   const r = UrlFetchApp.fetch(CONFIG.SUPABASE_URL + '/rest/v1/anm_state?id=eq.' + id + '&select=data', {
-    headers: { apikey: key, Authorization: 'Bearer ' + key }, muteHttpExceptions: true,
+    headers: { apikey: CONFIG.SUPABASE_KEY, Authorization: 'Bearer ' + CONFIG.SUPABASE_KEY }, muteHttpExceptions: true,
   });
   if (r.getResponseCode() !== 200) throw new Error('No pude leer ' + id + ': ' + r.getContentText());
   const rows = JSON.parse(r.getContentText());

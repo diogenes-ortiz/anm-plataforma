@@ -155,7 +155,7 @@
         <div class="card kpi"><div class="l">En conversación</div><div class="v">${leads.filter(l=>['reunion','ppt','propuesta','negociacion'].includes(l.stage)).length}</div><div class="s">reunión, PPT o negociación</div></div>
       </div>
       <div class="toolbar"><div class="small muted grow">Tu lista del día: primero los seguimientos vencidos, después los prospectos con más 🔥 ganas. Tocá “✉️ Mensaje” para armarlo y mandarlo en un clic.</div>
-<button class="btn p" onclick="Growth.editLead()">＋ Prospecto</button></div>
+        <button class="btn p" onclick="Growth.editLead()">＋ Prospecto</button></div>
       <div class="grid g3"><div class="span2 col" style="gap:18px">
         <div class="card"><div class="card-h"><h3>📞 Seguimientos de hoy</h3><span class="sub">${due.length}</span></div>${due.length?`<div class="list">${due.map(l=>leadRow(l)).join('')}</div>`:'<div class="empty small">Nada vencido. 🎉</div>'}</div>
         <div class="card"><div class="card-h"><h3>🎯 Para escribirles por primera vez</h3><span class="sub">ordenados por ganas</span></div>${fresh.length?`<div class="list">${fresh.slice(0,15).map(l=>leadRow(l)).join('')}</div>${fresh.length>15?`<a class="xs" href="#/crecimiento/contactos">Ver los ${fresh.length} →</a>`:''}`:'<div class="empty small">No hay prospectos sin contactar.</div>'}</div>
@@ -270,7 +270,7 @@
         <select class="inp sm" onchange="Growth.setPpt('${l.id}',{pptStatus:this.value})"><option value="">—</option>${PPT_ST.map(([k,t])=>`<option value="${k}" ${k===st?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="row wrap" style="gap:8px;margin-bottom:12px">
         <input class="inp grow" style="min-width:220px" placeholder="Link a la PPT (Canva, Google Slides, Drive…)" value="${esc(l.pptLink||'')}" onchange="Growth.setPpt('${l.id}',{pptLink:this.value.trim()})">
-        ${l.pptLink?`<a class="btn sm g" target="_blank" href="${esc(UI.safeUrl(l.pptLink))}">Abrir ↗</a>`:''}</div>
+        ${l.pptLink?`<a class="btn sm g" target="_blank" href="${esc(l.pptLink)}">Abrir ↗</a>`:''}</div>
       <div class="row wrap" style="gap:8px"><button class="btn sm g" onclick="Growth.copyBrief('${l.id}')">📋 Copiar brief para la PPT</button>
         ${task?`<a class="btn sm g" href="#/ops/tareas">✅ Tarea: ${esc(task.status==='done'?'hecha':App.member(task.assigneeId)?.name||'sin asignar')}</a>`:`<button class="btn sm g" onclick="Growth.pptTask('${l.id}')">＋ Crear tarea “Armar PPT”</button>`}
         ${l.stage==='ppt'&&st==='lista'?`<button class="btn sm p" onclick="Growth.setStage('${l.id}','propuesta')">📄 Marcar como presentada</button>`:''}</div>
@@ -283,9 +283,9 @@
     if(!l) return { title:'Contacto', html:'<div class="empty">No encontrado. <a href="#/crecimiento">Volver</a></div>' };
     const st = stage(l.stage), wa = waNumber(l);
     const touches = Store.all('growth','interactions').filter(t=>t.leadId===id).sort((a,b)=>b.at.localeCompare(a.at));
-    const links = [l.web&&`<a href="${esc(UI.safeUrl(l.web))}" target="_blank">🌐 Web</a>`, l.email&&`<a href="mailto:${esc(l.email)}">✉️ ${esc(l.email)}</a>`,
+    const links = [l.web&&`<a href="${esc(/^https?:/.test(l.web)?l.web:'https://'+l.web)}" target="_blank">🌐 Web</a>`, l.email&&`<a href="mailto:${esc(l.email)}">✉️ ${esc(l.email)}</a>`,
       wa&&`<a href="${UI.waLink('',wa)}" target="_blank">💬 WhatsApp</a>`, l.phone&&`<span>📞 ${esc(l.phone)}</span>`,
-      l.linkedin&&`<a href="${esc(UI.safeUrl(l.linkedin))}" target="_blank">in LinkedIn</a>`, l.instagram&&`<a href="https://instagram.com/${esc(l.instagram.replace('@',''))}" target="_blank">📷 ${esc(l.instagram)}</a>`].filter(Boolean);
+      l.linkedin&&`<a href="${esc(l.linkedin)}" target="_blank">in LinkedIn</a>`, l.instagram&&`<a href="https://instagram.com/${esc(l.instagram.replace('@',''))}" target="_blank">📷 ${esc(l.instagram)}</a>`].filter(Boolean);
     const pitch = PITCH[l.pitch];
     const html = `<div class="row" style="margin-bottom:20px"><a href="#/crecimiento" class="btn g sm">← Ventas</a></div>
       <div class="hero" style="margin-bottom:22px"><div class="grow"><div class="row wrap"><span class="tag">${st[2]} ${st[1]}</span>${l.rank?`<span class="tag t-blue">Hunter #${l.rank}</span>`:''}${l.validate?'<span class="tag t-yellow">Validar tamaño y dueño antes</span>':''}</div>
@@ -423,7 +423,7 @@
       const done = channel => { Growth.recordSend(id, channel, sel.options[sel.selectedIndex].text, ta.value); UI.close(); };
       box.querySelector('#cm-wa').onclick = ()=>{ if(!wa) return; window.open(UI.waLink(ta.value, wa), '_blank'); done('whatsapp'); };
       box.querySelector('#cm-mail').onclick = ()=>{ if(!l.email) return; location.href = UI.mailLink(l.email, `${l.company} + ANM`, ta.value); done('email'); };
-      box.querySelector('#cm-li').onclick = ()=>{ UI.copy(ta.value); window.open(UI.safeUrl(l.linkedin) || `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent((l.contactName||'')+' '+l.company)}`, '_blank'); done('linkedin'); };
+      box.querySelector('#cm-li').onclick = ()=>{ UI.copy(ta.value); window.open(l.linkedin || `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent((l.contactName||'')+' '+l.company)}`, '_blank'); done('linkedin'); };
       box.querySelector('#cm-copy').onclick = ()=>{ UI.copy(ta.value); if(confirm('¿Lo registro como enviado?')) done('otro'); };
     },
 

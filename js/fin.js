@@ -5,8 +5,8 @@
 (function(){
   const { esc, $ } = UI;
   const { SUPABASE_URL:SB_URL, SUPABASE_KEY:SB_KEY } = window.ANM_CONFIG;
-  const H = extra => Auth.headers(extra);   // con la sesión de Google: la base solo devuelve Finanzas a socios
-  const LS_KEY = (window.ANM_CONFIG.LS_PREFIX||'')+'anm_v7';            // mismo cache local que la app original
+  const HEADERS = { 'Content-Type':'application/json', apikey:SB_KEY, Authorization:'Bearer '+SB_KEY };
+  const LS_KEY = 'anm_v7';            // mismo cache local que la app original
   const MONTHS = UI.MONTHS;
   const TIPO = { rrss:'Redes sociales', pauta:'Pauta / Ads', 'rrss+pauta':'Redes + Pauta', web:'Web', branding:'Branding', otros:'Otros' };
   const SOCIOS = ['dio','santi','diogenes','santiago'];
@@ -34,7 +34,7 @@
     ensure(); setStatus('syncing');
     try{
       const ctl = new AbortController(), to = setTimeout(()=>ctl.abort(), 10000);
-      const r = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.main&select=data`, { headers:await H(), signal:ctl.signal }); clearTimeout(to);
+      const r = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.main&select=data`, { headers:HEADERS, signal:ctl.signal }); clearTimeout(to);
       if(!r.ok) throw 0;
       const rows = await r.json();
       if(rows[0]?.data && Object.keys(rows[0].data).length){ S = { ...S, ...rows[0].data }; ensure(); }
@@ -51,8 +51,8 @@
     setStatus('syncing');
     const body = JSON.stringify({ id:'main', data:S, updated_at:new Date().toISOString() });
     try{
-      let r = await fetch(`${SB_URL}/rest/v1/anm_state`, { method:'POST', headers:await H({ Prefer:'resolution=merge-duplicates,return=minimal' }), body });
-      if(!r.ok) r = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.main`, { method:'PATCH', headers:await H({ Prefer:'return=minimal' }), body:JSON.stringify({ data:S, updated_at:new Date().toISOString() }) });
+      let r = await fetch(`${SB_URL}/rest/v1/anm_state`, { method:'POST', headers:{ ...HEADERS, Prefer:'resolution=merge-duplicates,return=minimal' }, body });
+      if(!r.ok) r = await fetch(`${SB_URL}/rest/v1/anm_state?id=eq.main`, { method:'PATCH', headers:{ ...HEADERS, Prefer:'return=minimal' }, body:JSON.stringify({ data:S, updated_at:new Date().toISOString() }) });
       setStatus(r.ok ? 'synced' : 'error');
     }catch(e){ setStatus('error'); }
   }
@@ -689,7 +689,7 @@
   };
 
   function platformMember(){
-    try{ const me = localStorage.getItem('anm_me'); const team = JSON.parse(localStorage.getItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_team')||'{}');
+    try{ const me = localStorage.getItem('anm_me'); const team = JSON.parse(localStorage.getItem('anm_doc_team')||'{}');
       return (team.members||[]).find(m=>m.id===me && !m.deleted) || null; }catch(e){ return null; }
   }
 
@@ -705,9 +705,9 @@
     tab = 'actualidad'; render(); }
   const FinGate = {
     async check(){
-      if(!Auth.loggedIn()) return gate('<h2>Ingresá primero a la plataforma</h2><p class="muted">Finanzas se abre desde la plataforma, con tu cuenta de Google de socio.</p><a class="btn p" href="index.html" style="margin-top:14px">Ir a la plataforma</a>');
-      const acc = Auth.access || await Auth.check();
-      if(!acc || !['owner','socio'].includes(acc.role)) return gate('<h2>Sin acceso</h2><p class="muted">Finanzas es solo para los socios.</p>');
+      const me = platformMember();
+      if(me && me.role!=='admin') return gate('<h2>Sin acceso</h2><p class="muted">Finanzas es solo para los socios.</p>');
+      if(!me) return gate('<h2>Ingresá primero a la plataforma</h2><p class="muted">Finanzas se abre desde la plataforma, con un perfil de socio.</p><a class="btn p" href="index.html" style="margin-top:14px">Ir a la plataforma</a>');
       const last = +sessionStorage.getItem(OK_KEY)||0;
       if(last && Date.now()-last < IDLE_MIN*6e4) return open();
       const sec = S.seguridad;
@@ -745,7 +745,7 @@
     if(window.Store) Store.loadLocal();
     try{ const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); const { v } = await r.json();
       if(v && window.ANM_VERSION && v!==window.ANM_VERSION && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); return location.reload(); } }catch(e){}
-    if(Auth.loggedIn()){ const acc = await Auth.check(); if(acc && ['owner','socio'].includes(acc.role)) await load(); }
+    await load();
     FinGate.check();
   });
 })();
