@@ -217,11 +217,6 @@
     </div>`);
   };
 
-  // ── Tema ─────────────────────────────────────────────────────────────────────
-  App.toggleTheme = ()=>{
-    const t = document.documentElement.dataset.theme==='light' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = t; try{ localStorage.setItem('anm_theme', t); }catch(e){}
-  };
 
   // ── Si algo falla, mostrarlo en pantalla (en vez de quedar trabado) ───────────
   function showCrash(msg){
@@ -256,7 +251,7 @@
 
   // ── Arranque ─────────────────────────────────────────────────────────────────
   async function boot(){
-    try{ const t = localStorage.getItem('anm_theme'); if(t) document.documentElement.dataset.theme = t; }catch(e){}
+    try{ localStorage.removeItem('anm_theme'); delete document.documentElement.dataset.theme; }catch(e){}   // tema claro único
     Store.on(ev=>{
       if(ev.type==='status'){
         const map = { local:'💾 Local', syncing:'⏳ Sincronizando', synced:'● En línea', error:'⚠️ Sin conexión' };
