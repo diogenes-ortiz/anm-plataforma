@@ -33,7 +33,7 @@
     memberOpts(empty='— Sin asignar —'){ return [['',empty], ...this.members().map(m=>[m.id,m.name])]; },
     // Solo los socios asignan trabajo a otras personas; el resto se asigna a sí mismo
     assignOpts(){ const me = this.me(); return this.isAdmin() ? this.memberOpts() : [[me.id, me.name]]; },
-    unitTags(ids=[]){ return ids.map(id=>{ const u=this.unit(id); return `<span class="tag" style="background:${u.color}22;color:${u.color}">${esc(u.label)}</span>`; }).join(' '); },
+    unitTags(ids=[]){ return ids.map(id=>{ const u=this.unit(id); return `<span class="tag" style="background:${u.color}1f;color:color-mix(in srgb,${u.color} 62%,#000)">${esc(u.label)}</span>`; }).join(' '); },
 
     // Filtro global por unidad de negocio (se recuerda por navegador)
     get unitFilter(){ return localStorage.getItem('anm_unit')||''; },
@@ -267,11 +267,6 @@
     </div>`);
   };
 
-  // ── Tema ─────────────────────────────────────────────────────────────────────
-  App.toggleTheme = ()=>{
-    const t = document.documentElement.dataset.theme==='light' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = t; try{ localStorage.setItem('anm_theme', t); }catch(e){}
-  };
 
   // ── Si algo falla, mostrarlo en pantalla (en vez de quedar trabado) ───────────
   function showCrash(msg){
@@ -305,7 +300,7 @@
 
   // ── Arranque ─────────────────────────────────────────────────────────────────
   async function boot(){
-    try{ const t = localStorage.getItem('anm_theme'); if(t) document.documentElement.dataset.theme = t; }catch(e){}
+    try{ localStorage.removeItem('anm_theme'); delete document.documentElement.dataset.theme; }catch(e){}   // tema claro único
     Store.on(ev=>{
       if(ev.type==='status'){
         const map = { local:'💾 Local', syncing:'⏳ Sincronizando', synced:'● En línea', error:'⚠️ Sin conexión' };
