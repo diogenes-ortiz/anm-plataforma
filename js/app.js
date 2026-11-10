@@ -104,7 +104,7 @@
       <div class="nav-s">Agencia</div>
       ${item('#/ops','◎','Operaciones','ops', a?`<span class="cnt">${a}</span>`:'')}
       ${App.canGrowth()?item('#/crecimiento','↗','Ventas','crecimiento', g?`<span class="cnt">${g}</span>`:''):''}
-      ${App.isAdmin()?`<a href="finanzas.html"><span class="ic">$</span>Finanzas<span class="lock">🔒</span></a>`:''}
+      ${App.isAdmin() && ['owner','socio'].includes(Auth.access?.role)?`<a href="finanzas.html"><span class="ic">$</span>Finanzas</a>`:''}
       <div class="nav-s">Equipo</div>
       ${item('#/equipo','◑','Equipo e invitaciones','equipo')}
       ${item('#/ajustes','⚙','Ajustes','ajustes')}`;
