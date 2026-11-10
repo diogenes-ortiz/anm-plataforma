@@ -756,7 +756,7 @@
       let ids = [...sel].filter(id=>Store.get('ops','tasks',id));
       if(!ids.length) return;
       // Socios y equipo pueden modificar cualquier tarea (y volverla atrás); el invitado solo las suyas
-      const own = ids.filter(id=>puede || Store.get('ops','tasks',id).assigneeId===me.id);
+      const own = ids.filter(id=>puede || isMine(Store.get('ops','tasks',id), me.id));
       if(own.length<ids.length) UI.toast(`${ids.length-own.length} tarea(s) no son tuyas: un invitado solo modifica las propias`,'⚠️');
       ids = own; if(!ids.length) return App.render();
       const n = ids.length, s = n!==1?'s':'';
