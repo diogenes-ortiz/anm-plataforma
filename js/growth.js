@@ -115,15 +115,15 @@
   const byGanas = (a,b) => (b.ganas||0)-(a.ganas||0) || (a.rank||999)-(b.rank||999) || a.company.localeCompare(b.company);
 
   // ── Vistas ──────────────────────────────────────────────────────────────────
-  const TABS = [['hoy','Hoy toca contactar'],['pipeline','Pipeline'],['contactos','Base de contactos'],['ex','Ex clientes'],['mensajes','Mensajes'],['metricas','Métricas']];
+  // 'Hoy toca contactar' (viewToday) quedó fuera por ahora: Ventas abre en el Pipeline
+  const TABS = [['pipeline','Pipeline'],['contactos','Base de contactos'],['ex','Ex clientes'],['mensajes','Mensajes'],['metricas','Métricas']];
   let q = '', stageF = '', ganasF = 0;
 
-  App.route('crecimiento', ([tab='hoy', id])=>{
+  App.route('crecimiento', ([tab='pipeline', id])=>{
     if(tab==='lead') return leadDetail(id);
-    const due = L().filter(l=>OPEN.includes(l.stage) && l.nextFollowUp && l.nextFollowUp<=UI.today()).length;
-    const tabs = `<div class="tabs">${TABS.map(([k,l])=>`<a href="#/crecimiento/${k}" class="${tab===k?'active':''}">${l}${k==='hoy'&&due?`<span class="cnt">${due}</span>`:''}</a>`).join('')}</div>`;
-    const views = { hoy:viewToday, pipeline:viewPipeline, contactos:viewContacts, ex:viewEx, mensajes:viewTemplates, metricas:viewMetrics };
-    const v = (views[tab]||viewToday)();
+    const tabs = `<div class="tabs">${TABS.map(([k,l])=>`<a href="#/crecimiento/${k}" class="${tab===k?'active':''}">${l}</a>`).join('')}</div>`;
+    const views = { pipeline:viewPipeline, contactos:viewContacts, ex:viewEx, mensajes:viewTemplates, metricas:viewMetrics };
+    const v = (views[tab]||viewPipeline)();
     const sheetBar = `<div class="row wrap" style="gap:8px;margin:-6px 0 14px"><span class="small muted grow">${Store.setting('salesSheetAt','') ? `Datos del Sheet comercial · actualizado ${UI.ago(Store.setting('salesSheetAt'))}` : 'Los prospectos salen del Google Sheet comercial.'} <a href="${esc(sheetUrl())}" target="_blank">Abrir Sheet ↗</a></span>${App.isAdmin()?'<button class="btn sm p" onclick="Growth.syncSheet()">⟳ Traer del Sheet</button>':''}</div>`;
     return { title:'Ventas', crumb:'Prospectos y seguimiento comercial', html: tabs + sheetBar + `<div class="toolbar">${App.unitBar()}</div>` + v.html, after:v.after };
   });
@@ -523,7 +523,7 @@
         ganas: p.r<=5?5 : p.r<=20?4 : p.r<=39?3 : 2, units:units[p.pitch]||[], stage:'objetivo', stageAt:new Date().toISOString(), source:'Hunter (investigación)', ownerId:App.me().id,
       }));
       Game.log('lead', `Cargó ${nuevos.length} prospectos de la lista Hunter`, { icon:'🎯', xp:25 });
-      App.go('#/crecimiento/hoy');
+      App.go('#/crecimiento/pipeline');
     },
 
     importCsv(){
