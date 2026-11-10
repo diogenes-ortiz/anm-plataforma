@@ -42,16 +42,14 @@ test('crear una reunión y convertir un acuerdo en tarea', async ({ page }) => {
   expect(m.actions[0].taskId).toBeTruthy();
 });
 
-test('abrir Finanzas', async ({ page }) => {
+test('un socio abre Finanzas sin contraseña', async ({ page }) => {
   const errores = []; page.on('pageerror', e => errores.push(e.message));
   await mockSupabase(page);
   await entrar(page);
   await page.waitForTimeout(1200);   // que se guarde el perfil en la base simulada
+  await expect(page.locator('.sidebar a[href="finanzas.html"]')).toHaveCount(1);
   await page.goto('/finanzas.html');
-  await page.waitForSelector('#fp1');
-  await page.fill('#fp1', 'fin12345');
-  await page.fill('#fp2', 'fin12345');
-  await page.click('#fgo');
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
   expect(errores).toEqual([]);
 });
