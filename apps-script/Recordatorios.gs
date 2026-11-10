@@ -124,7 +124,7 @@ function enviar(to, asunto, html) {
 function armarResumen(m, d) {
   const t = hoy(), en3 = sumarDias(t, 3);
   const cliente = id => { const c = d.clients.find(x => x.id === id); return c ? c.name : 'Interna'; };
-  const abiertas = d.tasks.filter(x => x.status !== 'done' && x.assigneeId === m.id);
+  const abiertas = d.tasks.filter(x => x.status !== 'done' && (x.assigneeId === m.id || (x.alsoIds || []).indexOf(m.id) >= 0));
   const venc = abiertas.filter(x => x.due && x.due < t).sort((a, b) => a.due.localeCompare(b.due));
   const deHoy = abiertas.filter(x => x.due === t);
   const prox = abiertas.filter(x => x.due > t && x.due <= en3).sort((a, b) => a.due.localeCompare(b.due));

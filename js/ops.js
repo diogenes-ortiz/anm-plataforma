@@ -25,6 +25,9 @@
   const lastUpdate = c => S('updates').filter(u=>u.clientId===c.id).sort((a,b)=>b.at.localeCompare(a.at))[0];
   const daysSinceUpdate = c => { const u = lastUpdate(c); return u ? UI.diffDays(u.at.slice(0,10)) : 999; };
   const openTasks = () => S('tasks').filter(t=>t.status!=='done');
+  // Una tarea puede tener varios responsables: assigneeId (principal) + alsoIds (también se encargan)
+  const taskPeople = t => [...new Set([t.assigneeId, ...(t.alsoIds||[])].filter(Boolean))];
+  const isMine = (t, mid) => !!mid && taskPeople(t).includes(mid);
   // Equipo que trabaja una cuenta (responsable + asignados)
   const clientTeam = cid => { const c = cid && S('clients').find(x=>x.id===cid); return c ? [...new Set([c.ownerId, ...(c.teamIds||[])].filter(Boolean))] : []; };
   // Opciones de "Responsable": primero quienes trabajan esa cuenta
@@ -36,6 +39,19 @@
     return [...o.filter(x=>!x[0]), ...inTeam, ...o.filter(x=>x[0] && !team.includes(x[0]))];
   }
   // En el formulario de tarea: al cambiar el cliente se reordena la lista de responsables
+  // Tarea nueva: según el título/área sugiere responsables (reglas de Equipo → Asignación automática).
+  // Si la persona elige el responsable a mano, se deja de sugerir.
+  function wireSuggest(box){
+    const ti = box.querySelector('#f_title'), ar = box.querySelector('#f_area'), as = box.querySelector('#f_assigneeId'), co = box.querySelector('#f_alsoIds');
+    if(!ti || !as) return;
+    let manual = false; as.addEventListener('change', ()=>{ manual = true; }); co?.addEventListener('click', ()=>{ manual = true; });
+    const hint = document.createElement('div'); hint.className = 'hint'; as.closest('.fld').appendChild(hint);
+    const run = ()=>{ if(manual) return; const s = Asignar.suggest(ti.value, ar?.value); if(!s.length){ hint.textContent = ''; return; }
+      if([...as.options].some(o=>o.value===s[0])) as.value = s[0];
+      co?.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', s.slice(1).includes(c.dataset.v)));
+      hint.textContent = '🤖 Asignada por temática: ' + s.map(x=>(App.member(x)?.name||'').split(' ')[0]).join(' y '); };
+    ti.addEventListener('input', run); ar?.addEventListener('input', run);
+  }
   function wireAssignee(box){
     const cs = box?.querySelector('#f_clientId'), as = box?.querySelector('#f_assigneeId'); if(!cs || !as) return;
     cs.addEventListener('change', ()=>{ const cur = as.value;
@@ -242,7 +258,7 @@
     const team = [c.ownerId, ...(c.teamIds||[]).filter(x=>x!==c.ownerId)].map(App.member).filter(Boolean);
     return `<div class="card hover" onclick="App.go('#/ops/cliente/${c.id}')">
       <div class="row" style="margin-bottom:10px"><span class="health h-${c.health||'ok'}"></span><div class="b grow ellip" style="font-size:15.5px">${esc(c.name)}${isOneShot(c)?' <span class="tag t-purple" style="font-size:11px">One shot</span>':''}</div><span class="avs">${team.map(m=>UI.avatar(m,'sm')).join('')}</span></div>
-      <div class="row wrap" style="margin-bottom:12px">${App.unitTags(c.units)}</div>
+      <div class="row wrap" style="margin-bottom:12px">${App.unitTags(c.units)}${(c.pins||[]).length?`<span class="tag t-yellow" title="${esc((c.pins||[]).map(p=>p.text).join(' · '))}">📌 ${(c.pins||[]).length} no olvidar</span>`:''}</div>
       <div class="small prewrap" style="min-height:40px;color:${u?'var(--text)':'var(--text3)'}">${esc(u ? trunc(c.status||u.text, 150) : 'Sin actualizaciones todavía.')}</div>
       ${c.nextStep?`<div class="small" style="margin-top:10px"><span class="faint b">PRÓXIMO →</span> ${esc(c.nextStep)} ${c.nextStepDate?`<span class="tag ${c.nextStepDate<UI.today()?'t-red':''}">${UI.fdate(c.nextStepDate)}</span>`:''}</div>`:''}
       <div class="divider"></div>
@@ -291,6 +307,7 @@
         <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Agregar tarea</button><button class="btn g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">📝 Minuta de reunión</button><button class="btn g" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
           <a href="#" class="xs faint" style="text-align:center;margin-top:2px" onclick="Ops.editClient('${id}');return false">✎ Editar datos del cliente</a></div>
       </div>
+      ${pinsCard(c)}
       ${deliverables}
       <div class="grid g3">
         <div class="span2 col" style="gap:18px">
@@ -325,7 +342,17 @@
   function taskSort(a,b){ return (a.status==='done')-(b.status==='done') || (a.due||'9999').localeCompare(b.due||'9999') || prioN[a.priority||'media']-prioN[b.priority||'media']; }
 
   // Avatar del responsable: tocándolo se elige quién se encarga
-  const assignBtn = t => `<button type="button" class="av-btn" title="Cambiar responsable" onclick="event.stopPropagation();Ops.pickAssignee('${t.id}')">${UI.avatar(App.member(t.assigneeId),'sm')}</button>`;
+  const peopleAvs = t => { const ps = taskPeople(t).map(App.member).filter(Boolean); return ps.length ? `<span class="avs">${ps.map(m=>UI.avatar(m,'sm')).join('')}</span>` : UI.avatar(null,'sm'); };
+  const assignBtn = t => `<button type="button" class="av-btn" title="Elegir quién se encarga" onclick="event.stopPropagation();Ops.pickAssignee('${t.id}')">${peopleAvs(t)}</button>`;
+  // 📌 No olvidar: prioridades del cliente que manejan los socios (todos las ven, solo socios las cambian)
+  function pinsCard(c){
+    const pins = c.pins||[], admin = App.isAdmin();
+    if(!pins.length && !admin) return '';
+    return `<div class="card" style="margin-bottom:18px;border-color:color-mix(in srgb,var(--yellow) 55%,transparent);background:color-mix(in srgb,var(--yellow) 7%,var(--surface))">
+      <div class="card-h"><h3>📌 No olvidar</h3><span class="xs faint">prioridades del cliente${admin?'':' · las cargan los socios'}</span><span class="grow"></span>${admin?`<button class="btn xs g" onclick="Ops.addPin('${c.id}')">＋ Agregar</button>`:''}</div>
+      ${pins.length ? `<div class="list">${pins.map(p=>`<div class="li"><span>${p.top?'🔥':'•'}</span><div class="grow small b">${esc(p.text)}</div><span class="xs faint">${esc((App.member(p.by)?.name||'').split(' ')[0])}</span>${admin?`<button class="icon-btn" title="${p.top?'Sacar de urgente':'Marcar urgente'}" onclick="Ops.topPin('${c.id}','${p.id}')">${p.top?'⬇':'🔥'}</button><button class="icon-btn" title="Quitar" onclick="Ops.delPin('${c.id}','${p.id}')">🗑</button>`:''}</div>`).join('')}</div>`
+        : '<div class="small faint">Nada cargado. Agregá lo que el equipo no se puede olvidar con este cliente (ej: “siempre mandar el calendario antes del 20”, “no usar el color rojo”).</div>'}</div>`;
+  }
   function taskRow(t, showClient=true){
     const over = t.status!=='done' && t.due && t.due<UI.today();
     const m = App.member(t.assigneeId);
@@ -345,7 +372,7 @@
     const over = t.status!=='done' && t.due && t.due<UI.today();
     return `<div class="li click ${pickCls(t.id)}" onclick="Ops.pick('${t.id}')"><input type="checkbox" ${sel.has(t.id)?'checked':''} style="width:18px;height:18px;pointer-events:none">
       <div class="grow"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div><div class="xs faint">${esc(clientName(t.clientId))} · ${esc(label(TASK_ST,t.status))}</div></div>
-      ${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${UI.avatar(App.member(t.assigneeId),'sm')}</div>`;
+      ${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${peopleAvs(t)}</div>`;
   }
   function selBar(){
     if(!selMode) return '';
@@ -368,8 +395,8 @@
   function viewTasks(){
     const me = App.me();
     let ts = S('tasks').filter(unitOk).filter(t=>cm(t.clientId));
-    if(taskWho==='me') ts = ts.filter(t=>t.assigneeId===me.id);
-    else if(taskWho!=='all') ts = ts.filter(t=>t.assigneeId===taskWho);
+    if(taskWho==='me') ts = ts.filter(t=>isMine(t, me.id));
+    else if(taskWho!=='all') ts = ts.filter(t=>isMine(t, taskWho));
     if(search) ts = ts.filter(t=>(t.title+' '+clientName(t.clientId)).toLowerCase().includes(search.toLowerCase()));
     const bar = `<div class="toolbar"><div class="chips"><button class="chip ${taskWho==='all'?'on':''}" onclick="Ops.setWho('all')">Todas</button><button class="chip ${taskWho==='me'?'on':''}" onclick="Ops.setWho('me')">Mías</button>
       ${App.members().filter(m=>m.id!==me.id).map(m=>`<button class="chip ${taskWho===m.id?'on':''}" onclick="Ops.setWho('${m.id}')">${esc(m.name)}</button>`).join('')}</div>
@@ -396,7 +423,7 @@
         ${plegada?'<div class="xs faint" style="padding:8px 2px">Las tareas terminadas quedan acá, ocultas. Tocá “Ver” para mostrarlas.</div>':''}
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
-          <div class="m">${selMode?UI.avatar(App.member(t.assigneeId),'sm'):assignBtn(t)}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
+          <div class="m">${selMode?peopleAvs(t):assignBtn(t)}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
         ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}</div>`;
     }).join('');
     return { html: bar + `<div class="board" id="tboard">${lanes}</div><p class="xs faint" style="margin-top:8px">${selMode?'Tocá las tarjetas para seleccionarlas.':'Arrastrá las tarjetas entre columnas para cambiar su estado. Con “☑ Seleccionar” podés elegir varias y hacer acciones juntas.'}</p>` + selBar(),
@@ -568,7 +595,7 @@
   const clientOpts = (empty='— Interna / sin cliente —') => [['',empty], ...activeClients().map(c=>[c.id,c.name])];
 
   const Ops = {
-    HEALTH, activeClients, isOneShot, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
+    HEALTH, activeClients, isOneShot, isMine, taskPeople, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
     setSearch(v){ search = v; const pos = document.activeElement?.selectionStart; App.render(); const i = $('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     setWho(v){ taskWho = v; App.render(); },
     setMode(v){ taskMode = v; localStorage.setItem('anm_taskmode', v); App.render(); },
@@ -628,21 +655,44 @@
       } });
     },
 
+    addPin(cid){
+      const c = client(cid); if(!c || !App.isAdmin()) return;
+      UI.form({ title:`📌 No olvidar · ${c.name}`, values:{}, fields:[
+        { k:'text', label:'¿Qué no hay que olvidar?', req:true, placeholder:'Ej: mandar el calendario antes del 20' },
+        { k:'top', label:'', type:'check', text:'🔥 Es urgente / prioridad alta' },
+      ], onSubmit:v=>{ const pins = [...(c.pins||[]), { id:Store.uid(), text:v.text, top:!!v.top, by:App.me().id, at:new Date().toISOString() }].sort((a,b)=>(b.top?1:0)-(a.top?1:0));
+        Store.upsert('ops','clients',{ id:cid, pins }); UI.toast('Guardado en “No olvidar”','📌'); App.render(); } });
+    },
+    topPin(cid, pid){ const c = client(cid); if(!c || !App.isAdmin()) return;
+      const pins = (c.pins||[]).map(p=>p.id===pid ? { ...p, top:!p.top } : p).sort((a,b)=>(b.top?1:0)-(a.top?1:0)); Store.upsert('ops','clients',{ id:cid, pins }); App.render(); },
+    delPin(cid, pid){ const c = client(cid); if(!c || !App.isAdmin() || !confirm('¿Quitar esto de “No olvidar”?')) return;
+      Store.upsert('ops','clients',{ id:cid, pins:(c.pins||[]).filter(p=>p.id!==pid) }); App.render(); },
     pickAssignee(id){
       const t = Store.get('ops','tasks',id); if(!t) return;
-      const team = clientTeam(t.clientId);
-      const opts = assigneeOpts(t.clientId, t.assigneeId);
+      const team = clientTeam(t.clientId), chosen = taskPeople(t);
+      const opts = assigneeOpts(t.clientId, t.assigneeId).filter(o=>o[0]);
+      const sug = window.Asignar ? Asignar.suggest(t.title, t.area) : [];
       const box = UI.modal(`<h2>¿Quién se encarga?<button class="icon-btn x" data-close>✕</button></h2>
-        <div class="small muted" style="margin:-6px 0 12px">${esc(t.title)}</div>
-        <div class="list">${opts.map(([v,l])=>{ const m = App.member(v);
-          return `<div class="li click ${v===(t.assigneeId||'')?'picked':''}" data-v="${esc(v)}">${m?UI.avatar(m,'sm'):'<span class="av sm" style="background:var(--surface3);color:var(--text3)">–</span>'}<div class="grow b small">${esc(m?m.name:'Sin asignar')}</div>${m&&team.includes(v)?'<span class="xs faint">trabaja la cuenta</span>':''}${v===(t.assigneeId||'')?'<span>✓</span>':''}</div>`; }).join('')}</div>`);
-      box.querySelectorAll('[data-v]').forEach(el=>el.onclick = ()=>Ops.assign(id, el.dataset.v));
+        <div class="small muted" style="margin:-6px 0 12px">${esc(t.title)} · podés elegir más de una persona (la primera queda como principal)</div>
+        <div class="list" id="pa-list">${opts.map(([v])=>{ const m = App.member(v); if(!m) return '';
+          return `<div class="li click" data-v="${esc(v)}">${UI.avatar(m,'sm')}<div class="grow b small">${esc(m.name)}</div>${team.includes(v)?'<span class="xs faint">trabaja la cuenta</span>':''}${sug.includes(v)?'<span class="xs" style="color:var(--blue)">🤖 sugerido</span>':''}<span class="pa-n b" style="min-width:20px;text-align:right"></span></div>`; }).join('')}</div>
+        <div class="mfoot"><button class="btn g" id="pa-none" style="margin-right:auto">Sin asignar</button><button class="btn g" data-close>Cancelar</button><button class="btn p" id="pa-ok">Listo</button></div>`);
+      let sel = chosen.slice();
+      const paint = ()=>box.querySelectorAll('[data-v]').forEach(el=>{ const i = sel.indexOf(el.dataset.v); el.classList.toggle('picked', i>=0); el.querySelector('.pa-n').textContent = i<0 ? '' : i===0 ? '✓ principal' : '✓'; });
+      box.querySelectorAll('[data-v]').forEach(el=>el.onclick = ()=>{ const v = el.dataset.v; sel = sel.includes(v) ? sel.filter(x=>x!==v) : [...sel, v]; paint(); });
+      box.querySelector('#pa-none').onclick = ()=>Ops.setPeople(id, []);
+      box.querySelector('#pa-ok').onclick = ()=>Ops.setPeople(id, sel);
+      paint();
     },
-    assign(id, mid){
-      const t = Store.get('ops','tasks',id); UI.close(true); if(!t || (t.assigneeId||'')===mid) return;
-      Store.upsert('ops','tasks',{ id, assigneeId:mid });
-      if(mid && mid!==App.me().id) App.notify(mid, `${App.me().name.split(' ')[0]} te pasó la tarea: ${t.title}`, '#/ops/tareas');
-      UI.toast(mid ? `Ahora se encarga ${(App.member(mid)?.name||'').split(' ')[0]}` : 'Tarea sin responsable','👤'); App.render();
+    // Un solo responsable (atajo)
+    assign(id, mid){ Ops.setPeople(id, mid ? [mid] : []); },
+    setPeople(id, ids){
+      const t = Store.get('ops','tasks',id); UI.close(true); if(!t) return;
+      const before = taskPeople(t);
+      if(before.join()===ids.join()) return;
+      Store.upsert('ops','tasks',{ id, assigneeId:ids[0]||'', alsoIds:ids.slice(1) });
+      ids.filter(x=>!before.includes(x) && x!==App.me().id).forEach(x=>App.notify(x, `${App.me().name.split(' ')[0]} te sumó a la tarea: ${t.title}`, '#/ops/tareas'));
+      UI.toast(ids.length ? `Se encarga${ids.length>1?'n':''} ${ids.map(x=>(App.member(x)?.name||'').split(' ')[0]).join(' y ')}` : 'Tarea sin responsable','👤'); App.render();
     },
     editClientTeam(id){
       const c = client(id); if(!c) return;
@@ -659,6 +709,7 @@
         { k:'title', label:'¿Qué hay que hacer?', req:true },
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts(), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
         { k:'assigneeId', label:'Responsable', type:'select', options:assigneeOpts(t.clientId, t.assigneeId), half:true, hint:App.me().role==='invitado'?'Como invitado/a solo te podés asignar a vos.':'' }, { k:'due', label:'Vence', type:'date', half:true },
+        ...(App.me().role==='invitado' ? [] : [{ k:'alsoIds', label:'También se encargan', type:'multi', options:App.members().map(m=>[m.id,m.name.split(' ')[0]]) }]),
         { k:'status', label:'Estado', type:'select', options:TASK_ST, half:true }, { k:'priority', label:'Prioridad', type:'select', options:PRIO, half:true },
         { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
         { k:'note', label:'Nota para el cliente', placeholder:'Ej: falta OK final para empezar a salir' },
@@ -667,13 +718,16 @@
       onSubmit:v=>{
         const prevStatus = t.status;
         v.area = (v.area||'').trim().toUpperCase();
+        if(v.alsoIds) v.alsoIds = v.alsoIds.filter(x=>x && x!==v.assigneeId);
         const r = Store.upsert('ops','tasks',{ ...t, ...v, status:prevStatus });
+        (v.alsoIds||[]).filter(x=>!(t.alsoIds||[]).includes(x) && x!==App.me().id).forEach(x=>App.notify(x, `${App.me().name.split(' ')[0]} te sumó a la tarea: ${v.title}`, '#/ops/tareas'));
         if(v.status!==prevStatus || !id) setTaskStatus(r.id, v.status);
         if(id && v.assigneeId && v.assigneeId!==t.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `${App.me().name.split(' ')[0]} te pasó la tarea: ${v.title}`, '#/ops/tareas');
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
         App.render();
       } });
       wireAssignee(box);
+      if(!id && window.Asignar) wireSuggest(box);
     },
     dismiss(key, days=7){ Store.upsert('ops','dismissed',{ id:key, until:UI.addDays(UI.today(), days), by:App.me().id }); UI.toast(`Alerta descartada por ${days} días`,'✕'); App.render(); },
     aSelMode(on){ aSelMode = !!on; aSel.clear(); App.render(); },
@@ -893,7 +947,7 @@
       const id = m.id, isStatus = m.kind==='status';
       const cl = (m.clientId && client(m.clientId)) || clientByName(m.client);
       const members = App.members();
-      const taskRow = (t={}, i) => { const ex = t.existingId && Store.get('ops','tasks',t.existingId), as = memberByFirst(t.who)?.id || t.assigneeId || ex?.assigneeId || '';
+      const taskRow = (t={}, i) => { const ex = t.existingId && Store.get('ops','tasks',t.existingId), as = memberByFirst(t.who)?.id || t.assigneeId || ex?.assigneeId || (window.Asignar ? Asignar.suggest(t.text, t.area)[0] : '') || '';
         return `<div class="li im-row" style="flex-wrap:wrap;gap:8px"><input type="checkbox" checked class="im-on" style="width:18px;height:18px"><input type="hidden" class="im-ex" value="${ex?ex.id:''}">${ex?'<span class="tag t-blue" title="Ya existía: se actualiza su estado">↻ actualiza</span>':''}
           <input class="inp sm im-text grow" style="min-width:240px" value="${esc(t.text||'')}" placeholder="Qué hay que hacer">
           <select class="inp sm im-who"><option value="">— Sin asignar —</option>${members.map(x=>`<option value="${x.id}" ${x.id===as?'selected':''}>${esc(x.name)}</option>`).join('')}</select>

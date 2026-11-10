@@ -19,7 +19,7 @@
     return { n:i+1, name:LEVELS[i][1], done, xp:done, cur, next, pct: next ? Math.round((done-cur)/(next-cur)*100) : 100, toNext: next ? next-done : 0 };
   }
   // Tareas realizadas por una persona (desde una fecha, opcional)
-  const doneTasks = (memberId, since) => Store.all('ops','tasks').filter(t=>t.status==='done' && t.assigneeId===memberId && (!since || (t.doneAt||'').slice(0,10)>=since));
+  const doneTasks = (memberId, since) => Store.all('ops','tasks').filter(t=>t.status==='done' && (t.assigneeId===memberId || (t.alsoIds||[]).includes(memberId)) && (!since || (t.doneAt||'').slice(0,10)>=since));
   function onTime(memberId){
     const ts = doneTasks(memberId).filter(t=>t.due && t.doneAt);
     return ts.length ? Math.round(ts.filter(t=>t.doneAt.slice(0,10)<=t.due).length/ts.length*100) : null;
@@ -29,7 +29,7 @@
   const monthStart = () => UI.ym()+'-01';
   const SCALE = [[90,'Excelente','var(--green)'],[75,'Muy bien','var(--teal)'],[60,'Bien','var(--blue-l)'],[40,'A mejorar','var(--yellow)'],[0,'Atrasado/a','var(--red)']];
   function perf(memberId, from=monthStart(), to=UI.today()){
-    const ts = Store.all('ops','tasks').filter(t=>t.assigneeId===memberId);
+    const ts = Store.all('ops','tasks').filter(t=>t.assigneeId===memberId || (t.alsoIds||[]).includes(memberId));
     const rel = ts.filter(t=>(t.due && t.due>=from && t.due<=to) || (t.status==='done' && (t.doneAt||'').slice(0,10)>=from));
     const res = rel.filter(t=>t.status==='done');
     const pct = rel.length ? Math.round(res.length/rel.length*100) : null;
