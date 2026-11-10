@@ -24,11 +24,15 @@
     { id:'r-diseno',   words:'diseño, diseñar, diseñ, flyer, logo, placa, pieza gráfica, branding', who:['luli'] },
     { id:'r-social',   words:'social media, redes sociales, redes, contenido, creación de contenido, calendario, reporte, posteo, publicación, reel, historia, community', who:['luisi'] },
     { id:'r-web',      words:'web, página, pagina, landing, sitio, tecnología, tecnologia, dominio, hosting, tienda online, shopify, wordpress', who:['dio'] },
+    { id:'r-estrategia', words:'estrategi, planificación, planificacion, plan de marketing, plan de comunicación, plan anual, plan trimestral, objetivos, kpi, posicionamiento, propuesta de valor, público objetivo, publico objetivo, buyer persona, brief, briefing, benchmark, competencia, análisis, analisis, investigación de mercado, investigacion de mercado, diagnóstico, diagnostico, auditoría, auditoria, consultoría, consultoria, propuesta comercial, presupuesto para cliente, cotización, cotizacion, cotizar, pitch, presentación al cliente, presentacion al cliente, ppt, kickoff, onboarding, reunión con cliente, reunion con cliente, nuevo cliente, renovación, renovacion, upsell, lanzamiento, plan de lanzamiento, concepto creativo, idea de campaña, embudo, funnel', who:['santi'] },
     { id:'r-foto',     words:'foto, fotos, fotografía, fotografia, sesión de fotos, producción de fotos', who:['santi'] },
     { id:'r-revisar',  words:'revisar, revisión, revision, chequear, controlar, aprobar internamente', who:['santi','dio'] },
     { id:'r-pauta',    words:'pauta, ads, anuncio, anuncios, campaña, meta ads, google ads, presupuesto de pauta', who:['dio','santi'] },
   ];
-  const rules = () => Store.setting('assignRules', null) || DEFAULT_RULES;
+  // Reglas guardadas + las nuevas que se agregaron después por defecto (salvo que se hayan borrado a propósito)
+  const rules = () => { const saved = Store.setting('assignRules', null); if(!saved) return DEFAULT_RULES;
+    const del = Store.setting('assignRulesDel', []);
+    return [...saved, ...DEFAULT_RULES.filter(d=>d.id==='r-estrategia' && !saved.some(r=>r.id===d.id) && !del.includes(d.id))]; };
   const people = r => (r.ids && r.ids.length ? r.ids.map(App.member) : (r.who||[]).map(memberByAlias)).filter(Boolean).map(m=>m.id);
   const words = r => String(r.words||'').split(',').map(w=>norm(w).trim()).filter(Boolean);
   const hit = (txt, w) => w.length<=4 ? new RegExp('(^|[^a-z0-9])'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^a-z0-9]|$)').test(txt) : txt.includes(w);
@@ -82,7 +86,7 @@
       UI.form({ title: id ? 'Regla de asignación' : 'Nueva regla', values:{ words:r.words, ids:people(r) }, fields:[
         { k:'words', label:'Palabras (separadas por coma)', type:'textarea', rows:3, req:true, placeholder:'diseño, diseñar, flyer…' },
         { k:'ids', label:'Va para', type:'multi', req:true, options:App.members().map(m=>[m.id,m.name]), hint:'Podés elegir más de una persona: la primera queda como responsable principal.' },
-      ], danger: id ? { label:'Borrar regla', confirm:'¿Borrar esta regla?', fn:()=>{ save(list.filter(x=>x.id!==id)); App.render(); } } : null,
+      ], danger: id ? { label:'Borrar regla', confirm:'¿Borrar esta regla?', fn:()=>{ save(list.filter(x=>x.id!==id)); Store.setSetting('assignRulesDel', [...new Set([...Store.setting('assignRulesDel', []), id])]); App.render(); } } : null,
       onSubmit:v=>{ Object.assign(r, { words:v.words, ids:v.ids, who:[] }); if(!id) list.push(r); save(list); UI.toast('Regla guardada','🤖'); App.render(); } });
     },
     // Aplica las reglas a las tareas abiertas: primero muestra qué cambiaría

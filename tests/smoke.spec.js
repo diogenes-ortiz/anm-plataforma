@@ -121,9 +121,9 @@ test('asignación automática por temática y No olvidar del cliente', async ({ 
   const s = await page.evaluate(() => ({
     dis: Asignar.suggest('Diseñar flyer de promo'), cal: Asignar.suggest('Armar calendario de noviembre'),
     web: Asignar.suggest('Arreglar la web'), foto: Asignar.suggest('Sesión de fotos en el local'),
-    pauta: Asignar.suggest('Subir pauta de Meta'), rev: Asignar.suggest('Revisar copy'), nada: Asignar.suggest('Llamar al contador') }));
+    pauta: Asignar.suggest('Subir pauta de Meta'), est: Asignar.suggest('Armar la estrategia de diciembre'), est2: Asignar.suggest('Preparar propuesta comercial y PPT'), plan: Asignar.suggest('Planificación anual'), rev: Asignar.suggest('Revisar copy'), nada: Asignar.suggest('Llamar al contador') }));
   expect(s.dis).toEqual([ids.luli]); expect(s.cal).toEqual([ids.luisi]); expect(s.web).toEqual([ids.me]);
-  expect(s.foto).toEqual([ids.santi]); expect(s.pauta).toEqual([ids.me, ids.santi]); expect(s.rev).toEqual([ids.santi, ids.me]); expect(s.nada).toEqual([]);
+  expect(s.foto).toEqual([ids.santi]); expect(s.pauta).toEqual([ids.me, ids.santi]); expect(s.rev).toEqual([ids.santi, ids.me]); expect(s.nada).toEqual([]); expect(s.est).toEqual([ids.santi]); expect(s.est2).toEqual([ids.santi]); expect(s.plan).toEqual([ids.santi]);
   // En el formulario se asigna sola al escribir
   await page.goto('/#/ops/cliente/' + ids.c);
   await page.click('.hero >> text=＋ Agregar tarea');
