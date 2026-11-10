@@ -277,3 +277,7 @@ code{background:var(--surface3);border-radius:5px;padding:1px 5px;font-size:12px
 @media(min-width:861px){.selbar{left:calc(50% + var(--sidebar)/2);width:min(1100px,calc(100vw - var(--sidebar) - 40px))}}
 .alert.picked{outline:2px solid var(--blue)}
 body:has(.selbar) .toasts{bottom:110px}
+
+/* Columna Hecho plegada: angosta y discreta */
+.board .lane.lane-folded{opacity:.8}
+#tboard:has(.lane-folded){grid-template-columns:repeat(3,minmax(260px,1fr)) minmax(170px,210px);grid-auto-columns:unset}
