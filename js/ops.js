@@ -27,10 +27,12 @@
   const openTasks = () => S('tasks').filter(t=>t.status!=='done');
   const overdueTasks = () => openTasks().filter(t=>t.due && t.due<UI.today());
   // Entregables: automático según las unidades, o forzado por cliente (cal/rep = 'si' | 'no')
-  const needsCal = c => c.cal==='no' ? false : c.cal==='si' ? true : (c.units||[]).some(u=>CAL_UNITS.includes(u));
+  // Tipo de cliente: mensual (abono) u one shot (proyecto puntual). Los one shot no llevan entregables mensuales por defecto.
+  const isOneShot = c => c?.kind==='oneshot';
+  const needsCal = c => c.cal==='no' ? false : c.cal==='si' ? true : !isOneShot(c) && (c.units||[]).some(u=>CAL_UNITS.includes(u));
   const calRec = (cid, month) => Store.get('ops','calendars', cid+'_'+month);
   const repRec = (cid, month) => Store.get('ops','reports', cid+'_'+month);
-  const needsRep = c => c.rep==='no' ? false : c.rep==='si' ? true : (c.units||[]).some(u=>REP_UNITS.includes(u));
+  const needsRep = c => c.rep==='no' ? false : c.rep==='si' ? true : !isOneShot(c) && (c.units||[]).some(u=>REP_UNITS.includes(u));
   const prevYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return UI.ym(d); };
   // Fechas clave de cada cliente: el día del mes en que se entrega el calendario (del mes siguiente) y el reporte (del mes anterior)
   const dayIn = (ym, day) => { const [y,m] = ym.split('-').map(Number); return `${ym}-${UI.pad(Math.min(+day||1, new Date(y,m,0).getDate()))}`; };
@@ -186,7 +188,7 @@
     const al = alerts().filter(a=>a.level!=='info'); const n = id => al.filter(a=>a.cid===id).length;
     const chip = (v, inner, extra='') => `<button class="chip ${cf===v?'on':''}" onclick="Ops.setClient('${v}')" ${extra}>${inner}</button>`;
     return `<div class="chips scroll" style="margin-bottom:18px">${chip('', '▦ Todos los clientes')}
-      ${cs.map(c=>chip(c.id, `<span class="health h-${c.health||'ok'}" style="width:8px;height:8px;box-shadow:none"></span>${esc(c.name)}${n(c.id)?` <span class="tag t-red" style="padding:0 6px">${n(c.id)}</span>`:''}`)).join('')}
+      ${[...cs.filter(c=>!isOneShot(c)), ...cs.filter(isOneShot)].map((c,i,arr)=>(isOneShot(c) && (i===0 || !isOneShot(arr[i-1])) ? '<span class="xs faint b" style="align-self:center;margin:0 4px">⚡ One shot:</span>' : '')+chip(c.id, `<span class="health h-${c.health||'ok'}" style="width:8px;height:8px;box-shadow:none"></span>${esc(c.name)}${n(c.id)?` <span class="tag t-red" style="padding:0 6px">${n(c.id)}</span>`:''}`)).join('')}
       ${chip('__int', '🏠 Internas')}</div>`;
   }
 
@@ -207,7 +209,9 @@
     const bar = `<div class="toolbar"><div class="search grow"><input class="inp" placeholder="Buscar cliente…" value="${esc(search)}" oninput="Ops.setSearch(this.value)"></div>
       ${App.isAdmin()?'<button class="btn g" onclick="Ops.importFinance()">⇣ Importar clientes de Finanzas</button>':''}
       <button class="btn p" onclick="Ops.editClient()">＋ Cliente</button></div>`;
-    const cards = cs.length ? `<div class="grid g-auto">${cs.map(clientCard).join('')}</div>`
+    const mens = cs.filter(c=>!isOneShot(c)), once = cs.filter(isOneShot);
+    const sec = (t, sub, xs) => xs.length ? `<div class="sec-t" style="margin-top:22px">${t} · ${xs.length}<span class="faint" style="text-transform:none;letter-spacing:0;font-weight:600"> — ${sub}</span></div><div class="grid g-auto">${xs.map(clientCard).join('')}</div>` : '';
+    const cards = cs.length ? sec('🔁 Mensuales', 'abono todos los meses', mens) + sec('⚡ One shot', 'proyectos puntuales', once)
       : `<div class="card empty"><div class="big">🗂️</div>Todavía no hay clientes${App.unitFilter?' en esta unidad':''}.<br><br><button class="btn p" onclick="Ops.editClient()">＋ Agregar el primero</button></div>`;
     return { html: top + bar + cards };
   }
@@ -220,7 +224,7 @@
     const cal = needsCal(c) ? calRec(c.id, UI.ym())?.stage || 'planificar' : null;
     const team = [c.ownerId, ...(c.teamIds||[]).filter(x=>x!==c.ownerId)].map(App.member).filter(Boolean);
     return `<div class="card hover" onclick="App.go('#/ops/cliente/${c.id}')">
-      <div class="row" style="margin-bottom:10px"><span class="health h-${c.health||'ok'}"></span><div class="b grow ellip" style="font-size:15.5px">${esc(c.name)}</div><span class="avs">${team.map(m=>UI.avatar(m,'sm')).join('')}</span></div>
+      <div class="row" style="margin-bottom:10px"><span class="health h-${c.health||'ok'}"></span><div class="b grow ellip" style="font-size:15.5px">${esc(c.name)}${isOneShot(c)?' <span class="tag t-purple" style="font-size:11px">One shot</span>':''}</div><span class="avs">${team.map(m=>UI.avatar(m,'sm')).join('')}</span></div>
       <div class="row wrap" style="margin-bottom:12px">${App.unitTags(c.units)}</div>
       <div class="small prewrap" style="min-height:40px;color:${u?'var(--text)':'var(--text3)'}">${esc(u ? trunc(c.status||u.text, 150) : 'Sin actualizaciones todavía.')}</div>
       ${c.nextStep?`<div class="small" style="margin-top:10px"><span class="faint b">PRÓXIMO →</span> ${esc(c.nextStep)} ${c.nextStepDate?`<span class="tag ${c.nextStepDate<UI.today()?'t-red':''}">${UI.fdate(c.nextStepDate)}</span>`:''}</div>`:''}
@@ -544,7 +548,7 @@
   const clientOpts = (empty='— Interna / sin cliente —') => [['',empty], ...activeClients().map(c=>[c.id,c.name])];
 
   const Ops = {
-    HEALTH, activeClients, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
+    HEALTH, activeClients, isOneShot, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
     setSearch(v){ search = v; const pos = document.activeElement?.selectionStart; App.render(); const i = $('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     setWho(v){ taskWho = v; App.render(); },
     setMode(v){ taskMode = v; localStorage.setItem('anm_taskmode', v); App.render(); },
@@ -559,6 +563,7 @@
       const c = id ? client(id) : {};
       UI.form({ title: id ? 'Editar cliente' : 'Nuevo cliente', values:c, fields:[
         { k:'name', label:'Nombre', req:true },
+        { k:'kind', label:'Tipo de cliente', type:'select', options:[['mensual','🔁 Mensual (abono)'],['oneshot','⚡ One shot (proyecto puntual)']], default:'mensual' },
         { k:'units', label:'Unidades de negocio', type:'multi', options:App.unitOpts(), req:true },
         { k:'ownerId', label:'Responsable', type:'select', options:App.memberOpts(), half:true },
         { k:'health', label:'Estado', type:'select', options:Object.entries(HEALTH).map(([k,[l,e]])=>[k,e+' '+l]), half:true, default:'ok' },
