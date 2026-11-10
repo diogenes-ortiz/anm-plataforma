@@ -1,0 +1,12 @@
+{
+  "name": "anm-plataforma",
+  "private": true,
+  "description": "Herramientas de prueba de la plataforma ANM (la app en sí no necesita compilar nada).",
+  "scripts": {
+    "test": "playwright test",
+    "check": "for f in js/*.js; do node --check \"$f\" || exit 1; done && echo 'Sintaxis OK'"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

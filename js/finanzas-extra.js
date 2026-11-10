@@ -43,13 +43,13 @@
   function platformMember(){
     try{
       const me = localStorage.getItem('anm_me'); if(!me) return null;
-      const team = JSON.parse(localStorage.getItem('anm_doc_team')||'{}');
+      const team = JSON.parse(localStorage.getItem((window.ANM_CONFIG.LS_PREFIX||'')+'anm_doc_team')||'{}');
       return (team.members||[]).find(m=>m.id===me && !m.deleted) || null;
     }catch(e){ return null; }
   }
 
   async function remoteSecurity(){
-    const res = await fetch(SB_URL+'/rest/v1/anm_state?id=eq.main&select=data', { headers:SB_HEADERS });
+    const res = await fetch(SB_URL+'/rest/v1/anm_state?id=eq.main&select=data', { headers:await Auth.headers() });
     if(!res.ok) throw new Error('net');
     const rows = await res.json();
     return rows[0]?.data?.seguridad || null;
@@ -71,8 +71,8 @@
   window.finLock = ()=>{ sessionStorage.removeItem(OK_KEY); checkGate(); };
 
   async function checkGate(){
-    const m = platformMember();
-    if(m && m.role!=='admin'){ gate(`<div class="mtitle">No tenés acceso a Finanzas</div><div class="csub" style="font-size:12px">Esta sección es solo para admins. Pedile acceso a un admin del equipo.</div>`); return; }
+    const acc = Auth.loggedIn() ? (Auth.access || await Auth.check()) : null;
+    if(!acc || !['owner','socio'].includes(acc.role)){ gate(`<div class="mtitle">No tenés acceso a Finanzas</div><div class="csub" style="font-size:12px">Esta sección es solo para admins. Pedile acceso a un admin del equipo.</div>`); return; }
     const last = +sessionStorage.getItem(OK_KEY)||0;
     if(last && Date.now()-last < IDLE_MIN*6e4){ sessionStorage.setItem(OK_KEY, String(Date.now())); return; }
     sessionStorage.removeItem(OK_KEY);
