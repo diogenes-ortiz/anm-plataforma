@@ -19,7 +19,7 @@
     route(name, fn){ routes[name] = fn; },
     members(){ return Store.all('team','members').sort((a,b)=>a.name.localeCompare(b.name)); },
     member(id){ return Store.get('team','members',id); },
-    me(){ return this.member(localStorage.getItem('anm_me')); },
+    me(){ return gateState==='ok' || gateState==='checking' ? this.member(localStorage.getItem('anm_me')) : null; },
     isAdmin(){ return this.me()?.role==='admin'; },
     // Dueño principal: quien creó la plataforma. Es el único que crea o modifica socios.
     owner(){ const ms = this.members(); return ms.find(m=>m.owner) || ms.filter(m=>m.role==='admin').sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''))[0]; },
@@ -31,9 +31,9 @@
     unit(id){ return this.units().find(u=>u.id===id) || { id, label:id, color:'#7a7a8c' }; },
     unitOpts(){ return this.units().map(u=>[u.id,u.label]); },
     memberOpts(empty='— Sin asignar —'){ return [['',empty], ...this.members().map(m=>[m.id,m.name])]; },
-    // Solo los socios asignan trabajo a otras personas; el resto se asigna a sí mismo
-    assignOpts(){ const me = this.me(); return this.isAdmin() ? this.memberOpts() : [[me.id, me.name]]; },
-    unitTags(ids=[]){ return ids.map(id=>{ const u=this.unit(id); return `<span class="tag" style="background:${u.color}1f;color:color-mix(in srgb,${u.color} 62%,#000)">${esc(u.label)}</span>`; }).join(' '); },
+    // Socios y equipo asignan trabajo a cualquiera; el invitado solo a sí mismo
+    assignOpts(){ const me = this.me(); return me?.role!=='invitado' ? this.memberOpts() : [['', '— Sin asignar —'], [me.id, me.name]]; },
+    unitTags(ids=[]){ return ids.map(id=>{ const u=this.unit(id), c=UI.safeColor(u.color); return `<span class="tag" style="background:${c}22;color:${c}">${esc(u.label)}</span>`; }).join(' '); },
 
     // Filtro global por unidad de negocio (se recuerda por navegador)
     get unitFilter(){ return localStorage.getItem('anm_unit')||''; },
@@ -41,7 +41,7 @@
     unitBar(){
       const f = this.unitFilter;
       return `<div class="chips"><button class="chip ${!f?'on':''}" onclick="App.setUnit('')">Todas</button>${this.units().map(u=>
-        `<button class="chip ${f===u.id?'on':''}" onclick="App.setUnit('${u.id}')"><span class="dot" style="background:${u.color}"></span>${esc(u.label)}</button>`).join('')}</div>`;
+        `<button class="chip ${f===u.id?'on':''}" onclick="App.setUnit('${u.id}')"><span class="dot" style="background:${UI.safeColor(u.color)}"></span>${esc(u.label)}</button>`).join('')}</div>`;
     },
     setUnit(v){ this.unitFilter = v; this.render(); },
     matchUnit(units){ const f=this.unitFilter; return !f || (Array.isArray(units)?units:[units]).includes(f); },
@@ -64,9 +64,8 @@
     },
     _render(){
       const me = this.me();
-      if(joinPending){ if(App.member(joinPending)?.passHash) joinPending = null; else { renderGate(joinPending, true); return; } }
+      if(gateState!=='ok'){ renderGate(); return; }
       if(!me){ renderGate(); return; }
-      if(!me.passHash){ renderGate(me.id, true); return; }   // perfiles viejos: ya entraron, solo crean contraseña
       document.body.classList.remove('gated');
       $('#app').style.display = '';
       $('#gate').style.display = 'none';
@@ -111,119 +110,70 @@
   App.closeSidebar = ()=>{ $('.sidebar').classList.remove('open'); $('.sb-over').classList.remove('open'); };
   App.openSidebar = ()=>{ $('.sidebar').classList.add('open'); $('.sb-over').classList.add('open'); };
 
-  // ── Acceso: onboarding / invitación / elegir perfil ────────────────────────
-  function newInvite(){ return Math.random().toString(36).slice(2,8).toUpperCase(); }
-  App.newInvite = newInvite;
-  App.inviteLink = m => location.href.split('#')[0].split('?')[0] + '?join=' + m.invite;
-
-  // Contraseñas: se guarda solo un hash (SHA-256 con sal propia de cada perfil)
-  async function hashPass(salt, pass){
-    const txt = salt + '|' + pass;
-    if(window.crypto?.subtle){ const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
-    let h = 5381; for(const c of txt) h = (h*33) ^ c.charCodeAt(0); return 'djb'+(h>>>0).toString(16);
-  }
-  const newSalt = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  // ── Acceso: entrar con Google ───────────────────────────────────────────────
+  // La lista de Gmails autorizados vive en la base (anm_access) y solo el dueño la modifica.
+  // Cada mail autorizado se vincula con su perfil del equipo (por email o por member_id).
+  const ROLE_OF = { owner:'admin', socio:'admin', equipo:'equipo', invitado:'invitado' };
   const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
-  async function setPassword(id, pass){ const salt = newSalt(); Store.upsert('team','members',{ id, passSalt:salt, passHash:await hashPass(salt, pass) }); }
-  App.setPassword = setPassword;
-  const validPass = (a, b) => { if((a||'').length<6){ UI.toast('La contraseña tiene que tener al menos 6 caracteres','⚠️'); return false; } if(a!==b){ UI.toast('Las contraseñas no coinciden','⚠️'); return false; } return true; };
-
   const gateBox = inner => `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Studio · Plataforma</div></div></div>${inner}</div>`;
-  const enter = e => { if(e.key==='Enter') e.target.closest('.mbox').querySelector('.btn.p')?.click(); };
+  const G_ICON = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+  let gateState = 'checking';   // checking | login | denied | ok
 
-  function renderGate(pending, codeOk){
+  function renderGate(){
     $('#app').style.display = 'none';
     const g = $('#gate'); g.style.display = '';
-    const members = App.members();
-    if(!members.length && Store.status==='syncing'){ g.innerHTML = gateBox('<h2>Conectando…</h2><p class="muted">Cargando los datos del equipo.</p>'); return; }
-    // Primera vez: se crea el primer socio
-    if(!members.length){
-      g.innerHTML = gateBox(`<h2>¡Bienvenido/a! 👋</h2><p class="muted" style="margin-bottom:18px">Creá tu perfil de socio/a: vas a poder cargar al equipo, asignar tareas y ver Finanzas.</p>
-        <div class="fld"><label>Nombre y apellido</label><input class="inp" id="g-name" placeholder="Ej: Diogenes Ortiz"></div>
-        <div class="frow"><div class="fld"><label>Contraseña</label><input class="inp" id="g-p1" type="password" autocomplete="new-password"></div><div class="fld"><label>Repetila</label><input class="inp" id="g-p2" type="password" autocomplete="new-password"></div></div>
-        ${Store.status==='error'?'<div class="alert warn"><div class="ai">⚠️</div><div class="ad">No hay conexión con la base de datos. Si tu equipo ya usa la plataforma, esperá a tener conexión antes de crear un perfil nuevo.</div></div>':''}
-        <button class="btn p" style="width:100%;justify-content:center" onclick="App.createFirst()">Empezar</button>`);
-      g.querySelectorAll('input').forEach(i=>i.onkeydown = enter);
+    if(gateState==='checking'){ g.innerHTML = gateBox('<h2>Conectando…</h2><p class="muted">Verificando tu acceso.</p>'); return; }
+    if(gateState==='pick'){
+      const libres = App.members().filter(x=>!x.email);
+      g.innerHTML = gateBox(`<h2>¡Hola! 👋</h2><p class="muted" style="margin-bottom:14px">Es la primera vez que entrás con <b>${esc(Auth.email)}</b>. ¿Cuál de estos perfiles del equipo sos?</p>
+        <div class="list" style="margin-bottom:12px">${libres.map(x=>`<div class="li click" style="cursor:pointer" onclick="App.pickProfile('${x.id}')">${UI.avatar(x,'sm')}<div class="grow b">${esc(x.name)}</div><span>›</span></div>`).join('')}</div>
+        <button class="btn g" style="width:100%;justify-content:center" onclick="App.pickProfile('')">No estoy en la lista: crear mi perfil</button>`);
       return;
     }
-    // Perfil sin contraseña todavía: la crea con el código que le pasó un socio
-    if(pending){
-      const m = App.member(pending);
-      g.innerHTML = gateBox(`<h2>Hola, ${esc(m.name.split(' ')[0])} 👋</h2><p class="muted" style="margin-bottom:18px">Es tu primera vez. Creá tu contraseña para entrar de ahora en más.</p>
-        ${codeOk?'':`<div class="fld"><label>Código de invitación</label><input class="inp" id="g-code" placeholder="Te lo pasa un socio (ej: K3F9QZ)" style="text-transform:uppercase"></div>`}
-        <div class="frow"><div class="fld"><label>Nueva contraseña</label><input class="inp" id="g-p1" type="password" autocomplete="new-password"></div><div class="fld"><label>Repetila</label><input class="inp" id="g-p2" type="password" autocomplete="new-password"></div></div>
-        <button class="btn p" style="width:100%;justify-content:center" onclick="App.firstPassword('${m.id}', ${codeOk?'true':'false'})">Crear contraseña y entrar</button>
-        <button class="btn g" style="width:100%;justify-content:center;margin-top:8px" onclick="App.cancelFirst()">← Volver</button>`);
-      g.querySelectorAll('input').forEach(i=>i.onkeydown = enter);
-      setTimeout(()=>g.querySelector('input')?.focus(), 30);
+    if(gateState==='denied'){
+      g.innerHTML = gateBox(`<h2>Sin acceso ⛔</h2><p class="muted" style="margin-bottom:16px">La cuenta <b>${esc(Auth.email)}</b> no está autorizada para entrar a la plataforma de ANM.</p>
+        <p class="small" style="margin-bottom:18px">Pedile al dueño de la agencia que agregue este mail en <b>Equipo → Accesos</b> y volvé a intentar.</p>
+        <button class="btn p" style="width:100%;justify-content:center" onclick="location.reload()">Ya me autorizaron, reintentar</button>
+        <button class="btn g" style="width:100%;justify-content:center;margin-top:8px" onclick="App.logout(true)">Entrar con otra cuenta</button>`);
       return;
     }
-    g.innerHTML = gateBox(`<h2>Ingresá</h2>
-      <div class="fld"><label>Tu nombre</label><input class="inp" id="g-name" list="g-names" placeholder="Ej: Diogenes Ortiz" autocomplete="username"><datalist id="g-names">${members.map(m=>`<option value="${esc(m.name)}">`).join('')}</datalist></div>
-      <div class="fld"><label>Contraseña</label><input class="inp" id="g-pass" type="password" autocomplete="current-password"></div>
-      <button class="btn p" style="width:100%;justify-content:center" onclick="App.login()">Entrar</button>
-      <p class="xs faint" style="margin-top:14px">¿Primera vez? Escribí tu nombre y tocá Entrar: te va a pedir el código que te pasó un socio para crear tu contraseña.</p>`);
-    g.querySelectorAll('input').forEach(i=>i.onkeydown = enter);
-    setTimeout(()=>$('#g-name')?.focus(), 30);
+    g.innerHTML = gateBox(`<h2>Ingresá</h2><p class="muted" style="margin-bottom:18px">Entrá con tu cuenta de Google. Solo pueden entrar los mails que autorizó el dueño de la agencia.</p>
+      ${Auth.lastError?`<div class="alert warn" style="margin-bottom:14px"><div class="ai">⚠️</div><div class="ad">${esc(Auth.lastError)}</div></div>`:''}
+      <button class="btn g" style="width:100%;justify-content:center;gap:10px;padding:12px" onclick="Auth.login()">${G_ICON} Entrar con Google</button>`);
   }
 
-  App.createFirst = async ()=>{
-    const name = $('#g-name').value.trim(); if(!name) return UI.toast('Ingresá tu nombre','⚠️');
-    if(!validPass($('#g-p1').value, $('#g-p2').value)) return;
-    if(Store.status!=='synced') return UI.toast('Sin conexión con la base de datos: no se puede crear el perfil todavía. Reintentá en unos segundos.','⚠️');
-    const m = Store.upsert('team','members',{ name, role:'admin', owner:true, units:[], color:UI.COLORS[0], invite:newInvite(), joinedAt:new Date().toISOString() });
-    await setPassword(m.id, $('#g-p1').value);
+  // Busca (o crea) el perfil del equipo de la persona que entró y lo deja como "yo"
+  function bindMember(acc){
+    const email = Auth.email, ms = App.members();
+    let m = (acc.member_id && App.member(acc.member_id)) || ms.find(x=>(x.email||'').toLowerCase()===email);
+    const role = ROLE_OF[acc.role] || 'equipo';
+    if(!m){
+      const gname = Auth.session?.name || email.split('@')[0];
+      m = ms.find(x=>!x.email && norm(x.name)===norm(gname));   // perfil cargado antes sin mail
+      if(!m && !pickedNew && ms.some(x=>!x.email)){ gateState = 'pick'; return false; }   // que elija cuál de los perfiles es
+      m = m ? Store.upsert('team','members',{ id:m.id, email }) :
+        Store.upsert('team','members',{ name:gname, email, role, owner:acc.role==='owner', units:[], color:UI.COLORS[ms.length % UI.COLORS.length], emailReminders:true, joinedAt:new Date().toISOString() });
+      if(!m.joinedAt) Store.upsert('team','members',{ id:m.id, joinedAt:new Date().toISOString() });
+      Game.log('joined', `${m.name} entró a la plataforma`, { icon:'🎉' });
+    }
+    // El rol que manda es el de la base (lo define el dueño)
+    if(m.role!==role || !!m.owner!==(acc.role==='owner')) m = Store.upsert('team','members',{ id:m.id, role, owner:acc.role==='owner' });
     localStorage.setItem('anm_me', m.id);
-    Game.log('joined', `${name} creó la plataforma`, { icon:'🎉' });
-    UI.confetti(); App.render();
-  };
-  App.login = async ()=>{
-    const q = norm($('#g-name').value), pass = $('#g-pass').value;
-    if(!q) return UI.toast('Escribí tu nombre','⚠️');
-    const ms = App.members();
-    const m = ms.find(x=>norm(x.name)===q) || (ms.filter(x=>norm(x.name).split(' ')[0]===q).length===1 ? ms.find(x=>norm(x.name).split(' ')[0]===q) : null);
-    if(!m) return UI.toast('Ese nombre no está en la lista del equipo. Solo pueden entrar las personas que cargó un socio.','⛔');
-    if(!m.passHash) return renderGate(m.id);
-    if(await hashPass(m.passSalt, pass)!==m.passHash){ $('#g-pass').value=''; $('#g-pass').style.borderColor='var(--red)'; return UI.toast('Contraseña incorrecta','⛔'); }
-    localStorage.setItem('anm_me', m.id);
-    UI.toast(`Hola, ${m.name.split(' ')[0]}`,'👋'); App.render();
-  };
-  App.firstPassword = async (id, codeOk)=>{
-    const m = App.member(id); if(!m) return App.render();
-    if(!codeOk && $('#g-code').value.trim().toUpperCase()!==m.invite) return UI.toast('El código no coincide. Pedíselo a un socio.','⛔');
-    if(!validPass($('#g-p1').value, $('#g-p2').value)) return;
-    await setPassword(id, $('#g-p1').value);
-    joinPending = null;
-    localStorage.setItem('anm_me', id);
-    if(!m.joinedAt){ Store.upsert('team','members',{ id, joinedAt:new Date().toISOString() }); Game.log('joined', `${m.name} se sumó al equipo`, { icon:'🎉' }); UI.confetti(); }
-    App.render();
-  };
-  App.cancelFirst = ()=>{ joinPending = null; localStorage.removeItem('anm_me'); App.render(); };
-  App.logout = ()=>{ if(confirm('¿Cerrar sesión en este navegador?')){ localStorage.removeItem('anm_me'); App.render(); } };
-  App.changePassword = ()=>{
-    const me = App.me();
-    UI.form({ title:'🔑 Cambiar contraseña', submit:'Guardar', fields:[
-      ...(me.passHash ? [{ k:'cur', label:'Contraseña actual', type:'password' }] : []),
-      { k:'p1', label:'Nueva contraseña', type:'password', half:true }, { k:'p2', label:'Repetila', type:'password', half:true },
-    ], onSubmit:v=>{ (async()=>{
-        if(me.passHash && await hashPass(me.passSalt, v.cur)!==me.passHash) return UI.toast('La contraseña actual no es correcta','⛔');
-        if(!validPass(v.p1, v.p2)) return;
-        await setPassword(me.id, v.p1); UI.toast('Contraseña actualizada','🔑');
-      })(); } });
+    // Limpieza de datos sensibles que quedaron del ingreso con contraseña
+    Store.stripFields('team','members',['passHash','passSalt','invite']);
+    if(Store.setting('aiToken','') || Store.setting('aiUrl','')){ Store.setSetting('aiToken',''); Store.setSetting('aiUrl',''); }
+    return true;
+  }
+  let pickedNew = false, lastAcc = null;
+  App.pickProfile = id=>{
+    if(id) Store.upsert('team','members',{ id, email:Auth.email }); else pickedNew = true;
+    if(bindMember(lastAcc)) gateState = 'ok'; App.render();
   };
 
-  // Link de invitación: lleva directo a crear la contraseña (o al login si ya la tiene)
-  function handleJoin(){
-    const code = new URLSearchParams(location.search).get('join');
-    if(!code) return;
-    const m = App.members().find(x=>x.invite===code.toUpperCase());
-    history.replaceState(null,'',location.pathname+location.hash);
-    if(!m) return UI.toast('El link de invitación no es válido o fue regenerado','⛔');
-    if(m.passHash){ if(!App.me()) UI.toast(`${m.name.split(' ')[0]}, ya tenés contraseña: ingresá con tu nombre`,'🔑'); return; }
-    localStorage.removeItem('anm_me');
-    joinPending = m.id;
-  }
-  let joinPending = null;
+  App.logout = async (sinPreguntar)=>{
+    if(!sinPreguntar && !confirm('¿Cerrar sesión en este navegador?')) return;
+    localStorage.removeItem('anm_me'); await Auth.logout(); location.reload();
+  };
 
   // ── Notificaciones ───────────────────────────────────────────────────────────
   App.openNotifications = ()=>{
@@ -233,7 +183,7 @@
           <button class="btn xs d" onclick="App.deleteNotif([...document.querySelectorAll('.nt-sel:checked')].map(c=>c.value))">🗑 Borrar seleccionados</button></div>
         <div class="list">${list.map(n=>{ const from=App.member(n.from); const unread=!(n.readBy||[]).includes(me.id);
         return `<div class="li"><input type="checkbox" class="nt-sel" value="${n.id}" style="width:17px;height:17px">${UI.avatar(from,'sm')}<div class="grow"><div class="${unread?'b':''} prewrap">${unread?'<span style="color:var(--blue)">● </span>':''}${esc(n.text)}</div><div class="xs faint">${esc(from?.name||'')} · ${UI.ago(n.at)}${n.to==='all'?' · para todo el equipo':''}</div></div>
-        ${n.link?`<a class="btn xs g" href="${esc(n.link)}" onclick="App.readNotif('${n.id}');UI.close()">Ver</a>`:''}${unread?`<button class="btn xs g" title="Marcar como leído" onclick="App.readNotif('${n.id}');App.openNotifications()">✓</button>`:''}<button class="icon-btn" title="Borrar" onclick="App.deleteNotif(['${n.id}'])">🗑</button></div>`; }).join('')}</div>`
+        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="App.readNotif('${n.id}');UI.close()">Ver</a>`:''}${unread?`<button class="btn xs g" title="Marcar como leído" onclick="App.readNotif('${n.id}');App.openNotifications()">✓</button>`:''}<button class="icon-btn" title="Borrar" onclick="App.deleteNotif(['${n.id}'])">🗑</button></div>`; }).join('')}</div>`
         : '<div class="empty"><div class="big">🔕</div>No tenés avisos</div>'}
       <div class="mfoot">${unreadAny?'<button class="btn g" onclick="App.readNotif();App.openNotifications()">Marcar todo como leído</button>':''}${list.length?'<button class="btn d" style="margin-right:auto" onclick="App.deleteNotif(\'all\')">Borrar todos</button>':''}<button class="btn g" data-close>Cerrar</button></div>`);
   };
@@ -325,12 +275,20 @@
     let pending = false;
     Store.on(ev=>{ if(ev.type!=='change' || rendering) return; if(pending) return; pending = true;
       requestAnimationFrame(()=>{ pending = false; if(!$('#modal').classList.contains('open') && !document.activeElement?.matches('input,textarea,select')) App.render(); }); });
-    // Mostrar enseguida lo guardado en este navegador y sincronizar por detrás
+    // 1) ¿Hay sesión de Google? 2) ¿El mail está autorizado? 3) Recién ahí se leen los datos
+    if(!Auth.loggedIn()){ gateState = 'login'; App.render(); return; }
+    App.render();
+    const acc = await Auth.check();
+    if(!Auth.loggedIn()){ gateState = 'login'; App.render(); return; }
+    if(!acc){ gateState = 'denied'; App.render(); return; }
+    lastAcc = acc;
+    Store.setDocs(acc.role==='invitado' ? ['ops','team'] : ['ops','growth','team']);
+    Store.loadLocal();
     const ready = Store.init();
-    const joining = /[?&]join=/.test(location.search);
-    if(!joining) App.render();
+    const known = (acc.member_id && App.member(acc.member_id)) || App.members().some(x=>(x.email||'').toLowerCase()===Auth.email);
+    if(known && bindMember(acc)){ gateState = 'ok'; App.render(); }
     await ready;
-    handleJoin();
+    if(gateState!=='ok' && bindMember(acc)) gateState = 'ok';
     App.render();
   }
   window.App = App;

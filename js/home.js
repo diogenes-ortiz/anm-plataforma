@@ -67,16 +67,19 @@
       const pf = Game.perf(m.id);
       const tasks = Ops.openTasks().filter(t=>t.assigneeId===m.id).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
-      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div>${m.title?`<div class="small muted">${esc(m.title)}</div>`:''}<div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.passHash?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin email</span>'}</div></div><span class="lvl" title="${esc(pf.label)} este mes" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span></div>
+      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div>${m.title?`<div class="small muted">${esc(m.title)}</div>`:''}<div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.joinedAt?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin Gmail</span>'}</div></div><span class="lvl" title="${esc(pf.label)} este mes" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
         <div class="grid g3 small" style="gap:8px;margin-bottom:14px"><div><div class="b">✅ ${pf.resolved}/${pf.assigned}</div><div class="xs faint">resueltas (mes)</div></div><div><div class="b">${tasks}</div><div class="xs faint">pendientes</div></div><div><div class="b">${pf.overdue}</div><div class="xs faint">vencidas</div></div></div>
         <div class="xs muted" style="margin-bottom:14px">${clients.length?'Cuentas: '+clients.map(c=>esc(c.name)).join(', '):'Sin cuentas asignadas'}</div>
-        ${App.canManage(m)||m.id===App.me().id?`<div class="row wrap">${m.passHash||!App.canManage(m)?'':`<button class="btn sm p" onclick="Team.share('${m.id}')">🔗 Mandar acceso</button>`}<button class="btn sm g" onclick="Team.edit('${m.id}', ${m.id===App.me().id})">✎ Editar</button>${m.passHash&&m.id!==App.me().id&&App.canManage(m)?`<button class="btn sm g" onclick="Team.resetPass('${m.id}')">🔑 Resetear contraseña</button>`:''}</div>`:''}</div>`;
+        ${App.canManage(m)||m.id===App.me().id?`<div class="row wrap"><button class="btn sm g" onclick="Team.edit('${m.id}', ${m.id===App.me().id})">✎ Editar</button></div>`:''}</div>`;
     }).join('');
     return { title:'Equipo', crumb:'Invitá a colaborar', html:`
-      <div class="toolbar"><div class="small muted grow">Cada persona entra con su nombre y contraseña. Solo pueden entrar las personas de esta lista. Los socios cargan perfiles antes de que la persona entre (para ya asignarle tareas) y mandarle su acceso: la primera vez crea su contraseña. Los roles definen qué ve cada uno: <b>Socio/a</b> (dueños: todo + Finanzas, cargan gente y asignan tareas; solo el 👑 dueño principal crea socios), <b>Equipo</b> (Operaciones + Ventas; se asigna tareas a sí mismo), <b>Invitado/a</b> (solo Operaciones, ideal freelancers). Finanzas no aparece para quien no es socio.</div>
-      ${App.isOwner()&&Team.pendingSeed().length?`<button class="btn g" onclick="Team.seed()">📥 Cargar equipo (${Team.pendingSeed().length})</button>`:''}${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
-      <div class="grid g-auto">${cards}</div>` };
+      <div class="toolbar"><div class="small muted grow">Cada persona entra con su cuenta de Google. Solo pueden entrar los Gmails que autorizó el 👑 dueño principal, y él define el rol de cada uno: <b>Socio/a</b> (todo + Finanzas), <b>Equipo</b> (Operaciones y Ventas; puede editar y reasignar tareas) o <b>Invitado/a</b> (solo Operaciones, ideal freelancers).</div>
+      ${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
+      ${App.isOwner()?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>🔐 Accesos: Gmails que pueden entrar</h3><span class="grow"></span><button class="btn sm p" onclick="Team.addAccess()">＋ Autorizar un Gmail</button></div>
+        <div id="acc-list"><div class="small faint">Cargando…</div></div>
+        <p class="xs faint" style="margin-top:10px">Solo vos ves y cambiás esta lista: la base de datos rechaza cualquier cambio que no venga de tu cuenta. Si sacás a alguien, deja de poder entrar al instante.</p></div>`:''}
+      <div class="grid g-auto">${cards}</div>`, after:()=>{ if(App.isOwner()) Team.loadAccess(); } };
   });
 
   // ── Ajustes ──────────────────────────────────────────────────────────────────
@@ -85,7 +88,8 @@
     return { title:'Ajustes', crumb:'', html:`<div class="grid g2">
       <div class="card"><div class="card-h"><h3>Mi perfil</h3></div>
         <div class="row" style="margin-bottom:16px">${UI.avatar(me,'lg')}<div><div class="b">${esc(me.name)}</div><div class="xs faint">${esc(App.ROLES[me.role])}</div></div></div>
-        <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn g" onclick="App.changePassword()">🔑 Cambiar contraseña</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
+        <div class="xs faint" style="margin:-8px 0 14px">Entrás con Google: ${esc(Auth.email)}</div>
+        <div class="row wrap"><button class="btn g" onclick="Team.edit('${me.id}', true)">✎ Editar perfil</button><button class="btn d" onclick="App.logout()">Cerrar sesión</button></div></div>
       <div class="card"><div class="card-h"><h3>Unidades de negocio</h3>${admin?'<span class="grow"></span><button class="btn xs g" onclick="Team.editUnits()">Editar</button>':''}</div>
         <div class="row wrap">${App.unitTags(App.units().map(u=>u.id))}</div>
         <p class="xs faint" style="margin-top:12px">Sirven para filtrar Operaciones y Ventas (Social Media, Pauta, Branding, Web…).</p></div>
@@ -98,12 +102,9 @@
         <div class="small" style="margin-bottom:10px">Tus mails: <b>${me.email?(me.emailReminders===false?'desactivados':'activados · '+esc(me.email)):'<span style="color:var(--orange)">falta cargar tu email</span>'}</b> <a href="#" onclick="Team.edit('${me.id}', true);return false">cambiar</a></div>
         ${admin?(()=>{ const sin = App.members().filter(x=>!x.email); return sin.length?`<div class="alert warn" style="margin:0"><div class="ai">⚠️</div><div class="ad">Sin email cargado (no reciben mails): ${sin.map(x=>esc(x.name)).join(', ')}</div></div>`:'<div class="small" style="color:var(--green)">✓ Todo el equipo tiene email cargado.</div>'; })():''}
         ${admin?`<p class="xs faint" style="margin-top:10px">Instalación: <a href="https://github.com/diogenes-ortiz/anm-plataforma/blob/main/apps-script/Recordatorios.gs" target="_blank">apps-script/Recordatorios.gs</a> (instrucciones arriba del archivo).</p>`:''}</div>
-      ${admin?`<div class="card"><div class="card-h"><h3>🧠 IA para ordenar reuniones</h3></div>
-        <p class="small muted" style="margin-bottom:10px">En Operaciones → Reuniones → “🧠 Ordenar reunión” pegás la transcripción o las notas y sale la minuta ordenada, las tareas y el status. ${Store.setting('aiUrl','')?'<b style="color:var(--green)">✓ Modo automático conectado.</b>':'Ahora funciona en <b>modo manual</b> (copiar y pegar en Claude). Para que sea automático, conectá tu clave de la API de Claude con Apps Script.'}</p>
-        <button class="btn g" onclick="Reunion.configure()">⚙ Configurar</button></div>`:''}
       <div class="card"><div class="card-h"><h3>🔒 Sobre la seguridad</h3></div>
-        <p class="small muted">Cada persona entra con su nombre y contraseña (se guarda cifrada, nunca en texto). Finanzas pide además su propia contraseña y solo aparece para los socios.</p>
-        <p class="small muted" style="margin-top:8px">Importante: hoy la base de datos usa una clave pública, así que la protección es “de uso” (evita miradas casuales), no bancaria. Para blindarlo el próximo paso es activar el login con email de Supabase y reglas de acceso por rol.</p></div>
+        <p class="small muted">Cada persona entra con su cuenta de Google y solo si el dueño autorizó su Gmail. La base de datos rechaza cualquier lectura o escritura sin sesión, y Finanzas solo la pueden leer los socios, aunque alguien conozca la dirección de la base.</p>
+        <p class="small muted" style="margin-top:8px">Si no usás la plataforma por 14 días, la sesión se cierra sola en ese navegador.</p></div>
     </div>` };
   });
 
@@ -113,70 +114,60 @@
       const m0 = id ? App.member(id) : { role:'equipo', color:UI.COLORS[App.members().length % UI.COLORS.length], units:[] };
       const m = { ...m0, emailReminders: m0.emailReminders!==false };
       const admin = App.isAdmin();
-      const adminsLeft = App.members().filter(x=>x.role==='admin' && x.id!==id).length;
       UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
         { k:'name', label:'Nombre', req:true, half:true }, { k:'title', label:'Puesto', half:true, placeholder:'Ej: Social Media Manager' },
-        { k:'email', label:'Email', type:'email', half:true }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
-        ...(admin && !self && (!id || App.canManage(m)) ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES).filter(([k])=>k!=='admin' || App.isOwner()), hint:App.isOwner()?'':'Solo el dueño principal puede crear socios.' }] : []),
+        { k:'email', label:'Gmail', type:'email', half:true, hint:App.isOwner()?'Para que pueda entrar, autorizalo en “Accesos”.':'' }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
         ...(admin ? [{ k:'cuentas', label:'Cuentas que trabaja', type:'multi', options:Ops.activeClients().map(c=>[c.id,c.name]), default:id ? Ops.activeClients().filter(c=>c.ownerId===id || (c.teamIds||[]).includes(id)).map(c=>c.id) : [], hint:'Podés asignarlas antes de que entre: cuando entre ya ve sus cuentas y tareas.' }] : []),
         { k:'color', label:'Color', type:'color', half:true },
         { k:'emailReminders', label:'Mails', type:'check', text:'Recibir recordatorios y avisos por mail', default:true, half:true },
       ],
-      danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', confirm:`¿Quitar a ${m.name}? Su historial se conserva, pero ya no podrá entrar.`, fn:()=>{ Store.remove('team','members',id); App.render(); } } : null,
+      danger: id && App.canManage(m) && id!==App.me().id && App.owner()?.id!==id ? { label:'Quitar del equipo', confirm:`¿Quitar a ${m.name}? Su historial se conserva, pero ya no podrá entrar.`, fn:()=>{ Store.remove('team','members',id); if(App.isOwner() && m.email) Auth.removeAccess(m.email).catch(()=>{}); App.render(); } } : null,
       onSubmit:v=>{
-        if(id && m.role==='admin' && v.role && v.role!=='admin' && !adminsLeft){ UI.toast('Tiene que quedar al menos un socio','⚠️'); return false; }
-        if(v.role==='admin' && m.role!=='admin' && !App.isOwner()){ UI.toast('Solo el dueño principal puede crear socios','⛔'); return false; }
-        if(id && App.owner()?.id===id && v.role && v.role!=='admin'){ UI.toast('El dueño principal siempre es socio','⚠️'); return false; }
+        if(v.email) v.email = v.email.trim().toLowerCase();
         const cuentas = v.cuentas; delete v.cuentas;
-        const r = Store.upsert('team','members',{ ...m, ...v, invite:m.invite||App.newInvite() });
-        // Cuentas asignadas: se suma/saca a la persona del equipo de cada cliente
+        const r = Store.upsert('team','members',{ ...m, ...v });
+        // Cuentas asignadas: se suma/saca a la persona del equipo de cada cliente (antes de que entre, así ya ve todo)
         if(cuentas) Ops.activeClients().forEach(c=>{ const tiene = (c.teamIds||[]).includes(r.id), quiere = cuentas.includes(c.id);
           if(quiere && !tiene) Store.upsert('ops','clients',{ id:c.id, teamIds:[...(c.teamIds||[]), r.id] });
           if(!quiere && tiene && c.ownerId!==r.id) Store.upsert('ops','clients',{ id:c.id, teamIds:(c.teamIds||[]).filter(x=>x!==r.id) }); });
-        if(!id){ Game.log('member_invited', `Sumó a ${v.name} al equipo`, { icon:'👋' }); UI.toast(`${v.name} ya está cargado: le podés asignar tareas`,'👤'); setTimeout(()=>{ if(confirm(`¿Le mandás ahora el acceso a ${v.name}?\n\n(Podés hacerlo después desde su tarjeta con “Mandar acceso”.)`)) Team.share(r.id); }, 60); }
+        if(!id){ Game.log('member_invited', `Sumó a ${v.name} al equipo`, { icon:'👋' }); UI.toast(`${v.name} ya está cargado: le podés asignar tareas`,'👤');
+          if(App.isOwner() && v.email) setTimeout(()=>{ if(confirm(`¿Autorizás ya a ${v.email} para que entre a la plataforma?`)) Team.addAccess({ email:v.email, member_id:r.id }); }, 60); }
         App.render();
       } });
     },
-    share(id){
-      const m = App.member(id), link = App.inviteLink(m);
-      const msg = `¡Hola ${m.name.split(' ')[0]}! Te sumo a la plataforma de ANM 🚀\nEntrá desde este link y creá tu contraseña (es tu acceso personal, no lo compartas):\n${link}\n\nDespués entrás siempre con tu nombre y tu contraseña. Si te lo pide, tu código es: ${m.invite}`;
-      UI.modal(`<h2>🔗 Acceso de ${esc(m.name)}<button class="icon-btn x" data-close>✕</button></h2>
-        <div class="fld"><label>Link personal</label><input class="inp" readonly value="${esc(link)}" onclick="this.select()"></div>
-        <div class="fld"><label>Código</label><div class="b" style="font-size:22px;letter-spacing:4px">${esc(m.invite)}</div></div>
-        <div class="row wrap"><button class="btn p" onclick='UI.copy(${esc(JSON.stringify(link))})'>Copiar link</button>
-          <a class="btn g" target="_blank" href="${esc(UI.waLink(msg, m.phone))}">Enviar por WhatsApp</a>
-          <a class="btn g" href="${esc(UI.mailLink(m.email, 'Tu acceso a la plataforma ANM', msg))}">Enviar por email</a></div>
-        <div class="mfoot"><button class="btn d sm" onclick="Team.regen('${id}')" style="margin-right:auto">Regenerar código</button><button class="btn g" data-close>Listo</button></div>`);
+    // ── Accesos (solo el dueño) ──
+    async loadAccess(){
+      const el = document.getElementById('acc-list'); if(!el) return;
+      try{
+        const rows = await Auth.listAccess(), RL = { owner:'👑 Dueño', socio:'Socio/a', equipo:'Equipo', invitado:'Invitado/a' };
+        el.innerHTML = rows.length ? `<div class="list">${rows.map(r=>{ const m = (r.member_id && App.member(r.member_id)) || App.members().find(x=>(x.email||'')===r.email);
+          return `<div class="li"><div class="grow"><div class="b small">${esc(r.email)}</div><div class="xs faint">${m?esc(m.name):'todavía no entró'}</div></div>
+            ${r.role==='owner' ? '<span class="tag">👑 Dueño</span>' : `<select class="inp sm" style="width:auto" onchange="Team.setAccessRole('${esc(r.email)}', this.value)">${['socio','equipo','invitado'].map(k=>`<option value="${k}" ${r.role===k?'selected':''}>${RL[k]}</option>`).join('')}</select>
+            <button class="icon-btn" title="Quitar acceso" onclick="Team.removeAccess('${esc(r.email)}')">🗑</button>`}</div>`; }).join('')}</div>`
+          : '<div class="small faint">Todavía no hay Gmails autorizados.</div>';
+      }catch(e){ el.innerHTML = `<div class="small" style="color:var(--red)">${esc(e.message)}</div>`; }
     },
-    // Equipo inicial (js/equipo-inicial.js): crea solo a quien falta, por primer nombre
-    pendingSeed(){
-      const n = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().split(' ')[0];
-      return (window.ANM_EQUIPO||[]).filter(p=>!App.members().some(m=>n(m.name)===n(p.name)) || App.members().some(m=>n(m.name)===n(p.name) && !m.title));
+    addAccess(pre={}){
+      const sin = App.members().filter(x=>!x.email || x.email===pre.email);
+      UI.form({ title:'＋ Autorizar un Gmail', submit:'Autorizar', values:{ role:'equipo', ...pre }, fields:[
+        { k:'email', label:'Gmail', type:'email', req:true, placeholder:'nombre@gmail.com' },
+        { k:'role', label:'Rol', type:'select', options:[['equipo','Equipo (Operaciones y Ventas)'],['invitado','Invitado/a (solo Operaciones)'],['socio','Socio/a (todo + Finanzas)']] },
+        { k:'member_id', label:'Perfil del equipo (opcional)', type:'select', options:[['','— Lo elige al entrar —'], ...App.members().filter(x=>!x.email || x.email===pre.email || x.id===pre.member_id).map(x=>[x.id,x.name])] },
+      ], onSubmit:v=>{ (async()=>{
+          try{ await Auth.saveAccess(v); if(v.member_id) Store.upsert('team','members',{ id:v.member_id, email:v.email.trim().toLowerCase() });
+            UI.toast(`${v.email} ya puede entrar`,'🔐'); Team.loadAccess(); }
+          catch(e){ UI.toast('No se pudo autorizar: '+e.message,'⚠️'); } })(); } });
     },
-    seed(){
-      const n = s => (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().split(' ')[0];
-      const list = Team.pendingSeed();
-      if(!confirm(`Voy a cargar al equipo:\n\n${list.map(p=>`• ${p.name} — ${p.title}`).join('\n')}\n\nQuien ya exista solo recibe su puesto. Después le mandás el acceso a cada uno desde su tarjeta.`)) return;
-      let nuevos = 0;
-      list.forEach((p,i)=>{
-        const ex = App.members().find(m=>n(m.name)===n(p.name));
-        if(ex) Store.upsert('team','members',{ id:ex.id, title:ex.title||p.title });
-        else { Store.upsert('team','members',{ name:p.name, title:p.title, role:p.role, units:p.units, color:UI.COLORS[(App.members().length+i) % UI.COLORS.length], invite:App.newInvite(), emailReminders:true }); nuevos++; }
-      });
-      if(nuevos) Game.log('member_invited', `Cargó ${nuevos} personas al equipo`, { icon:'👥', xp:10*nuevos });
-      UI.toast('Equipo cargado. Falta el email de cada uno para los mails.','👥'); App.render();
+    async setAccessRole(email, role){
+      try{ const rows = await Auth.listAccess(), r = rows.find(x=>x.email===email); await Auth.saveAccess({ ...r, role }); UI.toast('Rol actualizado','🔐'); }
+      catch(e){ UI.toast('No se pudo cambiar: '+e.message,'⚠️'); }
+      Team.loadAccess();
     },
-    resetPass(id){
-      const m = App.member(id);
-      if(!App.canManage(m)) return UI.toast('Solo el dueño principal puede resetear la contraseña de un socio','⛔');
-      if(!confirm(`¿Resetear la contraseña de ${m.name}?\n\nVa a tener que crear una nueva con un código de acceso que le mandes.`)) return;
-      Store.upsert('team','members',{ id, passHash:null, passSalt:null, invite:App.newInvite() });
-      Team.share(id);
-    },
-    regen(id){
-      if(!confirm('El link anterior deja de funcionar para entrar desde un dispositivo nuevo. ¿Seguimos?')) return;
-      Store.upsert('team','members',{ id, invite:App.newInvite() }); Team.share(id);
+    async removeAccess(email){
+      if(!confirm(`¿Quitar el acceso de ${email}? Deja de poder entrar (su historial se conserva).`)) return;
+      try{ await Auth.removeAccess(email); UI.toast('Acceso quitado','🔐'); }catch(e){ UI.toast(e.message,'⚠️'); }
+      Team.loadAccess();
     },
     editUnits(){
       UI.form({ title:'Unidades de negocio', fields:[

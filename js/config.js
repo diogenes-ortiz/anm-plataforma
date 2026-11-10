@@ -26,6 +26,8 @@
     if(q && ENTORNOS[q]) sessionStorage.setItem('anm_entorno', q);
     env = sessionStorage.getItem('anm_entorno') || (/\/staging\//.test(location.pathname) ? 'prueba' : 'produccion');
     if(!ENTORNOS[env]) env = 'produccion';
+    // Sin proyecto de prueba configurado, /staging/ usa la base real (con aviso)
+    if(env==='prueba' && !ENTORNOS.prueba.SUPABASE_URL){ env = 'produccion'; window.ANM_STAGING_REAL = /\/staging\//.test(location.pathname); }
   } catch(e){}
   const cfg = ENTORNOS[env];
   const listo = !!(cfg.SUPABASE_URL && cfg.SUPABASE_KEY);
@@ -36,6 +38,8 @@
     LS_PREFIX: env==='produccion' ? '' : env+'_',
     LISTO: listo,
   };
+  if(window.ANM_STAGING_REAL) document.addEventListener('DOMContentLoaded', ()=>document.body.insertAdjacentHTML('afterbegin',
+    `<div style="position:sticky;top:0;z-index:999;background:#e8484a;color:#fff;font:700 13px system-ui,sans-serif;padding:7px 12px;text-align:center">🧪 VERSIÓN EN PRUEBA (staging) — trabaja sobre los DATOS REALES</div>`));
   if(env!=='produccion'){
     const aviso = listo ? `🧪 ENTORNO DE PRUEBA — estos no son los datos reales · <a href="?entorno=produccion" style="color:inherit">volver a producción</a>`
                         : `🧪 Falta configurar el entorno de prueba en js/config.js · <a href="?entorno=produccion" style="color:inherit">volver a producción</a>`;

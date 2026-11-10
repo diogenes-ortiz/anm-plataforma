@@ -1,6 +1,6 @@
 // Pruebas de humo (BASE-05): lo mínimo que tiene que funcionar siempre.
 const { test, expect } = require('@playwright/test');
-const { mockSupabase, entrar } = require('./helpers');
+const { mockSupabase, sesion, entrar } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
   page.on('dialog', d => d.accept());
@@ -48,6 +48,7 @@ test('abrir Finanzas', async ({ page }) => {
   await entrar(page);
   await page.waitForTimeout(1200);   // que se guarde el perfil en la base simulada
   await page.goto('/finanzas.html');
+  await page.waitForSelector('#fp1');
   await page.fill('#fp1', 'fin12345');
   await page.fill('#fp2', 'fin12345');
   await page.click('#fgo');

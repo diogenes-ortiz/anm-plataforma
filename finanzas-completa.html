@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANM Studio · Finanzas</title>
 <link rel="icon" href="logo.jpg">
@@ -845,7 +846,8 @@ tr:hover td{background:rgba(26,115,232,.03)}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="js/config.js?v=20261110155155"></script>
+<script src="js/config.js?v=20261110155205"></script>
+<script src="js/auth.js?v=20261110155205"></script>
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────────────
 // FIX: Separamos claves de datos base vs datos de usuario para que initSeed
@@ -871,7 +873,7 @@ let charts={};
 // ─── SUPABASE ─────────────────────────────────────────────────────────────────
 const SB_URL = window.ANM_CONFIG.SUPABASE_URL;   // definido en js/config.js
 const SB_KEY = window.ANM_CONFIG.SUPABASE_KEY;
-const SB_HEADERS = { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY };
+// Pedidos con la sesión de Google (js/auth.js): la base solo devuelve Finanzas a socios
 
 let saveTimeout = null;
 
@@ -886,7 +888,7 @@ async function saveToSupabase(){
   setSyncStatus('syncing');
   try{
     const res=await fetch(SB_URL+'/rest/v1/anm_state?id=eq.main',{
-      method:'PATCH', headers:{...SB_HEADERS,'Prefer':'return=minimal'},
+      method:'PATCH', headers:await Auth.headers({'Prefer':'return=minimal'}),
       body:JSON.stringify({data:S, updated_at:new Date().toISOString()})
     });
     if(res.ok){ setSyncStatus('synced'); return; }
@@ -894,7 +896,7 @@ async function saveToSupabase(){
   } catch(e){
     try{
       const res2=await fetch(SB_URL+'/rest/v1/anm_state',{
-        method:'POST', headers:{...SB_HEADERS,'Prefer':'return=minimal'},
+        method:'POST', headers:await Auth.headers({'Prefer':'return=minimal'}),
         body:JSON.stringify({id:'main',data:S, updated_at:new Date().toISOString()})
       });
       if(res2.ok){ setSyncStatus('synced'); } else { setSyncStatus('error'); }
@@ -905,7 +907,7 @@ async function saveToSupabase(){
 async function loadFromSupabase(){
   setSyncStatus('syncing');
   try{
-    const res=await fetch(SB_URL+'/rest/v1/anm_state?id=eq.main&select=data',{headers:SB_HEADERS});
+    const res=await fetch(SB_URL+'/rest/v1/anm_state?id=eq.main&select=data',{headers:await Auth.headers()});
     if(res.ok){
       const rows=await res.json();
       if(rows.length && rows[0].data && Object.keys(rows[0].data).length>0){
@@ -1992,8 +1994,8 @@ loadFromSupabase().then(loaded=>{
   }
 });
 </script>
-<script src="js/store.js?v=20261110155155"></script>
+<script src="js/store.js?v=20261110155205"></script>
 <script>Store.loadLocal();</script>
-<script src="js/finanzas-extra.js?v=20261110155155"></script>
+<script src="js/finanzas-extra.js?v=20261110155205"></script>
 </body>
 </html>
