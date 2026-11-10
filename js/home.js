@@ -119,6 +119,7 @@
         { k:'email', label:'Email', type:'email', half:true }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
         ...(admin && !self && (!id || App.canManage(m)) ? [{ k:'role', label:'Rol', type:'select', options:Object.entries(App.ROLES).filter(([k])=>k!=='admin' || App.isOwner()), hint:App.isOwner()?'':'Solo el dueño principal puede crear socios.' }] : []),
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
+        ...(admin ? [{ k:'cuentas', label:'Cuentas que trabaja', type:'multi', options:Ops.activeClients().map(c=>[c.id,c.name]), default:id ? Ops.activeClients().filter(c=>c.ownerId===id || (c.teamIds||[]).includes(id)).map(c=>c.id) : [], hint:'Podés asignarlas antes de que entre: cuando entre ya ve sus cuentas y tareas.' }] : []),
         { k:'color', label:'Color', type:'color', half:true },
         { k:'emailReminders', label:'Mails', type:'check', text:'Recibir recordatorios y avisos por mail', default:true, half:true },
       ],
@@ -127,7 +128,12 @@
         if(id && m.role==='admin' && v.role && v.role!=='admin' && !adminsLeft){ UI.toast('Tiene que quedar al menos un socio','⚠️'); return false; }
         if(v.role==='admin' && m.role!=='admin' && !App.isOwner()){ UI.toast('Solo el dueño principal puede crear socios','⛔'); return false; }
         if(id && App.owner()?.id===id && v.role && v.role!=='admin'){ UI.toast('El dueño principal siempre es socio','⚠️'); return false; }
+        const cuentas = v.cuentas; delete v.cuentas;
         const r = Store.upsert('team','members',{ ...m, ...v, invite:m.invite||App.newInvite() });
+        // Cuentas asignadas: se suma/saca a la persona del equipo de cada cliente
+        if(cuentas) Ops.activeClients().forEach(c=>{ const tiene = (c.teamIds||[]).includes(r.id), quiere = cuentas.includes(c.id);
+          if(quiere && !tiene) Store.upsert('ops','clients',{ id:c.id, teamIds:[...(c.teamIds||[]), r.id] });
+          if(!quiere && tiene && c.ownerId!==r.id) Store.upsert('ops','clients',{ id:c.id, teamIds:(c.teamIds||[]).filter(x=>x!==r.id) }); });
         if(!id){ Game.log('member_invited', `Sumó a ${v.name} al equipo`, { icon:'👋' }); UI.toast(`${v.name} ya está cargado: le podés asignar tareas`,'👤'); setTimeout(()=>{ if(confirm(`¿Le mandás ahora el acceso a ${v.name}?\n\n(Podés hacerlo después desde su tarjeta con “Mandar acceso”.)`)) Team.share(r.id); }, 60); }
         App.render();
       } });
