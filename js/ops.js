@@ -600,7 +600,7 @@
     churn(id){
       const c = client(id);
       Store.upsert('ops','clients',{ id, active:false, churnedAt:UI.today() });
-      if(App.canGrowth() && confirm(`${c.name} quedó inactivo.\n\n¿Lo agrego a “Ex clientes” en Crecimiento para intentar recuperarlo más adelante?`)) Growth.fromChurn(c);
+      if(App.canGrowth() && confirm(`${c.name} quedó inactivo.\n\n¿Lo agrego a “Ex clientes” en Ventas para intentar recuperarlo más adelante?`)) Growth.fromChurn(c);
       App.go('#/ops');
     },
 

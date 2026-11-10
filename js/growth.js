@@ -1,4 +1,5 @@
-// ─── CRECIMIENTO / ADQUISICIÓN ────────────────────────────────────────────────
+// ─── VENTAS (antes Crecimiento) ───────────────────────────────────────────────
+// Los prospectos se traen del Google Sheet comercial (hoja "Base") con "⟳ Traer del Sheet".
 // CRM: prospectos con puntaje de "ganas", armador de mensajes por toques, seguimiento,
 // pipeline, ex clientes y métricas. (Nada económico acá: eso vive en Finanzas.)
 (function(){
@@ -7,16 +8,51 @@
 
   const STAGES = [
     ['objetivo','Queremos contactar','🎯'], ['contactado','Contactado','📨'], ['reunion','Reunión','🤝'],
-    ['ppt','Armando la PPT','🖼️'], ['propuesta','PPT presentada','📄'], ['negociacion','Negociación','⚖️'], ['ganado','Pasó a cliente','🏆'],
+    ['ppt','Armando la PPT','🖼️'], ['propuesta','Propuesta enviada','📄'], ['negociacion','Negociación','⚖️'], ['revisitar','Revisitar en 90 días','⏳'], ['ganado','Pasó a cliente','🏆'],
     ['perdido','Perdido / no avanzó','🪦'], ['ex','Ex cliente','↩️'],
   ];
-  const OPEN = ['objetivo','contactado','reunion','ppt','propuesta','negociacion'];
+  const OPEN = ['objetivo','contactado','reunion','ppt','propuesta','negociacion','revisitar'];
   const PPT_ST = [['armar','Por armar'],['armando','En armado'],['revision','En revisión interna'],['lista','Lista para presentar'],['presentada','Presentada']];
   const stage = k => STAGES.find(s=>s[0]===k) || STAGES[0];
   const stageIdx = k => STAGES.findIndex(s=>s[0]===k);
   const SOURCES = ['Hunter (investigación)','Referido','Instagram','LinkedIn','Web / formulario','Evento','Prospección propia','Ex cliente','Otro'];
   const TOUCH_ALL = [['etapa','↪ Cambio de etapa']];
   const TOUCH = [['whatsapp','💬 WhatsApp'],['email','✉️ Email'],['linkedin','in LinkedIn'],['llamada','📞 Llamada'],['reunion','🤝 Reunión'],['dm','📱 DM redes'],['visita','🚶 Visita'],['otro','· Otro']];
+  // ── Google Sheet comercial ──────────────────────────────────────────────────
+  const SHEET_DEFAULT = 'https://docs.google.com/spreadsheets/d/12tFUReC3DW2ITdN05VjbJDxzkGRdLmva68ZpKITbG30/edit';
+  const sheetUrl = () => Store.setting('salesSheet', SHEET_DEFAULT);
+  const sheetId = u => (String(u).match(/\/d\/([a-zA-Z0-9_-]+)/)||[])[1];
+  const normTxt = x => (x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+  function csvRows(t){   // CSV con comillas
+    const rows = []; let row = [], cell = '', q = false; t = String(t||'');
+    for(let i=0;i<t.length;i++){ const ch = t[i];
+      if(q){ if(ch==='"'){ if(t[i+1]==='"'){ cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+      if(ch==='"') q = true; else if(ch===','){ row.push(cell); cell = ''; }
+      else if(ch==='\n' || ch==='\r'){ if(ch==='\r' && t[i+1]==='\n') i++; row.push(cell); cell = ''; rows.push(row); row = []; }
+      else cell += ch; }
+    row.push(cell); rows.push(row); return rows;
+  }
+  const fecha = v => { const m = String(v||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if(!m) return ''; const y = m[3].length===2 ? '20'+m[3] : m[3]; return `${y}-${UI.pad(+m[2])}-${UI.pad(+m[1])}`; };
+  const ESTADO = { 'nuevo':'objetivo', 'a contactar':'objetivo', 'contactado':'contactado', 'respondio':'contactado', 'reunion agendada':'reunion', 'reunion':'reunion',
+    'propuesta enviada':'propuesta', 'propuesta':'propuesta', 'negociacion':'negociacion', 'en negociacion':'negociacion', 'cerrado':'ganado', 'ganado':'ganado', 'cliente':'ganado',
+    'perdido':'perdido', 'no interesado':'perdido', 'descartado':'perdido', 'revisitar 90 dias':'revisitar', 'revisitar':'revisitar' };
+  // Lee la hoja "Base": EMPRESA, CARGADA EL, TIPO DE NEGOCIO, LINK, CONTACTO, CANAL, OPORTUNIDAD DETECTADA, SERVICIO, ULTIMO CONTACTO, ESTADO, PROXIMO PASO, CUANDO, NOTAS
+  function sheetToLeads(csv){
+    const rows = csvRows(csv), h = rows.findIndex(r=>r.some(c=>normTxt(c)==='empresa'));
+    if(h<0) throw new Error('No encontré la columna EMPRESA en la hoja');
+    const head = rows[h].map(normTxt), col = name => head.findIndex(c=>c===name || c.startsWith(name));
+    const C = { empresa:col('empresa'), cargada:col('cargada'), tipo:col('tipo de negocio'), link:col('link'), contacto:col('contacto'), canal:col('canal'), oport:col('oportunidad'),
+      servicio:col('servicio'), ultimo:col('ultimo contacto'), estado:col('estado'), paso:col('proximo paso'), cuando:col('cuando'), notas:col('notas') };
+    const v = (r,k) => C[k]>=0 ? String(r[C[k]]||'').trim() : '';
+    return rows.slice(h+1).filter(r=>v(r,'empresa') && !/^ejemplo/i.test(v(r,'empresa'))).map(r=>{
+      const est = normTxt(v(r,'estado')), stage = ESTADO[est] || (est.startsWith('revisitar') ? 'revisitar' : est ? 'contactado' : 'objetivo');
+      const ultimo = fecha(v(r,'ultimo')), cuando = fecha(v(r,'cuando')), link = v(r,'link');
+      return { company:v(r,'empresa'), industry:v(r,'tipo'), contactName:v(r,'contacto'), channel:v(r,'canal'), gap:v(r,'oport'), service:v(r,'servicio'),
+        lastContact:ultimo, nextAction:v(r,'paso'), notes:v(r,'notas'), stage, sheetStatus:v(r,'estado'),
+        web: /instagram\.com/i.test(link) ? '' : link, instagram: /instagram\.com/i.test(link) ? (link.match(/instagram\.com\/([^/?#]+)/i)||[])[1]||'' : '',
+        nextFollowUp: cuando || (stage==='revisitar' && ultimo ? UI.addDays(ultimo, 90) : ''), loadedAt: fecha(v(r,'cargada')), source:'Sheet comercial' };
+    });
+  }
   const label = (opts,v) => (opts.find(o=>o[0]===v)||[,v])[1];
 
   // Enfoques de propuesta y lo que le podemos aportar en cada caso
@@ -60,7 +96,7 @@
     return '';
   };
 
-  // Alertas de Crecimiento: con clave para poder descartarlas (BUG-18) y sin avisar por
+  // Alertas de Ventas: con clave para poder descartarlas (BUG-18) y sin avisar por
   // prospectos que ya son clientes activos (BUG-21)
   const normN = x => (x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
   const yaEsCliente = l => (window.Ops ? Ops.activeClients() : []).some(c=>normN(c.name)===normN(l.company));
@@ -95,7 +131,8 @@
     const tabs = `<div class="tabs">${TABS.map(([k,l])=>`<a href="#/crecimiento/${k}" class="${tab===k?'active':''}">${l}${k==='hoy'&&due?`<span class="cnt">${due}</span>`:''}</a>`).join('')}</div>`;
     const views = { hoy:viewToday, pipeline:viewPipeline, contactos:viewContacts, ex:viewEx, mensajes:viewTemplates, metricas:viewMetrics };
     const v = (views[tab]||viewToday)();
-    return { title:'Crecimiento', crumb:'Adquisición · CRM', html: tabs + `<div class="toolbar">${App.unitBar()}</div>` + v.html, after:v.after };
+    const sheetBar = `<div class="row wrap" style="gap:8px;margin:-6px 0 14px"><span class="small muted grow">${Store.setting('salesSheetAt','') ? `Datos del Sheet comercial · actualizado ${UI.ago(Store.setting('salesSheetAt'))}` : 'Los prospectos salen del Google Sheet comercial.'} <a href="${esc(sheetUrl())}" target="_blank">Abrir Sheet ↗</a></span>${App.isAdmin()?'<button class="btn sm p" onclick="Growth.syncSheet()">⟳ Traer del Sheet</button>':''}</div>`;
+    return { title:'Ventas', crumb:'Prospectos y seguimiento comercial', html: tabs + sheetBar + `<div class="toolbar">${App.unitBar()}</div>` + v.html, after:v.after };
   });
 
   function leadRow(l, action=true){
@@ -257,7 +294,7 @@
       wa&&`<a href="${UI.waLink('',wa)}" target="_blank">💬 WhatsApp</a>`, l.phone&&`<span>📞 ${esc(l.phone)}</span>`,
       l.linkedin&&`<a href="${esc(UI.safeUrl(l.linkedin))}" target="_blank">in LinkedIn</a>`, l.instagram&&`<a href="https://instagram.com/${esc(l.instagram.replace('@',''))}" target="_blank">📷 ${esc(l.instagram)}</a>`].filter(Boolean);
     const pitch = PITCH[l.pitch];
-    const html = `<div class="row" style="margin-bottom:20px"><a href="#/crecimiento" class="btn g sm">← Crecimiento</a></div>
+    const html = `<div class="row" style="margin-bottom:20px"><a href="#/crecimiento" class="btn g sm">← Ventas</a></div>
       <div class="hero" style="margin-bottom:22px"><div class="grow"><div class="row wrap"><span class="tag">${st[2]} ${st[1]}</span>${l.rank?`<span class="tag t-blue">Hunter #${l.rank}</span>`:''}${l.validate?'<span class="tag t-yellow">Validar tamaño y dueño antes</span>':''}</div>
         <h2 style="margin-top:8px">${esc(l.company)}</h2>
         <div class="small muted" style="margin-top:6px">${esc([l.contactName && (l.contactName+(l.role?' ('+l.role+')':'')), l.industry, l.city].filter(Boolean).join(' · '))}</div>
@@ -280,16 +317,62 @@
       </div><div class="col" style="gap:18px">
         ${l.why?`<div class="card small"><div class="card-h"><h3>¿Por qué nos interesa?</h3></div><div class="muted">${esc(l.why)}</div></div>`:''}
         <div class="card small"><div class="card-h"><h3>Datos</h3></div>
-          <div class="list">${[['Fuente',l.source||'—'],['Responsable',App.member(l.ownerId)?.name||'—'],['Alta',UI.fdate(UI.day(l.createdAt),{abs:true})],['En esta etapa',l.stageAt?UI.ago(l.stageAt):'—'],
+          <div class="list">${[...(l.channel?[['Canal',l.channel]]:[]),...(l.service?[['Servicio',l.service]]:[]),...(l.lastContact?[['Último contacto',UI.fdate(l.lastContact,{abs:true})]]:[]),...(l.notes?[['Notas',l.notes]]:[]),['Fuente',l.source||'—'],['Responsable',App.member(l.ownerId)?.name||'—'],['Alta',UI.fdate(UI.day(l.createdAt),{abs:true})],['En esta etapa',l.stageAt?UI.ago(l.stageAt):'—'],
             ...(l.lostReason?[['Motivo de pérdida',l.lostReason]]:[]),...(l.churnReason?[['Motivo de baja',l.churnReason]]:[])].map(([k,v])=>`<div class="li"><span class="faint grow">${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
           ${l.alt?`<div class="xs muted" style="margin-top:10px"><b>Otros contactos:</b> ${esc(l.alt)}</div>`:''}</div>
         ${l.notes?`<div class="card"><div class="card-h"><h3>Notas</h3></div><div class="small prewrap muted">${esc(l.notes)}</div></div>`:''}
       </div></div>`;
-    return { title:l.company, crumb:'Crecimiento · Prospecto', html };
+    return { title:l.company, crumb:'Ventas · Prospecto', html };
   }
 
   // ── Acciones ────────────────────────────────────────────────────────────────
   const Growth = {
+    // ⟳ Traer del Sheet: la lista de Ventas pasa a ser igual a la hoja "Base" del Sheet comercial
+    async syncSheet(){
+      const id = sheetId(sheetUrl());
+      UI.toast('Leyendo el Sheet…','⟳');
+      try{
+        const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=Base`);
+        if(!r.ok) throw new Error('El Sheet respondió '+r.status);
+        Growth.previewSheet(await r.text());
+      }catch(e){ Growth.sheetManual(e.message); }
+    },
+    // Si Google no deja leerlo directo: se sube el CSV descargado (Archivo → Descargar → CSV, hoja Base)
+    sheetManual(err){
+      const box = UI.modal(`<h2>⟳ Traer del Sheet<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="alert warn" style="margin-bottom:12px"><div class="ai">⚠️</div><div class="ad">No pude leer el Sheet directo${err?` (${esc(err)})`:''}. Revisá que esté compartido como <b>“Cualquier persona con el enlace · Lector”</b>, o subí el CSV: en el Sheet, abrí la hoja <b>Base</b> → Archivo → Descargar → CSV.</div></div>
+        <div class="fld"><label>Link del Sheet</label><input class="inp" id="sh-url" value="${esc(sheetUrl())}"></div>
+        <div class="fld"><label>…o subí el CSV de la hoja Base</label><input class="inp" type="file" id="sh-file" accept=".csv,text/csv"></div>
+        <div class="mfoot"><button class="btn g" data-close>Cancelar</button><button class="btn p" id="sh-go">Continuar</button></div>`);
+      box.querySelector('#sh-go').onclick = ()=>{
+        const url = box.querySelector('#sh-url').value.trim(), f = box.querySelector('#sh-file').files[0];
+        if(url && url!==sheetUrl()) Store.setSetting('salesSheet', url);
+        if(f){ const rd = new FileReader(); rd.onload = ()=>{ UI.close(true); Growth.previewSheet(rd.result); }; rd.readAsText(f); }
+        else { UI.close(true); Growth.syncSheet(); }
+      };
+    },
+    previewSheet(csv){
+      let rows; try{ rows = sheetToLeads(csv); }catch(e){ return Growth.sheetManual(e.message); }
+      if(!rows.length) return Growth.sheetManual('la hoja Base no tiene empresas');
+      const actuales = L(), key = l => normTxt(l.company);
+      const nuevas = rows.filter(r=>!actuales.some(l=>key(l)===key(r))), cambian = rows.filter(r=>actuales.some(l=>key(l)===key(r)));
+      const salen = actuales.filter(l=>!rows.some(r=>key(r)===key(l)));
+      const box = UI.modal(`<h2>⟳ Traer del Sheet<button class="icon-btn x" data-close>✕</button></h2>
+        <p class="small muted" style="margin-bottom:12px">Ventas va a quedar igual que el Sheet (${rows.length} empresas).</p>
+        <div class="list"><div class="li"><b class="grow">＋ Nuevas</b><span>${nuevas.length}</span></div><div class="li"><b class="grow">↻ Se actualizan</b><span>${cambian.length}</span></div>
+          <div class="li"><b class="grow" style="color:var(--red)">🗑 Se quitan (no están en el Sheet)</b><span>${salen.length}</span></div></div>
+        ${salen.length?`<details style="margin-top:10px"><summary class="small muted" style="cursor:pointer">Ver las que se quitan</summary><div class="small" style="margin-top:6px">${salen.map(l=>esc(l.company)).join(' · ')}</div></details>`:''}
+        <div class="mfoot"><button class="btn g" data-close>Cancelar</button><button class="btn p" id="sh-ok">Actualizar Ventas</button></div>`);
+      box.querySelector('#sh-ok').onclick = ()=>{
+        const now = new Date().toISOString(), me = App.me()?.id;
+        rows.forEach(r=>{ const ex = actuales.find(l=>key(l)===key(r));
+          const changed = ex && ex.stage!==r.stage;
+          Store.upsert('growth','leads',{ ...(ex ? { id:ex.id } : { ownerId:me, ganas:3, createdAt: r.loadedAt ? r.loadedAt+'T12:00:00' : now }), ...r, ...(changed||!ex ? { stageAt:now } : {}) }); });
+        salen.forEach(l=>{ Store.remove('growth','leads',l.id); Store.all('growth','interactions').filter(x=>x.leadId===l.id).forEach(x=>Store.remove('growth','interactions',x.id)); });
+        Store.setSetting('salesSheetAt', now);
+        UI.close(true); UI.toast(`Ventas actualizado: ${rows.length} empresas`,'✅'); App.render();
+      };
+    },
     STAGES, OPEN, alerts,
     copyBrief(id){ UI.copy(brief(Store.get('growth','leads',id))); },
     setPpt(id, patch){
