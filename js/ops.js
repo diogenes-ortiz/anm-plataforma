@@ -500,12 +500,13 @@
   }
 
   // ── Reuniones y minutas ──────────────────────────────────────────────────────
+  let meetSelMode = false; const meetSel = new Set();
   function meetRow(m){
-    const past = (m.date||'').slice(0,10) < UI.today();
-    return `<div class="li click" onclick="Ops.viewMeeting('${m.id}')"><div style="text-align:center;min-width:44px"><div class="b" style="font-size:17px;line-height:1">${m.date?UI.parse(m.date).getDate():'?'}</div><div class="xs faint b">${m.date?UI.MONTHS[UI.parse(m.date).getMonth()].slice(0,3).toUpperCase():''}</div></div>
+    const past = (m.date||'').slice(0,10) < UI.today(), picking = meetSelMode && past;
+    return `<div class="li click ${picking && meetSel.has(m.id)?'picked':''}" onclick="${picking?`Ops.meetPick('${m.id}')`:`Ops.viewMeeting('${m.id}')`}">${picking?`<input type="checkbox" ${meetSel.has(m.id)?'checked':''} style="width:18px;height:18px;pointer-events:none">`:''}<div style="text-align:center;min-width:44px"><div class="b" style="font-size:17px;line-height:1">${m.date?UI.parse(m.date).getDate():'?'}</div><div class="xs faint b">${m.date?UI.MONTHS[UI.parse(m.date).getMonth()].slice(0,3).toUpperCase():''}</div></div>
       <div class="grow"><div class="b small ellip">${esc(m.title)}</div><div class="xs faint ellip">${esc(clientName(m.clientId))} · ${esc(label(MEET_TYPES,m.type))}${UI.time(m.date)?' · '+UI.time(m.date):''}</div>
       ${(m.topics||[]).length?`<div class="row wrap" style="gap:4px;margin-top:4px">${m.topics.map(t=>`<span class="tag xs">#${esc(t)}</span>`).join('')}</div>`:''}</div>
-      ${past ? (m.minuta?'<span class="tag t-green">Minuta ✓</span>':'<span class="tag t-yellow">Sin minuta</span>') : '<span class="tag t-blue">Próxima</span>'}</div>`;
+      ${past ? (m.minuta?'<span class="tag t-green">Minuta ✓</span>':'<span class="tag t-yellow">Sin minuta</span>') : '<span class="tag t-blue">Próxima</span>'}${picking?'':`<button class="icon-btn" title="Borrar reunión" onclick="event.stopPropagation();Ops.deleteMeetings(['${m.id}'])">🗑</button>`}</div>`;
   }
 
   function viewMeetings(){
@@ -526,7 +527,9 @@
         ${pendingMinutas().map(m=>`<div class="alert info" style="margin:0"><div class="ai">📥</div><div class="grow"><div class="at">${m.kind==='status'?'Status para cargar':'Minuta para cargar'}: ${esc(m.title)}</div><div class="ad">${esc(m.client||'Interna')} · ${UI.fdate(m.date.slice(0,10),{abs:true})} · ${m.tasks.length} tareas${(m.content||[]).length?` · ${m.content.length} piezas de calendario`:''}</div></div><button class="btn sm p" onclick="Ops.importMinuta('${m.id}')">Revisar y cargar</button></div>`).join('')}
         ${noMin.length?`<div class="alert warn"><div class="ai">📝</div><div class="grow"><div class="at">${noMin.length} reunión${noMin.length>1?'es':''} sin minuta</div><div class="ad">Cargar la minuta convierte los acuerdos en tareas.</div></div></div>`:''}
         <div class="card"><div class="card-h"><h3>Próximas</h3><span class="sub">${up.length}</span></div>${up.length?`<div class="list">${up.map(meetRow).join('')}</div>`:'<div class="empty small">No hay reuniones agendadas</div>'}</div>
-        <div class="card"><div class="card-h"><h3>Pasadas</h3><span class="sub">${past.length}</span></div>${past.length?`<div class="list">${past.slice(0,40).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones registradas</div>'}</div>
+        <div class="card"><div class="card-h"><h3>Pasadas</h3><span class="sub">${past.length}</span><span class="grow"></span>${past.length?(meetSelMode
+            ? `<button class="btn xs g" onclick="Ops.meetPickAll(${esc(JSON.stringify(past.map(m=>m.id)))})">Seleccionar todas</button><button class="btn xs d" ${meetSel.size?'':'disabled'} onclick="Ops.deleteMeetings([...Ops.meetSelected()])">🗑 Borrar ${meetSel.size||''}</button><button class="btn xs g" onclick="Ops.meetSelMode(false)">Listo</button>`
+            : `<button class="btn xs g" onclick="Ops.meetSelMode(true)">☑ Seleccionar para borrar</button>`):''}</div>${past.length?`<div class="list">${past.slice(0, meetSelMode ? 500 : 40).map(meetRow).join('')}</div>`:'<div class="empty small">Sin reuniones registradas</div>'}</div>
       </div><div class="col" style="gap:18px">
         <div class="card"><div class="card-h"><h3># Temáticas</h3></div>${Object.keys(topics).length?`<div class="chips">${Object.entries(topics).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`<button class="chip ${meetTopic===k?'on':''}" onclick="Ops.setTopic(${esc(JSON.stringify(k))})">#${esc(k)} <span class="faint">${n}</span></button>`).join('')}</div>`:'<div class="small faint">Etiquetá las reuniones con temáticas (ej: “precios”, “campaña día de la madre”) para encontrarlas después.</div>'}</div>
         <div class="card"><div class="card-h"><h3>Acuerdos sin convertir en tarea</h3><span class="sub">${openActions.length}</span></div>
@@ -683,6 +686,17 @@
       const pins = (c.pins||[]).map(p=>p.id===pid ? { ...p, top:!p.top } : p).sort((a,b)=>(b.top?1:0)-(a.top?1:0)); Store.upsert('ops','clients',{ id:cid, pins }); App.render(); },
     delPin(cid, pid){ const c = client(cid); if(!c || !App.isAdmin() || !confirm('¿Quitar esto de “No olvidar”?')) return;
       Store.upsert('ops','clients',{ id:cid, pins:(c.pins||[]).filter(p=>p.id!==pid) }); App.render(); },
+    meetSelMode(on){ meetSelMode = !!on; meetSel.clear(); App.render(); },
+    meetPick(id){ meetSel.has(id) ? meetSel.delete(id) : meetSel.add(id); App.render(); },
+    meetPickAll(ids){ const all = ids.every(id=>meetSel.has(id)); meetSel.clear(); if(!all) ids.forEach(id=>meetSel.add(id)); App.render(); },
+    meetSelected(){ return meetSel; },
+    deleteMeetings(ids){
+      ids = (ids||[]).filter(Boolean); if(!ids.length) return;
+      const one = ids.length===1 && Store.get('ops','meetings',ids[0]);
+      if(!confirm(one ? `¿Borrar la reunión “${one.title}”?` : `¿Borrar ${ids.length} reuniones?`)) return;
+      ids.forEach(id=>Store.remove('ops','meetings',id)); meetSel.clear(); meetSelMode = false;
+      UI.toast(ids.length===1 ? 'Reunión borrada' : `${ids.length} reuniones borradas`,'🗑'); App.render();
+    },
     pickAssignee(id){
       const t = Store.get('ops','tasks',id); if(!t) return;
       const team = clientTeam(t.clientId), chosen = taskPeople(t);
