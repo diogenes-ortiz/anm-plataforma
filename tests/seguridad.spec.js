@@ -101,3 +101,19 @@ test('el dueño cambia el rol de alguien desde Editar', async ({ page }) => {
   await expect.poll(() => db.ACC.find(a => a.email === 'luli@gmail.com').role).toBe('ventas');
   expect(await page.evaluate(() => App.member('m2').role)).toBe('ventas');
 });
+
+test('Ajustes: solo los socios; el resto edita su perfil y sale desde su tarjeta', async ({ page }) => {
+  await mockSupabase(page, { access: [{ email:'socio@gmail.com', role:'owner' }, { email:'equipo@gmail.com', role:'equipo' }],
+    seed: { team: { members: [{ id:'m1', name:'Prueba Socio', email:'socio@gmail.com', role:'admin', owner:true, updatedAt:'2026-01-01' },
+                               { id:'m2', name:'Luli', email:'equipo@gmail.com', role:'equipo', updatedAt:'2026-01-01' }] } } });
+  await sesion(page, 'equipo@gmail.com');
+  await page.goto('/');
+  await page.waitForSelector('.hero');
+  await expect(page.locator('#nav a[href="#/ajustes"]')).toHaveCount(0);
+  await page.evaluate(() => location.hash = '#/ajustes');
+  await page.waitForFunction(() => location.hash === '#/inicio');
+  await page.click('#me');
+  await expect(page.locator('#modal')).toContainText('Editar mi perfil');
+  await expect(page.locator('#modal')).toContainText('Cerrar sesión');
+  await expect(page.locator('#modal')).not.toContainText('Ajustes');
+});

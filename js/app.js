@@ -74,7 +74,9 @@
       const fn = routes[name] || routes.inicio;
       if(name==='crecimiento' && !this.canGrowth()){ location.hash = '#/ops'; return; }
       // Rol Ventas: solo ve Ventas (más su perfil y el equipo)
-      if(this.onlySales() && !['crecimiento','ajustes','equipo'].includes(name)){ location.hash = '#/crecimiento'; return; }
+      if(this.onlySales() && !['crecimiento','equipo'].includes(name)){ location.hash = '#/crecimiento'; return; }
+      // Ajustes: solo socios (Diogenes y Santi)
+      if(name==='ajustes' && !this.isAdmin()){ location.hash = this.onlySales() ? '#/crecimiento' : '#/inicio'; return; }
       current = name;
       try{ renderNav(name); }catch(e){ console.error(e); showCrash(e.message); }
       const page = $('#page');
@@ -110,7 +112,8 @@
       ${App.isAdmin() && ['owner','socio'].includes(Auth.access?.role)?`<a href="finanzas.html"><span class="ic">$</span>Finanzas</a>`:''}
       <div class="nav-s">Equipo</div>
       ${item('#/equipo','◑','Equipo e invitaciones','equipo')}
-      ${item('#/ajustes','⚙','Ajustes','ajustes')}`;
+      ${App.isAdmin()?item('#/ajustes','⚙','Ajustes','ajustes'):''}`;
+    $('#me').onclick = ()=>App.meMenu();
     const pf = Game.perf(me.id);
     $('#me').innerHTML = `${UI.avatar(me)}<div class="grow"><div class="b ellip">${esc(me.name)}</div>
       <div class="xs faint b"><span style="color:${pf.color}">${esc(pf.label)}</span>${pf.pct!=null?` · ${pf.resolved}/${pf.assigned} resueltas`:''}</div>
@@ -179,6 +182,14 @@
     if(bindMember(lastAcc)) gateState = 'ok'; App.render();
   };
 
+  // Menú de la tarjeta de abajo a la izquierda: perfil y salir (Ajustes solo para socios)
+  App.meMenu = ()=>{
+    const me = App.me(); if(!me) return;
+    const opt = (ic, t, fn) => `<div class="li click" onclick="UI.close();${fn}"><span style="font-size:18px">${ic}</span><div class="grow b small">${t}</div></div>`;
+    UI.modal(`<h2>${esc(me.name)}<button class="icon-btn x" data-close>✕</button></h2>
+      <div class="xs faint" style="margin:-6px 0 12px">Entrás con Google: ${esc(Auth.email||me.email||'')}</div>
+      <div class="list">${opt('✎','Editar mi perfil',`Team.edit('${me.id}', true)`)}${App.isAdmin()?opt('⚙','Ajustes',"App.go('#/ajustes')"):''}${opt('↩','Cerrar sesión','App.logout()')}</div>`);
+  };
   App.logout = async (sinPreguntar)=>{
     if(!sinPreguntar && !confirm('¿Cerrar sesión en este navegador?')) return;
     localStorage.removeItem('anm_me'); await Auth.logout(); location.reload();
