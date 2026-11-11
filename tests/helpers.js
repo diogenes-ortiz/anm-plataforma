@@ -6,7 +6,7 @@ const fakeJwt = (email, name='Prueba Socio') => `${b64({ alg:'none' })}.${b64({ 
 async function mockSupabase(page, { seed = {}, access = [{ email:'socio@gmail.com', role:'owner' }] } = {}) {
   const DB = JSON.parse(JSON.stringify(seed)), ACC = JSON.parse(JSON.stringify(access));
   const roleOf = req => { const t = (req.headers()['authorization']||'').replace('Bearer ',''); try{ const e = JSON.parse(Buffer.from(t.split('.')[1],'base64url')).email; return ACC.find(a=>a.email===e)?.role || null; }catch(e){ return null; } };
-  const puede = (id, r) => id==='main' ? ['owner','socio'].includes(r) : id==='growth' ? ['owner','socio','equipo'].includes(r) : ['ops','team'].includes(id) && !!r;
+  const puede = (id, r) => id==='main' ? ['owner','socio'].includes(r) : id==='growth' ? ['owner','socio','equipo','ventas'].includes(r) : id==='ops' ? ['owner','socio','equipo','invitado'].includes(r) : id==='team' && !!r;
   await page.route('**/*.supabase.co/**', async route => {
     const req = route.request(), url = new URL(req.url()), m = req.method(), role = roleOf(req);
     if (url.pathname.startsWith('/auth/v1/')) return route.fulfill({ status: 200, contentType:'application/json', body: '{}' });
