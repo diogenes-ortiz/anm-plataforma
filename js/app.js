@@ -1,7 +1,7 @@
 // ─── APP: identidad, navegación, shell ────────────────────────────────────────
 (function(){
   const { esc, $ } = UI;
-  const ROLES = { admin:'Socio/a · dueño de la agencia (ve Finanzas)', equipo:'Equipo', invitado:'Invitado/a (solo Operaciones)' };
+  const ROLES = { admin:'Socio/a · dueño de la agencia (ve Finanzas)', equipo:'Equipo', invitado:'Invitado/a (solo Operaciones)', ventas:'Ventas (solo el área de Ventas)' };
   const DEFAULT_UNITS = [
     { id:'social', label:'Social Media', color:'#1A73E8' },
     { id:'pauta', label:'Pauta', color:'#9b6fe8' },
@@ -27,6 +27,7 @@
     // ¿Puedo gestionar (editar rol, resetear, quitar) a esta persona?
     canManage(m){ return this.isAdmin() && (m.role!=='admin' || this.isOwner()); },
     canGrowth(){ return this.me() && this.me().role!=='invitado'; },
+    onlySales(){ return this.me()?.role==='ventas'; },
     units(){ return Store.setting('units', DEFAULT_UNITS); },
     unit(id){ return this.units().find(u=>u.id===id) || { id, label:id, color:'#7a7a8c' }; },
     unitOpts(){ return this.units().map(u=>[u.id,u.label]); },
@@ -72,6 +73,8 @@
       const [name, ...rest] = (location.hash.replace(/^#\/?/,'')||'inicio').split('/');
       const fn = routes[name] || routes.inicio;
       if(name==='crecimiento' && !this.canGrowth()){ location.hash = '#/ops'; return; }
+      // Rol Ventas: solo ve Ventas (más su perfil y el equipo)
+      if(this.onlySales() && !['crecimiento','ajustes','equipo'].includes(name)){ location.hash = '#/crecimiento'; return; }
       current = name;
       try{ renderNav(name); }catch(e){ console.error(e); showCrash(e.message); }
       const page = $('#page');
@@ -100,9 +103,9 @@
     // Si hay un filtro de unidad activo, se avisa siempre: los contadores muestran solo esa unidad (BUG-20)
     $('#nav').innerHTML = `${App.unitFilter?`<div class="small" style="margin:6px 10px 10px;padding:8px 10px;border-radius:10px;background:var(--yellow-d);color:var(--yellow)">🔎 Viendo solo <b>${esc(App.unit(App.unitFilter).label)}</b> · <a href="#" style="color:inherit" onclick="App.setUnit('');return false">ver todo</a></div>`:''}
       <div class="nav-s">General</div>
-      ${item('#/inicio','◈','Inicio','inicio', unread?`<span class="cnt">${unread}</span>`:'')}
+      ${App.onlySales()?'':item('#/inicio','◈','Inicio','inicio', unread?`<span class="cnt">${unread}</span>`:'')}
       <div class="nav-s">Agencia</div>
-      ${item('#/ops','◎','Operaciones','ops', a?`<span class="cnt">${a}</span>`:'')}
+      ${App.onlySales()?'':item('#/ops','◎','Operaciones','ops', a?`<span class="cnt">${a}</span>`:'')}
       ${App.canGrowth()?item('#/crecimiento','↗','Ventas','crecimiento', g?`<span class="cnt">${g}</span>`:''):''}
       ${App.isAdmin() && ['owner','socio'].includes(Auth.access?.role)?`<a href="finanzas.html"><span class="ic">$</span>Finanzas</a>`:''}
       <div class="nav-s">Equipo</div>
@@ -119,7 +122,7 @@
   // ── Acceso: entrar con Google ───────────────────────────────────────────────
   // La lista de Gmails autorizados vive en la base (anm_access) y solo el dueño la modifica.
   // Cada mail autorizado se vincula con su perfil del equipo (por email o por member_id).
-  const ROLE_OF = { owner:'admin', socio:'admin', equipo:'equipo', invitado:'invitado' };
+  const ROLE_OF = { owner:'admin', socio:'admin', equipo:'equipo', invitado:'invitado', ventas:'ventas' };
   const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
   const gateBox = inner => `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Studio · Plataforma</div></div></div>${inner}</div>`;
   const G_ICON = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
@@ -227,10 +230,11 @@
   App.quickAdd = ()=>{
     const opt = (ic, t, d, fn) => `<div class="li click" onclick="UI.close(true);${fn}"><span style="font-size:20px">${ic}</span><div class="grow"><div class="b">${t}</div><div class="xs faint">${d}</div></div></div>`;
     UI.modal(`<h2>＋ Crear<button class="icon-btn x" data-close>✕</button></h2><div class="list">
-      ${opt('📡','Actualización de cliente','¿En qué estamos con un cliente?','Ops.updateClient()')}
-      ${opt('✅','Tarea','Algo que hay que hacer, con responsable y fecha','Ops.editTask()')}
-      ${opt('🗓️','Pieza de contenido','Post, reel, campaña o entrega en el calendario','Ops.editContent()')}
-      ${opt('🤝','Reunión / minuta','Registrar una reunión y sus acuerdos','Ops.editMeeting()')}
+      ${App.onlySales()?'':[
+        opt('📡','Actualización de cliente','¿En qué estamos con un cliente?','Ops.updateClient()'),
+        opt('✅','Tarea','Algo que hay que hacer, con responsable y fecha','Ops.editTask()'),
+        opt('🗓️','Pieza de contenido','Post, reel, campaña o entrega en el calendario','Ops.editContent()'),
+        opt('🤝','Reunión / minuta','Registrar una reunión y sus acuerdos','Ops.editMeeting()')].join('')}
       ${App.canGrowth()?opt('🎯','Contacto / prospecto','Alguien a contactar o que contactamos','Growth.editLead()'):''}
       ${opt('📣','Alerta al equipo','Avisar algo a alguien','App.sendAlert()')}
     </div>`);
@@ -291,7 +295,7 @@
     if(!Auth.loggedIn()){ gateState = 'login'; App.render(); return; }
     if(!acc){ gateState = 'denied'; App.render(); return; }
     lastAcc = acc;
-    Store.setDocs(acc.role==='invitado' ? ['ops','team'] : ['ops','growth','team']);
+    Store.setDocs(acc.role==='invitado' ? ['ops','team'] : acc.role==='ventas' ? ['growth','team'] : ['ops','growth','team']);
     Store.loadLocal();
     const ready = Store.init();
     const known = (acc.member_id && App.member(acc.member_id)) || App.members().some(x=>(x.email||'').toLowerCase()===Auth.email);

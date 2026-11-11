@@ -74,7 +74,7 @@
         ${App.canManage(m)||m.id===App.me().id?`<div class="row wrap"><button class="btn sm g" onclick="Team.edit('${m.id}', ${m.id===App.me().id})">✎ Editar</button></div>`:''}</div>`;
     }).join('');
     return { title:'Equipo', crumb:'Invitá a colaborar', html:`
-      <div class="toolbar"><div class="small muted grow">Cada persona entra con su cuenta de Google. Solo pueden entrar los Gmails que autorizó el 👑 dueño principal, y él define el rol de cada uno: <b>Socio/a</b> (todo + Finanzas), <b>Equipo</b> (Operaciones y Ventas; puede editar y reasignar tareas) o <b>Invitado/a</b> (solo Operaciones, ideal freelancers).</div>
+      <div class="toolbar"><div class="small muted grow">Cada persona entra con su cuenta de Google. Solo pueden entrar los Gmails que autorizó el 👑 dueño principal, y él define el rol de cada uno: <b>Socio/a</b> (todo + Finanzas), <b>Equipo</b> (Operaciones y Ventas; puede editar y reasignar tareas) <b>Solo Ventas</b> (únicamente el área de Ventas) o <b>Invitado/a</b> (solo Operaciones, ideal freelancers). El rol se cambia cuando quieras desde ✎ Editar o en Accesos.</div>
       ${admin?'<button class="btn p" onclick="Team.edit()">＋ Agregar persona</button>':''}</div>
       ${App.isOwner()?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>🔐 Accesos: Gmails que pueden entrar</h3><span class="grow"></span><button class="btn sm p" onclick="Team.addAccess()">＋ Autorizar un Gmail</button></div>
         <div id="acc-list"><div class="small faint">Cargando…</div></div>
@@ -110,6 +110,10 @@
   });
 
   // ── Acciones de equipo ──────────────────────────────────────────────────────
+  // Roles que define el dueño (se guardan en la lista de accesos de la base)
+  const ACCESS_ROLES = [['equipo','Equipo (Operaciones y Ventas)'],['ventas','Solo Ventas'],['invitado','Invitado/a (solo Operaciones)'],['socio','Socio/a (todo + Finanzas)']];
+  const MEMBER_ROLE = { socio:'admin', equipo:'equipo', ventas:'ventas', invitado:'invitado' };
+  const accessRoleOf = m => m.role==='admin' ? 'socio' : (m.role||'equipo');
   const Team = {
     edit(id, self){
       const m0 = id ? App.member(id) : { role:'equipo', color:UI.COLORS[App.members().length % UI.COLORS.length], units:[] };
@@ -118,6 +122,7 @@
       UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
         { k:'name', label:'Nombre', req:true, half:true }, { k:'title', label:'Puesto', half:true, placeholder:'Ej: Social Media Manager' },
         { k:'email', label:'Gmail', type:'email', half:true, hint:App.isOwner()?'Para que pueda entrar, autorizalo en “Accesos”.':'' }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
+        ...(App.isOwner() && App.owner()?.id!==id ? [{ k:'arole', label:'Rol', type:'select', options:ACCESS_ROLES, default:accessRoleOf(m), hint:'Define qué ve: Socio/a ve todo + Finanzas; Equipo, Operaciones y Ventas; Solo Ventas, únicamente Ventas; Invitado/a, solo Operaciones.' }] : []),
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },
         ...(admin ? [{ k:'cuentas', label:'Cuentas que trabaja', type:'multi', options:Ops.activeClients().map(c=>[c.id,c.name]), default:id ? Ops.activeClients().filter(c=>c.ownerId===id || (c.teamIds||[]).includes(id)).map(c=>c.id) : [], hint:'Podés asignarlas antes de que entre: cuando entre ya ve sus cuentas y tareas.' }] : []),
         { k:'color', label:'Color', type:'color', half:true },
@@ -127,6 +132,10 @@
       onSubmit:v=>{
         if(v.email) v.email = v.email.trim().toLowerCase();
         const cuentas = v.cuentas; delete v.cuentas;
+        const arole = v.arole; delete v.arole;
+        if(arole){ v.role = MEMBER_ROLE[arole] || 'equipo';
+          const email = (v.email || m.email || '').trim().toLowerCase();
+          if(email && arole!==accessRoleOf(m0)) Auth.saveAccess({ email, role:arole, member_id:id||null }).then(()=>{ UI.toast('Rol actualizado','🔐'); Team.loadAccess(); }).catch(e=>UI.toast('No se pudo cambiar el rol en Accesos: '+e.message,'⚠️')); }
         const r = Store.upsert('team','members',{ ...m, ...v });
         // Cuentas asignadas: se suma/saca a la persona del equipo de cada cliente (antes de que entre, así ya ve todo)
         if(cuentas) Ops.activeClients().forEach(c=>{ const tiene = (c.teamIds||[]).includes(r.id), quiere = cuentas.includes(c.id);
@@ -154,10 +163,10 @@
     async loadAccess(){
       const el = document.getElementById('acc-list'); if(!el) return;
       try{
-        const rows = await Auth.listAccess(), RL = { owner:'👑 Dueño', socio:'Socio/a', equipo:'Equipo', invitado:'Invitado/a' };
+        const rows = await Auth.listAccess(), RL = { owner:'👑 Dueño', socio:'Socio/a', equipo:'Equipo', ventas:'Solo Ventas', invitado:'Invitado/a' };
         el.innerHTML = rows.length ? `<div class="list">${rows.map(r=>{ const m = (r.member_id && App.member(r.member_id)) || App.members().find(x=>(x.email||'')===r.email);
           return `<div class="li"><div class="grow"><div class="b small">${esc(r.email)}</div><div class="xs faint">${m?esc(m.name):'todavía no entró'}</div></div>
-            ${r.role==='owner' ? '<span class="tag">👑 Dueño</span>' : `<select class="inp sm" style="width:auto" onchange="Team.setAccessRole('${esc(r.email)}', this.value)">${['socio','equipo','invitado'].map(k=>`<option value="${k}" ${r.role===k?'selected':''}>${RL[k]}</option>`).join('')}</select>
+            ${r.role==='owner' ? '<span class="tag">👑 Dueño</span>' : `<select class="inp sm" style="width:auto" onchange="Team.setAccessRole('${esc(r.email)}', this.value)">${['socio','equipo','ventas','invitado'].map(k=>`<option value="${k}" ${r.role===k?'selected':''}>${RL[k]}</option>`).join('')}</select>
             <button class="icon-btn" title="Quitar acceso" onclick="Team.removeAccess('${esc(r.email)}')">🗑</button>`}</div>`; }).join('')}</div>`
           : '<div class="small faint">Todavía no hay Gmails autorizados.</div>';
       }catch(e){ el.innerHTML = `<div class="small" style="color:var(--red)">${esc(e.message)}</div>`; }
@@ -166,7 +175,7 @@
       const sin = App.members().filter(x=>!x.email || x.email===pre.email);
       UI.form({ title:'＋ Autorizar un Gmail', submit:'Autorizar', values:{ role:'equipo', ...pre }, fields:[
         { k:'email', label:'Gmail', type:'email', req:true, placeholder:'nombre@gmail.com' },
-        { k:'role', label:'Rol', type:'select', options:[['equipo','Equipo (Operaciones y Ventas)'],['invitado','Invitado/a (solo Operaciones)'],['socio','Socio/a (todo + Finanzas)']] },
+        { k:'role', label:'Rol', type:'select', options:ACCESS_ROLES },
         { k:'member_id', label:'Perfil del equipo (opcional)', type:'select', options:[['','— Lo elige al entrar —'], ...App.members().filter(x=>!x.email || x.email===pre.email || x.id===pre.member_id).map(x=>[x.id,x.name])] },
       ], onSubmit:v=>{ (async()=>{
           try{ await Auth.saveAccess(v); if(v.member_id) Store.upsert('team','members',{ id:v.member_id, email:v.email.trim().toLowerCase() });
@@ -174,7 +183,10 @@
           catch(e){ UI.toast('No se pudo autorizar: '+e.message,'⚠️'); } })(); } });
     },
     async setAccessRole(email, role){
-      try{ const rows = await Auth.listAccess(), r = rows.find(x=>x.email===email); await Auth.saveAccess({ ...r, role }); UI.toast('Rol actualizado','🔐'); }
+      try{ const rows = await Auth.listAccess(), r = rows.find(x=>x.email===email); await Auth.saveAccess({ ...r, role });
+        const m = (r.member_id && App.member(r.member_id)) || App.members().find(x=>(x.email||'')===email);
+        if(m) Store.upsert('team','members',{ id:m.id, role:MEMBER_ROLE[role]||'equipo' });
+        UI.toast('Rol actualizado','🔐'); }
       catch(e){ UI.toast('No se pudo cambiar: '+e.message,'⚠️'); }
       Team.loadAccess();
     },

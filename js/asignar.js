@@ -47,7 +47,7 @@
   async function ensureProfiles(){
     if(!App.isOwner() || !window.Auth?.listAccess) return 0;
     let rows; try{ rows = await Auth.listAccess(); }catch(e){ return 0; }
-    const ROLE = { owner:'admin', socio:'admin', equipo:'equipo', invitado:'invitado' };
+    const ROLE = { owner:'admin', socio:'admin', equipo:'equipo', ventas:'ventas', invitado:'invitado' };
     let n = 0;
     for(const r of rows){
       const email = String(r.email||'').toLowerCase(); if(!email) continue;

@@ -7,13 +7,14 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- 2) Datos: nada sin sesión. Finanzas ('main') solo dueño y socios.
---    Crecimiento ('growth') no lo ven los invitados.
+--    Ventas ('growth') no lo ven los invitados; Operaciones ('ops') no lo ve el rol Solo Ventas.
 create or replace function public.anm_puede(fila text) returns boolean
 language sql stable security definer set search_path = public as $$
   select case
     when fila = 'main'   then public.anm_role() in ('owner','socio')
-    when fila = 'growth' then public.anm_role() in ('owner','socio','equipo')
-    when fila in ('ops','team') then public.anm_role() is not null
+    when fila = 'growth' then public.anm_role() in ('owner','socio','equipo','ventas')
+    when fila = 'ops'    then public.anm_role() in ('owner','socio','equipo','invitado')
+    when fila = 'team'   then public.anm_role() is not null
     else false end;
 $$;
 
