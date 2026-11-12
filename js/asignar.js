@@ -15,6 +15,7 @@
     const al = ALIAS[key] || [key];
     const byMail = Object.entries(KNOWN).find(([,v])=>v[1]===key)?.[0];
     return App.members().find(m=>byMail && (m.email||'').toLowerCase()===byMail)
+      || App.members().find(m=>m.nick && al.includes(norm(m.nick).trim()))
       || App.members().find(m=>norm(m.name).split(/\s+/).some(tok=>al.some(a=>tok===a || (a.length>=4 && tok.startsWith(a)))))
       || (key==='dio' ? App.owner() : null);   // Dio es el dueño principal
   }
@@ -74,7 +75,7 @@
       <p class="small muted" style="margin-bottom:10px">Al crear una tarea, si el título o el área tiene alguna de estas palabras, se asigna sola. Se puede cambiar a mano siempre.</p>
       <div class="list">${rules().map(r=>{ const ps = people(r).map(App.member).filter(Boolean);
         return `<div class="li ${admin?'click':''}" ${admin?`onclick="Asignar.edit('${esc(r.id)}')"`:''}><span class="avs">${ps.map(m=>UI.avatar(m,'sm')).join('')||'<span class="av sm">?</span>'}</span>
-          <div class="grow"><div class="b small">${ps.map(m=>esc(m.name.split(' ')[0])).join(' y ')||'<span style="color:var(--orange)">falta elegir persona</span>'}</div><div class="xs faint">${esc(r.words)}</div></div>${admin?'<span class="xs faint">✎</span>':''}</div>`; }).join('')}</div></div>`;
+          <div class="grow"><div class="b small">${ps.map(m=>esc(App.short(m))).join(' y ')||'<span style="color:var(--orange)">falta elegir persona</span>'}</div><div class="xs faint">${esc(r.words)}</div></div>${admin?'<span class="xs faint">✎</span>':''}</div>`; }).join('')}</div></div>`;
   }
   const save = list => Store.setSetting('assignRules', list.map(r=>({ id:r.id, words:r.words, ids:people(r) })));
 

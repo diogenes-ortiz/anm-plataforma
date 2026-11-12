@@ -49,7 +49,7 @@
     const run = ()=>{ if(manual) return; const s = Asignar.suggest(ti.value, ar?.value); if(!s.length){ hint.textContent = ''; return; }
       if([...as.options].some(o=>o.value===s[0])) as.value = s[0];
       co?.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', s.slice(1).includes(c.dataset.v)));
-      hint.textContent = '🤖 Asignada por temática: ' + s.map(x=>(App.member(x)?.name||'').split(' ')[0]).join(' y '); };
+      hint.textContent = '🤖 Asignada por temática: ' + s.map(x=>App.short(App.member(x))).join(' y '); };
     ti.addEventListener('input', run); ar?.addEventListener('input', run);
   }
   function wireAssignee(box){
@@ -139,7 +139,7 @@
   // Solo lectura: no escribe nada mientras se dibuja la pantalla (BUG-12)
   function pendingMinutas(){
     return (window.ANM_MINUTAS||[]).filter(m=>!Store.exists('ops','meetings',m.id) && !(Store.setting('minutasDescartadas',[])).includes(m.id)).map(minutaData); }
-  const memberByFirst = n => n && App.members().find(m=>norm(m.name.split(' ')[0])===norm(n));
+  const memberByFirst = n => n && (App.members().find(m=>m.nick && norm(m.nick)===norm(n)) || App.members().find(m=>norm(String(m.name||'').split(' ')[0])===norm(n)));
   const clientByName = n => n && activeClients().find(c=>norm(c.name)===norm(n) || norm(c.name).includes(norm(n)) || norm(n).includes(norm(c.name)));
 
   // ── Alertas ──────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@
       <div class="hero" style="margin-bottom:22px">
         <div class="grow"><div class="row" style="margin-bottom:8px"><span class="health h-${c.health||'ok'}"></span><span class="b small">${HEALTH[c.health||'ok'][0]}</span>${c.active===false?'<span class="tag t-red">Inactivo</span>':''}</div>
           <h2>${esc(c.name)}</h2><div class="row wrap" style="margin-top:10px">${App.unitTags(c.units)}</div>
-          <div class="row wrap" style="margin-top:12px;gap:8px"><span class="small muted">Equipo:</span>${clientTeam(id).map(App.member).filter(Boolean).map(m=>`<span class="row" style="gap:6px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:99px">${UI.avatar(m,'sm')}<span class="small b">${esc(m.name.split(' ')[0])}</span>${m.id===c.ownerId?'<span class="xs faint">resp.</span>':''}</span>`).join('') || '<span class="small faint">nadie asignado todavía</span>'}${App.me()?.role==='invitado'?'':`<button class="btn xs g" onclick="Ops.editClientTeam('${id}')">＋ Equipo</button>`}</div>
+          <div class="row wrap" style="margin-top:12px;gap:8px"><span class="small muted">Equipo:</span>${clientTeam(id).map(App.member).filter(Boolean).map(m=>`<span class="row" style="gap:6px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:99px">${UI.avatar(m,'sm')}<span class="small b">${esc(App.short(m))}</span>${m.id===c.ownerId?'<span class="xs faint">resp.</span>':''}</span>`).join('') || '<span class="small faint">nadie asignado todavía</span>'}${App.me()?.role==='invitado'?'':`<button class="btn xs g" onclick="Ops.editClientTeam('${id}')">＋ Equipo</button>`}</div>
           <div class="small muted" style="margin-top:12px">Responsable: <b>${esc(owner?.name||'—')}</b>${c.contactName?` · Contacto: <b>${esc(c.contactName)}</b>`:''}${c.contactPhone?` · <a href="${UI.waLink('',c.contactPhone)}" target="_blank">WhatsApp</a>`:''}${c.contactEmail?` · <a href="mailto:${esc(c.contactEmail)}">Email</a>`:''}${c.link?` · <a href="${esc(UI.safeUrl(c.link))}" target="_blank">Carpeta ↗</a>`:''}</div></div>
         <div class="col" style="align-items:stretch"><button class="btn p" onclick="Ops.editTask(null,{clientId:'${id}'})">＋ Agregar tarea</button><button class="btn g" onclick="Ops.editMeeting(null,{clientId:'${id}'})">📝 Minuta de reunión</button><button class="btn g" onclick="Ops.clientStatus('${id}')">📋 Status para el cliente</button>
           <a href="#" class="xs faint" style="text-align:center;margin-top:2px" onclick="Ops.editClient('${id}');return false">✎ Editar datos del cliente</a></div>
@@ -349,7 +349,7 @@
     if(!pins.length && !admin) return '';
     return `<div class="card" style="margin-bottom:18px;border-color:color-mix(in srgb,var(--yellow) 55%,transparent);background:color-mix(in srgb,var(--yellow) 7%,var(--surface))">
       <div class="card-h"><h3>📌 No olvidar</h3><span class="xs faint">prioridades del cliente${admin?'':' · las cargan los socios'}</span><span class="grow"></span>${admin?`<button class="btn xs g" onclick="Ops.addPin('${c.id}')">＋ Agregar</button>`:''}</div>
-      ${pins.length ? `<div class="list">${pins.map(p=>`<div class="li"><span>${p.top?'🔥':'•'}</span><div class="grow small b">${esc(p.text)}</div><span class="xs faint">${esc((App.member(p.by)?.name||'').split(' ')[0])}</span>${admin?`<button class="icon-btn" title="${p.top?'Sacar de urgente':'Marcar urgente'}" onclick="Ops.topPin('${c.id}','${p.id}')">${p.top?'⬇':'🔥'}</button><button class="icon-btn" title="Quitar" onclick="Ops.delPin('${c.id}','${p.id}')">🗑</button>`:''}</div>`).join('')}</div>`
+      ${pins.length ? `<div class="list">${pins.map(p=>`<div class="li"><span>${p.top?'🔥':'•'}</span><div class="grow small b">${esc(p.text)}</div><span class="xs faint">${esc(App.short(App.member(p.by)))}</span>${admin?`<button class="icon-btn" title="${p.top?'Sacar de urgente':'Marcar urgente'}" onclick="Ops.topPin('${c.id}','${p.id}')">${p.top?'⬇':'🔥'}</button><button class="icon-btn" title="Quitar" onclick="Ops.delPin('${c.id}','${p.id}')">🗑</button>`:''}</div>`).join('')}</div>`
         : '<div class="small faint">Nada cargado. Agregá lo que el equipo no se puede olvidar con este cliente (ej: “siempre mandar el calendario antes del 20”, “no usar el color rojo”).</div>'}</div>`;
   }
   function taskRow(t, showClient=true){
@@ -437,7 +437,7 @@
     Store.upsert('ops','tasks',{ id, status:st, doneAt: st==='done' ? new Date().toISOString() : null });
     if(st==='done' && !wasDone){
       const who = App.member(t.assigneeId), pf = who ? Game.perf(who.id) : null;
-      Game.log('task_done', `Tarea completada: ${t.title}${pf&&pf.pct!=null?` · ${who.id===App.me().id?'vas':who.name.split(' ')[0]+' va'} ${pf.resolved}/${pf.assigned} este mes`:''}`, { icon:'✅', ref:id });
+      Game.log('task_done', `Tarea completada: ${t.title}${pf&&pf.pct!=null?` · ${who.id===App.me().id?'vas':App.short(who)+' va'} ${pf.resolved}/${pf.assigned} este mes`:''}`, { icon:'✅', ref:id });
       if(who) Game.celebrate(who.id, before);
     }
     App.render();
@@ -565,7 +565,7 @@
   // "texto @Nombre 12/10" → { text, assigneeId, due }
   function parseAction(s){
     let assigneeId = '', due = '';
-    App.members().forEach(m=>{ const re = new RegExp('@'+m.name.split(' ')[0]+'\\b','i'); if(re.test(s)){ assigneeId = m.id; s = s.replace(re,'').trim(); } });
+    App.members().forEach(m=>[m.nick, String(m.name||'').split(' ')[0]].filter(Boolean).forEach(n=>{ const re = new RegExp('@'+n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i'); if(re.test(s)){ assigneeId = m.id; s = s.replace(re,'').trim(); } }));
     const dm = s.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
     if(dm){
       // Fecha válida (31/02 no existe) y, si no dice el año y ya pasó hace más de un mes, es la del año que viene (BUG-16)
@@ -721,8 +721,8 @@
       const before = taskPeople(t);
       if(before.join()===ids.join()) return;
       Store.upsert('ops','tasks',{ id, assigneeId:ids[0]||'', alsoIds:ids.slice(1) });
-      ids.filter(x=>!before.includes(x) && x!==App.me().id).forEach(x=>App.notify(x, `${App.me().name.split(' ')[0]} te sumó a la tarea: ${t.title}`, '#/ops/tareas'));
-      UI.toast(ids.length ? `Se encarga${ids.length>1?'n':''} ${ids.map(x=>(App.member(x)?.name||'').split(' ')[0]).join(' y ')}` : 'Tarea sin responsable','👤'); App.render();
+      ids.filter(x=>!before.includes(x) && x!==App.me().id).forEach(x=>App.notify(x, `${App.short(App.me())} te sumó a la tarea: ${t.title}`, '#/ops/tareas'));
+      UI.toast(ids.length ? `Se encarga${ids.length>1?'n':''} ${ids.map(x=>App.short(App.member(x))).join(' y ')}` : 'Tarea sin responsable','👤'); App.render();
     },
     editClientTeam(id){
       const c = client(id); if(!c) return;
@@ -739,7 +739,7 @@
         { k:'title', label:'¿Qué hay que hacer?', req:true },
         { k:'clientId', label:'Cliente', type:'select', options:clientOpts(undefined, t.clientId), half:true }, { k:'unit', label:'Unidad', type:'select', options:[['','—'],...App.unitOpts()], half:true },
         { k:'assigneeId', label:'Responsable', type:'select', options:assigneeOpts(t.clientId, t.assigneeId), half:true, hint:App.me().role==='invitado'?'Como invitado/a solo te podés asignar a vos.':'' }, { k:'due', label:'Vence', type:'date', half:true },
-        ...(App.me().role==='invitado' ? [] : [{ k:'alsoIds', label:'También se encargan', type:'multi', options:App.members().map(m=>[m.id,m.name.split(' ')[0]]) }]),
+        ...(App.me().role==='invitado' ? [] : [{ k:'alsoIds', label:'También se encargan', type:'multi', options:App.members().map(m=>[m.id,App.short(m)]) }]),
         { k:'status', label:'Estado', type:'select', options:TASK_ST, half:true }, { k:'priority', label:'Prioridad', type:'select', options:PRIO, half:true },
         { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
         { k:'note', label:'Nota para el cliente', placeholder:'Ej: falta OK final para empezar a salir' },
@@ -750,11 +750,11 @@
         v.area = (v.area||'').trim().toUpperCase();
         if(v.alsoIds) v.alsoIds = v.alsoIds.filter(x=>x && x!==v.assigneeId);
         const r = Store.upsert('ops','tasks',{ ...t, ...v, status:prevStatus });
-        (v.alsoIds||[]).filter(x=>!(t.alsoIds||[]).includes(x) && x!==App.me().id).forEach(x=>App.notify(x, `${App.me().name.split(' ')[0]} te sumó a la tarea: ${v.title}`, '#/ops/tareas'));
+        (v.alsoIds||[]).filter(x=>!(t.alsoIds||[]).includes(x) && x!==App.me().id).forEach(x=>App.notify(x, `${App.short(App.me())} te sumó a la tarea: ${v.title}`, '#/ops/tareas'));
         if(v.status!==prevStatus || !id) setTaskStatus(r.id, v.status);
         // Aviso cuando cambia la fecha de una tarea de otra persona (BUG-22)
-        if(id && v.due!==(t.due||'') && v.assigneeId===t.assigneeId && t.assigneeId && t.assigneeId!==App.me().id) App.notify(t.assigneeId, `${App.me().name.split(' ')[0]} cambió la fecha de “${v.title}”: ${v.due?UI.fdate(v.due,{abs:true}):'sin fecha'}`, '#/ops/tareas');
-        if(id && v.assigneeId && v.assigneeId!==t.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `${App.me().name.split(' ')[0]} te pasó la tarea: ${v.title}`, '#/ops/tareas');
+        if(id && v.due!==(t.due||'') && v.assigneeId===t.assigneeId && t.assigneeId && t.assigneeId!==App.me().id) App.notify(t.assigneeId, `${App.short(App.me())} cambió la fecha de “${v.title}”: ${v.due?UI.fdate(v.due,{abs:true}):'sin fecha'}`, '#/ops/tareas');
+        if(id && v.assigneeId && v.assigneeId!==t.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `${App.short(App.me())} te pasó la tarea: ${v.title}`, '#/ops/tareas');
         if(!id){ UI.toast('Tarea creada','✅'); if(v.assigneeId && v.assigneeId!==App.me().id) App.notify(v.assigneeId, `Te asignaron: ${v.title}${v.due?' (vence '+UI.fdate(v.due,{abs:true})+')':''}`, '#/ops/tareas'); }
         App.render();
       } });
@@ -805,7 +805,7 @@
         ids.forEach(id=>Store.upsert('ops','tasks',{ id, assigneeId:value }));
         const who = App.member(value);
         if(value!==me.id && confirm(`${n} tarea${s} asignada${s} a ${who.name}. ¿Le mando el aviso con la lista?`)) Ops.bulk('alert');
-        else UI.toast(`${n} tarea${s} asignada${s} a ${who.name.split(' ')[0]}`,'👤');
+        else UI.toast(`${n} tarea${s} asignada${s} a ${App.short(who)}`,'👤');
       }
       if(action==='due' && value){ ids.forEach(id=>Store.upsert('ops','tasks',{ id, due:value })); UI.toast(`Nueva fecha para ${n} tarea${s}: ${UI.fdate(value,{abs:true})}`,'📅'); }
       if(action==='client' && value){ const cid = value==='__int' ? '' : value; ids.forEach(id=>Store.upsert('ops','tasks',{ id, clientId:cid })); UI.toast(`${n} tarea${s} movida${s} a ${cid?clientName(cid):'Internas'}`,'↪'); }
@@ -815,7 +815,7 @@
         const who = Object.keys(by); if(!who.length) return UI.toast('Ninguna de estas tareas está asignada a otra persona','ℹ️');
         who.forEach(p=>{ App.notify(p, `📋 Tenés ${by[p].length} tarea${by[p].length>1?'s':''} asignada${by[p].length>1?'s':''}:\n${by[p].map(t=>`• ${t.title} (${clientName(t.clientId)}${t.due?' · vence '+UI.fdate(t.due,{abs:true}):''})`).join('\n')}`, '#/ops/tareas');
           by[p].forEach(t=>Store.upsert('ops','tasks',{ id:t.id, alertedTo:t.assigneeId, alertedAt:new Date().toISOString() })); });
-        Game.log('alert_sent', `Avisos enviados a ${who.map(p=>(App.member(p)?.name||'alguien').split(' ')[0]).join(', ')}`, { icon:'📣' });
+        Game.log('alert_sent', `Avisos enviados a ${who.map(p=>App.short(App.member(p))).join(', ')}`, { icon:'📣' });
       }
       if(action==='delete'){
         if(!confirm(`¿Eliminar ${n} tarea${s}? No se puede deshacer.`)) return;
@@ -889,7 +889,7 @@
       const loose = (m.actions||[]).filter(a=>!a.taskId || !Store.get('ops','tasks',a.taskId));
       const opts = App.assignOpts();
       const pending = tasks.filter(t=>t.status!=='done' && t.assigneeId && t.assigneeId!==App.me().id && t.alertedTo!==t.assigneeId).length;
-      const people = App.members().filter(x=>(m.attendees||[]).includes(x.id)).map(x=>x.name.split(' ')[0]).join(', ');
+      const people = App.members().filter(x=>(m.attendees||[]).includes(x.id)).map(x=>App.short(x)).join(', ');
       UI.modal(`<h2>🤝 ${esc(m.title)}<button class="icon-btn x" data-close>✕</button></h2>
         <div class="row wrap small muted" style="gap:10px;margin:-8px 0 16px"><span class="tag t-blue">${esc(clientName(m.clientId))}</span><span>${UI.fdate((m.date||'').slice(0,10),{abs:true})}${UI.time(m.date)?' · '+UI.time(m.date):''}</span>${people?`<span>👥 ${esc(people)}</span>`:''}${(m.topics||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join('')}${m.link?`<a href="${esc(UI.safeUrl(m.link))}" target="_blank">🔗 grabación / link</a>`:''}</div>
         <div class="card" style="padding:16px 18px;margin-bottom:12px"><div class="xs faint b" style="letter-spacing:1px;margin-bottom:8px">📝 MINUTA</div><div class="small prewrap" style="line-height:1.65">${esc(m.minuta||'Sin minuta cargada.')}</div>
@@ -916,7 +916,7 @@
       const by = {}; tasks.forEach(t=>{ (by[t.assigneeId] = by[t.assigneeId]||[]).push(t); });
       const who = Object.keys(by).filter(p=>p!==App.me().id);
       if(!who.length) return UI.toast('No hay tareas asignadas a otras personas','ℹ️');
-      const resumen = who.map(p=>`${(App.member(p)?.name||'alguien').split(' ')[0]} (${by[p].length})`).join(', ');
+      const resumen = who.map(p=>`${App.short(App.member(p))} (${by[p].length})`).join(', ');
       if(!confirm(`Voy a avisar a: ${resumen}.\n\nCada uno recibe la lista de sus tareas de “${m.title}” en la plataforma y por mail.`)) return;
       who.forEach(p=>{
         const list = by[p].map(t=>`• ${t.title}${t.due?` (vence ${UI.fdate(t.due,{abs:true})})`:''}`).join('\n');
@@ -929,7 +929,7 @@
     copyMeeting(id){
       const m = Store.get('ops','meetings',id);
       const tasks = S('tasks').filter(t=>t.meetingId===id);
-      UI.copy(`*${m.title}* — ${clientName(m.clientId)} · ${UI.fdate((m.date||'').slice(0,10),{abs:true})}\n\n${m.minuta||''}${m.decisiones?`\n\n*Decisiones*\n${m.decisiones}`:''}\n\n*Tareas*\n${tasks.map(t=>`• ${t.title} → ${(App.member(t.assigneeId)?.name||'alguien').split(' ')[0]||'sin asignar'}${t.due?` (${UI.fdate(t.due,{abs:true})})`:''}`).join('\n')}`);
+      UI.copy(`*${m.title}* — ${clientName(m.clientId)} · ${UI.fdate((m.date||'').slice(0,10),{abs:true})}\n\n${m.minuta||''}${m.decisiones?`\n\n*Decisiones*\n${m.decisiones}`:''}\n\n*Tareas*\n${tasks.map(t=>`• ${t.title} → ${App.short(App.member(t.assigneeId))||'sin asignar'}${t.due?` (${UI.fdate(t.due,{abs:true})})`:''}`).join('\n')}`);
     },
 
     editMeeting(id, preset={}){
