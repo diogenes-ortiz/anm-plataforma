@@ -27,6 +27,8 @@
     // ¿Puedo gestionar (editar rol, resetear, quitar) a esta persona?
     canManage(m){ return this.isAdmin() && (m.role!=='admin' || this.isOwner()); },
     canGrowth(){ return this.me() && this.me().role!=='invitado'; },
+    // Cómo se nombra a alguien en avisos y listas: su apodo, o si no tiene, el primer nombre
+    short(m){ return m ? (String(m.nick||'').trim() || String(m.name||'').split(' ')[0]) : ''; },
     onlySales(){ return this.me()?.role==='ventas'; },
     units(){ return Store.setting('units', DEFAULT_UNITS); },
     unit(id){ return this.units().find(u=>u.id===id) || { id, label:id, color:'#7a7a8c' }; },

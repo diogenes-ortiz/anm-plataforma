@@ -162,3 +162,21 @@ test('borrar reuniones pasadas de a una y varias juntas', async ({ page }) => {
   expect(quedan).toEqual(['Reunión futura']);
   expect(errores).toEqual([]);
 });
+
+test('apodos: se editan en el perfil y se usan en avisos, @menciones y reglas', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page);
+  await entrar(page);
+  const id = await page.evaluate(() => Store.upsert('team','members',{ name:'Lucía Pagui', role:'equipo', color:'#3366ff' }).id);
+  await page.evaluate(i => Team.edit(i), id);
+  await page.fill('#f_nick', 'Luli');
+  await page.click('#mform button[type=submit]');
+  await page.goto('/#/equipo');
+  await expect(page.locator('text=“Luli”')).toBeVisible();
+  const r = await page.evaluate(i => ({ short: App.short(App.member(i)), mention: Ops.parseAction ? Ops.parseAction('Armar flyer @Luli').assigneeId : null,
+    regla: Asignar.suggest('Diseñar flyer')[0] }), id);
+  expect(r.short).toBe('Luli');
+  if (r.mention !== null) expect(r.mention).toBe(id);
+  expect(r.regla).toBe(id);
+  expect(errores).toEqual([]);
+});

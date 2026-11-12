@@ -27,7 +27,7 @@
     const html = `
       <div class="hero" style="margin-bottom:24px">
         <div class="grow" style="min-width:240px"><div class="small muted b">${UI.DAYS[new Date().getDay()]} ${new Date().getDate()} de ${UI.MONTHS[new Date().getMonth()].toLowerCase()}</div>
-          <h2>${hi}, ${esc(me.name.split(' ')[0])} 👋</h2>
+          <h2>${hi}, ${esc(App.short(me))} 👋</h2>
           <div class="muted" style="margin-top:4px">${focus ? `Tenés <b style="color:var(--text)">${focus} cosa${focus>1?'s':''}</b> para hoy.` : 'No tenés pendientes urgentes. ¡Buen momento para adelantar!'}</div>
           <div class="row wrap" style="margin-top:16px"><button class="btn p" onclick="App.quickAdd()">＋ Crear</button><button class="btn g" onclick="Ops.updateClient()">📡 Actualizar un cliente</button>${notes.length?`<button class="btn g" onclick="App.openNotifications()">🔔 ${notes.length} aviso${notes.length>1?'s':''}</button>`:''}</div></div>
         <div style="min-width:260px;flex:0 1 340px"><div class="xs faint b" style="letter-spacing:1px;margin-bottom:6px">CÓMO VENÍS ESTE MES</div><div class="row" style="margin-bottom:10px"><span class="lvl" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span><div class="grow"><div class="b" style="color:${pf.color}">${esc(pf.label)}</div><div class="xs faint b">${pf.pct!=null?`${pf.resolved} de ${pf.assigned} tareas asignadas resueltas`:'Todavía no te vencieron tareas este mes'}${pf.overdue?` · ${pf.overdue} vencida${pf.overdue>1?'s':''}`:''}</div></div></div>
@@ -67,7 +67,7 @@
       const pf = Game.perf(m.id);
       const tasks = Ops.openTasks().filter(t=>Ops.isMine(t, m.id)).length;
       const clients = Ops.activeClients().filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
-      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}</div>${m.title?`<div class="small muted">${esc(m.title)}</div>`:''}<div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.joinedAt?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin Gmail</span>'}</div></div><span class="lvl" title="${esc(pf.label)} este mes" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span></div>
+      return `<div class="card"><div class="row" style="margin-bottom:14px">${UI.avatar(m,'lg')}<div class="grow"><div class="b" style="font-size:15px">${esc(m.name)}${m.nick?` <span class="small muted">“${esc(m.nick)}”</span>`:''}</div>${m.title?`<div class="small muted">${esc(m.title)}</div>`:''}<div class="xs faint b">${App.owner()?.id===m.id?'👑 Dueño principal · ':''}${esc(App.ROLES[m.role]||m.role)}${m.joinedAt?'':' · <span style="color:var(--yellow)">todavía no entró</span>'}${m.email?'':' · <span style="color:var(--orange)">sin Gmail</span>'}</div></div><span class="lvl" title="${esc(pf.label)} este mes" style="background:${pf.color};font-size:13px;min-width:52px">${pf.pct!=null?pf.pct+'%':'—'}</span></div>
         <div class="row wrap" style="margin-bottom:12px">${App.unitTags(m.units)}</div>
         <div class="grid g3 small" style="gap:8px;margin-bottom:14px"><div><div class="b">✅ ${pf.resolved}/${pf.assigned}</div><div class="xs faint">resueltas (mes)</div></div><div><div class="b">${tasks}</div><div class="xs faint">pendientes</div></div><div><div class="b">${pf.overdue}</div><div class="xs faint">vencidas</div></div></div>
         <div class="xs muted" style="margin-bottom:14px">${clients.length?'Cuentas: '+clients.map(c=>esc(c.name)).join(', '):'Sin cuentas asignadas'}</div>
@@ -120,7 +120,8 @@
       const m = { ...m0, emailReminders: m0.emailReminders!==false };
       const admin = App.isAdmin();
       UI.form({ title: id ? (self?'Mi perfil':'Editar '+m.name) : 'Agregar persona', values:m, fields:[
-        { k:'name', label:'Nombre', req:true, half:true }, { k:'title', label:'Puesto', half:true, placeholder:'Ej: Social Media Manager' },
+        { k:'name', label:'Nombre', req:true, half:true }, { k:'nick', label:'Apodo', half:true, placeholder:'Ej: Luli, Santi, Dio', hint:'Así aparece en tareas y avisos, y sirve para @mencionar.' },
+        { k:'title', label:'Puesto', half:true, placeholder:'Ej: Social Media Manager' },
         { k:'email', label:'Gmail', type:'email', half:true, hint:App.isOwner()?'Para que pueda entrar, autorizalo en “Accesos”.':'' }, { k:'phone', label:'WhatsApp', half:true, placeholder:'54911…' },
         ...(App.isOwner() && App.owner()?.id!==id ? [{ k:'arole', label:'Rol', type:'select', options:ACCESS_ROLES, default:accessRoleOf(m), hint:'Define qué ve: Socio/a ve todo + Finanzas; Equipo, Operaciones y Ventas; Solo Ventas, únicamente Ventas; Invitado/a, solo Operaciones.' }] : []),
         { k:'units', label:'Unidades en las que trabaja', type:'multi', options:App.unitOpts() },

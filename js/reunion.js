@@ -13,8 +13,8 @@
   function prompt({ cid, date, text }){
     const c = cid && Store.get('ops','clients',cid);
     const tasks = cid ? Store.all('ops','tasks').filter(t=>t.clientId===cid && (t.status!=='done' || (t.doneAt||'').slice(0,10)>=UI.addDays(UI.today(),-30))) : [];
-    const who = id => (App.member(id)?.name||'').split(' ')[0];
-    const team = App.members().map(m=>`- ${m.name.split(' ')[0]} (${m.name}) — ${m.title || (m.role==='admin'?'Socio':'Equipo')}`).join('\n');
+    const who = id => App.short(App.member(id));
+    const team = App.members().map(m=>`- ${App.short(m)} (${m.name}${m.nick?', le decimos '+m.nick:''}) — ${m.title || (m.role==='admin'?'Socio':'Equipo')}`).join('\n');
     const areas = [...new Set([...(c?.areas||[]).map(a=>a.name), ...tasks.map(t=>t.area).filter(Boolean)])];
     return `Sos el asistente de operaciones de ANM Content Studio, una agencia de marketing digital de Argentina. Te paso todo lo que se habló en una reunión${c?` con el cliente ${c.name}`:''}. Ordenalo para cargarlo en nuestra plataforma.
 
