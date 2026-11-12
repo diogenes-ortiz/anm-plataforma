@@ -5,6 +5,8 @@
  *   • resumenDiario()  → todos los días a la mañana: tareas vencidas, de hoy y próximas,
  *                        reuniones del día y seguimientos del CRM. A los socios, además,
  *                        un resumen del equipo (clientes sin actualizar, tareas vencidas).
+ *   • reporteCierre()  → todos los días a las 19 h, SOLO al dueño (Diogenes): todas las tareas
+ *                        pendientes, ordenadas por empresa y por responsable.
  *   • avisosNuevos()   → cada hora: los avisos nuevos de la plataforma (tareas asignadas,
  *                        alertas mandadas con "Avisar", clientes en riesgo, nuevos clientes…).
  *
@@ -17,6 +19,7 @@
  *   4. Arriba elegí la función "instalar" y tocá ▶ Ejecutar. Aceptá los permisos que pide Google
  *      (leer datos externos y enviar mails como vos).
  *   5. Para probar: elegí "probarConmigo" y ▶ Ejecutar → te llega un resumen de ejemplo.
+ *      Para probar el reporte de las 19 h: elegí "probarReporte" y ▶ Ejecutar.
  * Cada persona necesita tener su email cargado en la plataforma (Equipo → Editar).
  */
 
@@ -24,6 +27,7 @@ const CONFIG = {
   SUPABASE_URL: 'https://pxsgqbldbdvbrfwqnvyl.supabase.co',
   PLATAFORMA: 'https://diogenes-ortiz.github.io/anm-plataforma/',
   HORA_RESUMEN: 8,              // hora del resumen diario (0-23)
+  HORA_REPORTE: 19,             // hora del reporte de cierre del día (solo al dueño)
   RESUMEN_FINDE: false,         // true = también sábados y domingos
   ZONA: 'America/Argentina/Buenos_Aires',
   REMITENTE: 'ANM Plataforma',  // nombre que aparece como remitente
@@ -33,10 +37,11 @@ const CONFIG = {
 function instalar() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('resumenDiario').timeBased().everyDays(1).atHour(CONFIG.HORA_RESUMEN).inTimezone(CONFIG.ZONA).create();
+  ScriptApp.newTrigger('reporteCierre').timeBased().everyDays(1).atHour(CONFIG.HORA_REPORTE).inTimezone(CONFIG.ZONA).create();
   ScriptApp.newTrigger('avisosNuevos').timeBased().everyHours(1).create();
   // No reenviar avisos viejos: arrancamos desde ahora
   PropertiesService.getScriptProperties().setProperty('avisos_desde', new Date().toISOString());
-  Logger.log('✅ Listo: resumen diario a las ' + CONFIG.HORA_RESUMEN + ' h y avisos cada hora.');
+  Logger.log('✅ Listo: resumen diario a las ' + CONFIG.HORA_RESUMEN + ' h, reporte de cierre a las ' + CONFIG.HORA_REPORTE + ' h y avisos cada hora.');
 }
 
 function desinstalar() {
@@ -99,7 +104,7 @@ function diasEntre(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Da
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 function fecha(ymd) { const [y, m, d] = ymd.slice(0, 10).split('-'); return Number(d) + ' ' + MESES[Number(m) - 1]; }
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const nombre = m => (m.name || '').split(' ')[0];
+const nombre = m => (m && (String(m.nick || '').trim() || (m.name || '').split(' ')[0])) || '';
 const quiereMails = m => m.email && m.emailReminders !== false;
 
 function cuerpo(titulo, contenido) {
@@ -109,7 +114,7 @@ function cuerpo(titulo, contenido) {
     '<div style="border:1px solid #e3e3e8;border-top:0;padding:22px 24px;border-radius:0 0 12px 12px;background:#fff">' +
     '<h2 style="margin:0 0 14px;font-size:19px">' + titulo + '</h2>' + contenido +
     '<p style="margin:26px 0 0"><a href="' + CONFIG.PLATAFORMA + '" style="background:#1A73E8;color:#fff;padding:11px 20px;border-radius:9px;text-decoration:none;font-weight:bold">Abrir la plataforma</a></p>' +
-    '<p style="color:#9a9aab;font-size:11px;margin-top:22px">Si no querés recibir estos mails, desactivalos en la plataforma: Ajustes → Mi perfil.</p></div></div>';
+    '<p style="color:#9a9aab;font-size:11px;margin-top:22px">Si no querés recibir estos mails, desactivalos en la plataforma: tocá tu nombre abajo a la izquierda → Editar mi perfil.</p></div></div>';
 }
 function bloque(titulo, color, items) {
   if (!items.length) return '';
@@ -164,6 +169,64 @@ function resumenDiario() {
     try { const mail = armarResumen(m, d); if (mail) enviar(m.email, mail.asunto, mail.html); }
     catch (e) { Logger.log('Error con ' + m.name + ': ' + e); }
   });
+}
+
+// ── Reporte de cierre del día (19 h, solo al dueño) ─────────────────────────
+// Todas las tareas pendientes, agrupadas por empresa y dentro de cada una por responsable.
+function armarReporte(d) {
+  const t = hoy(), byId = {}; d.members.forEach(m => byId[m.id] = m);
+  const quien = id => byId[id] ? nombre(byId[id]) : 'Sin responsable';
+  const cliente = id => (d.clients.find(c => c.id === id) || {}).name || 'Interno / sin cliente';
+  const ST = { todo: 'Pendiente', doing: 'En curso', review: 'En revisión' };
+  const abiertas = d.tasks.filter(x => x.status !== 'done');
+  const vencidas = abiertas.filter(x => x.due && x.due < t);
+  // Resumen por persona (cuenta también a quienes comparten la tarea)
+  const porPersona = {};
+  abiertas.forEach(x => { const ps = [x.assigneeId].concat(x.alsoIds || []).filter(Boolean); (ps.length ? ps : ['']).forEach(p => {
+    const k = quien(p); porPersona[k] = porPersona[k] || { n: 0, v: 0 }; porPersona[k].n++; if (x.due && x.due < t) porPersona[k].v++; }); });
+  const resumen = '<table style="border-collapse:collapse;font-size:13px;margin:4px 0 8px">' +
+    '<tr style="color:#5f5f6e"><td style="padding:4px 14px 4px 0"><b>Responsable</b></td><td style="padding:4px 14px 4px 0"><b>Pendientes</b></td><td><b>Vencidas</b></td></tr>' +
+    Object.keys(porPersona).sort().map(k => '<tr><td style="padding:4px 14px 4px 0">' + esc(k) + '</td><td style="padding:4px 14px 4px 0">' + porPersona[k].n + '</td><td style="color:' + (porPersona[k].v ? '#d93025' : '#5f5f6e') + '">' + porPersona[k].v + '</td></tr>').join('') + '</table>';
+  // Por empresa → por responsable
+  const empresas = {};
+  abiertas.forEach(x => { const e = cliente(x.clientId); (empresas[e] = empresas[e] || []).push(x); });
+  const orden = Object.keys(empresas).sort((a, b) => (a === 'Interno / sin cliente') - (b === 'Interno / sin cliente') || a.localeCompare(b));
+  const linea = x => {
+    const otros = (x.alsoIds || []).filter(Boolean).map(quien);
+    const venc = x.due && x.due < t;
+    return '<li>' + (x.priority === 'alta' ? '🔥 ' : '') + esc(x.title) +
+      ' <span style="color:#5f5f6e">· ' + (ST[x.status || 'todo'] || 'Pendiente') + (x.due ? ' · ' + (venc ? '<b style="color:#d93025">venció ' + fecha(x.due) + '</b>' : (x.due === t ? '<b style="color:#b06000">vence hoy</b>' : 'vence ' + fecha(x.due))) : '') +
+      (otros.length ? ' · con ' + esc(otros.join(', ')) : '') + '</span></li>';
+  };
+  const detalle = orden.map(e => {
+    const porResp = {};
+    empresas[e].forEach(x => { const k = quien(x.assigneeId); (porResp[k] = porResp[k] || []).push(x); });
+    return '<h3 style="font-size:15px;margin:22px 0 4px;padding-bottom:4px;border-bottom:1px solid #e3e3e8">🏢 ' + esc(e) + ' <span style="color:#5f5f6e;font-weight:normal">(' + empresas[e].length + ')</span></h3>' +
+      Object.keys(porResp).sort().map(k => '<div style="font-size:13px;font-weight:bold;margin:10px 0 2px;color:#1A73E8">👤 ' + esc(k) + '</div>' +
+        '<ul style="margin:0;padding-left:18px;line-height:1.6;font-size:14px">' +
+        porResp[k].sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).map(linea).join('') + '</ul>').join('');
+  }).join('');
+  const intro = '<p style="margin:0 0 10px;font-size:14px">Cierre del ' + fecha(t) + ': <b>' + abiertas.length + '</b> tareas pendientes' +
+    (vencidas.length ? ', <b style="color:#d93025">' + vencidas.length + ' vencidas</b>' : '') + '.</p>';
+  return { asunto: '📋 ANM · Tareas pendientes al cierre (' + fecha(t) + ') · ' + abiertas.length + (vencidas.length ? ' · ' + vencidas.length + ' vencidas' : ''),
+    html: cuerpo('Reporte de cierre del día', intro + (abiertas.length ? resumen + detalle : '<p>🎉 No quedan tareas pendientes.</p>')) };
+}
+// El dueño (👑) de la plataforma; si no está cargado, quien ejecuta el script
+function duenio(d) {
+  const o = d.members.find(m => m.owner && m.email);
+  return o ? o.email : (Session.getEffectiveUser().getEmail() || '');
+}
+function reporteCierre() {
+  const d = datos(), para = duenio(d);
+  if (!para) { Logger.log('No encontré el mail del dueño.'); return; }
+  const mail = armarReporte(d);
+  enviar(para, mail.asunto, mail.html);
+}
+function probarReporte() {
+  const yo = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  const mail = armarReporte(datos());
+  enviar(yo, '[Prueba] ' + mail.asunto, mail.html);
+  Logger.log('Reporte de prueba enviado a ' + yo);
 }
 
 // ── Avisos nuevos (cada hora) ───────────────────────────────────────────────
