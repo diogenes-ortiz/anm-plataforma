@@ -1,7 +1,7 @@
 // ─── APP: identidad, navegación, shell ────────────────────────────────────────
 (function(){
   const { esc, $ } = UI;
-  const ROLES = { admin:'Socio/a · dueño de la agencia (ve Finanzas)', equipo:'Equipo', invitado:'Invitado/a (solo Operaciones)' };
+  const ROLES = { admin:'Socio/a · dueño de la agencia (ve Finanzas)', equipo:'Equipo', invitado:'Invitado/a (solo Operaciones)', ventas:'Ventas (solo el área de Ventas)' };
   const DEFAULT_UNITS = [
     { id:'social', label:'Social Media', color:'#1A73E8' },
     { id:'pauta', label:'Pauta', color:'#9b6fe8' },
@@ -27,6 +27,9 @@
     // ¿Puedo gestionar (editar rol, resetear, quitar) a esta persona?
     canManage(m){ return this.isAdmin() && (m.role!=='admin' || this.isOwner()); },
     canGrowth(){ return this.me() && this.me().role!=='invitado'; },
+    // Cómo se nombra a alguien en avisos y listas: su apodo, o si no tiene, el primer nombre
+    short(m){ return m ? (String(m.nick||'').trim() || String(m.name||'').split(' ')[0]) : ''; },
+    onlySales(){ return this.me()?.role==='ventas'; },
     units(){ return Store.setting('units', DEFAULT_UNITS); },
     unit(id){ return this.units().find(u=>u.id===id) || { id, label:id, color:'#7a7a8c' }; },
     unitOpts(){ return this.units().map(u=>[u.id,u.label]); },
@@ -72,6 +75,10 @@
       const [name, ...rest] = (location.hash.replace(/^#\/?/,'')||'inicio').split('/');
       const fn = routes[name] || routes.inicio;
       if(name==='crecimiento' && !this.canGrowth()){ location.hash = '#/ops'; return; }
+      // Rol Ventas: solo ve Ventas (más su perfil y el equipo)
+      if(this.onlySales() && !['crecimiento','equipo'].includes(name)){ location.hash = '#/crecimiento'; return; }
+      // Ajustes: solo socios (Diogenes y Santi)
+      if(name==='ajustes' && !this.isAdmin()){ location.hash = this.onlySales() ? '#/crecimiento' : '#/inicio'; return; }
       current = name;
       try{ renderNav(name); }catch(e){ console.error(e); showCrash(e.message); }
       const page = $('#page');
@@ -80,8 +87,13 @@
       catch(e){ console.error(e); showCrash(e.message); out = { title:'Ups', html:`<div class="card empty"><div class="big">⚠️</div>Esta sección tuvo un error: <code>${UI.esc(e.message)}</code><br><br><button class="btn p" onclick="location.reload()">Recargar</button> <button class="btn g" onclick="App.repair()">Reparar</button> <a class="btn g" href="#/inicio">Ir a Inicio</a></div>` }; }
       $('#title').textContent = out.title || '';
       $('#crumb').textContent = out.crumb || '';
+      // Se conserva el desplazamiento interno de tableros y listas al redibujar la misma pantalla (BUG-29)
+      const SCR = '.board, .lane, .tbl-wrap, .list, .kanban', sameView = page.dataset.view===location.hash;
+      const scr = sameView ? [...page.querySelectorAll(SCR)].map(el=>[el.scrollTop, el.scrollLeft]) : [];
       if(out.html!=null) page.innerHTML = out.html;
+      page.dataset.view = location.hash;
       out.after?.();
+      if(scr.length) page.querySelectorAll(SCR).forEach((el,i)=>{ if(scr[i]){ el.scrollTop = scr[i][0]; el.scrollLeft = scr[i][1]; } });
     },
   };
 
@@ -92,16 +104,18 @@
     const g = App.canGrowth() ? Growth.alerts().length : 0;
     const unread = App.myNotifications().filter(n=>!(n.readBy||[]).includes(me.id)).length;
     const item = (href, ic, label, key, extra='') => `<a href="${href}" class="${active===key?'active':''}" onclick="App.closeSidebar()"><span class="ic">${ic}</span>${label}${extra}</a>`;
-    $('#nav').innerHTML = `
+    // Si hay un filtro de unidad activo, se avisa siempre: los contadores muestran solo esa unidad (BUG-20)
+    $('#nav').innerHTML = `${App.unitFilter?`<div class="small" style="margin:6px 10px 10px;padding:8px 10px;border-radius:10px;background:var(--yellow-d);color:var(--yellow)">🔎 Viendo solo <b>${esc(App.unit(App.unitFilter).label)}</b> · <a href="#" style="color:inherit" onclick="App.setUnit('');return false">ver todo</a></div>`:''}
       <div class="nav-s">General</div>
-      ${item('#/inicio','◈','Inicio','inicio', unread?`<span class="cnt">${unread}</span>`:'')}
+      ${App.onlySales()?'':item('#/inicio','◈','Inicio','inicio', unread?`<span class="cnt">${unread}</span>`:'')}
       <div class="nav-s">Agencia</div>
-      ${item('#/ops','◎','Operaciones','ops', a?`<span class="cnt">${a}</span>`:'')}
+      ${App.onlySales()?'':item('#/ops','◎','Operaciones','ops', a?`<span class="cnt">${a}</span>`:'')}
       ${App.canGrowth()?item('#/crecimiento','↗','Ventas','crecimiento', g?`<span class="cnt">${g}</span>`:''):''}
-      ${App.isAdmin()?`<a href="finanzas.html"><span class="ic">$</span>Finanzas<span class="lock">🔒</span></a>`:''}
+      ${App.isAdmin() && ['owner','socio'].includes(Auth.access?.role)?`<a href="finanzas.html"><span class="ic">$</span>Finanzas</a>`:''}
       <div class="nav-s">Equipo</div>
       ${item('#/equipo','◑','Equipo e invitaciones','equipo')}
-      ${item('#/ajustes','⚙','Ajustes','ajustes')}`;
+      ${App.isAdmin()?item('#/ajustes','⚙','Ajustes','ajustes'):''}`;
+    $('#me').onclick = ()=>App.meMenu();
     const pf = Game.perf(me.id);
     $('#me').innerHTML = `${UI.avatar(me)}<div class="grow"><div class="b ellip">${esc(me.name)}</div>
       <div class="xs faint b"><span style="color:${pf.color}">${esc(pf.label)}</span>${pf.pct!=null?` · ${pf.resolved}/${pf.assigned} resueltas`:''}</div>
@@ -113,7 +127,7 @@
   // ── Acceso: entrar con Google ───────────────────────────────────────────────
   // La lista de Gmails autorizados vive en la base (anm_access) y solo el dueño la modifica.
   // Cada mail autorizado se vincula con su perfil del equipo (por email o por member_id).
-  const ROLE_OF = { owner:'admin', socio:'admin', equipo:'equipo', invitado:'invitado' };
+  const ROLE_OF = { owner:'admin', socio:'admin', equipo:'equipo', invitado:'invitado', ventas:'ventas' };
   const norm = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
   const gateBox = inner => `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Studio · Plataforma</div></div></div>${inner}</div>`;
   const G_ICON = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
@@ -170,6 +184,14 @@
     if(bindMember(lastAcc)) gateState = 'ok'; App.render();
   };
 
+  // Menú de la tarjeta de abajo a la izquierda: perfil y salir (Ajustes solo para socios)
+  App.meMenu = ()=>{
+    const me = App.me(); if(!me) return;
+    const opt = (ic, t, fn) => `<div class="li click" onclick="UI.close();${fn}"><span style="font-size:18px">${ic}</span><div class="grow b small">${t}</div></div>`;
+    UI.modal(`<h2>${esc(me.name)}<button class="icon-btn x" data-close>✕</button></h2>
+      <div class="xs faint" style="margin:-6px 0 12px">Entrás con Google: ${esc(Auth.email||me.email||'')}</div>
+      <div class="list">${opt('✎','Editar mi perfil',`Team.edit('${me.id}', true)`)}${App.isAdmin()?opt('⚙','Ajustes',"App.go('#/ajustes')"):''}${opt('↩','Cerrar sesión','App.logout()')}</div>`);
+  };
   App.logout = async (sinPreguntar)=>{
     if(!sinPreguntar && !confirm('¿Cerrar sesión en este navegador?')) return;
     localStorage.removeItem('anm_me'); await Auth.logout(); location.reload();
@@ -183,13 +205,16 @@
           <button class="btn xs d" onclick="App.deleteNotif([...document.querySelectorAll('.nt-sel:checked')].map(c=>c.value))">🗑 Borrar seleccionados</button></div>
         <div class="list">${list.map(n=>{ const from=App.member(n.from); const unread=!(n.readBy||[]).includes(me.id);
         return `<div class="li"><input type="checkbox" class="nt-sel" value="${n.id}" style="width:17px;height:17px">${UI.avatar(from,'sm')}<div class="grow"><div class="${unread?'b':''} prewrap">${unread?'<span style="color:var(--blue)">● </span>':''}${esc(n.text)}</div><div class="xs faint">${esc(from?.name||'')} · ${UI.ago(n.at)}${n.to==='all'?' · para todo el equipo':''}</div></div>
-        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="App.readNotif('${n.id}');UI.close()">Ver</a>`:''}${unread?`<button class="btn xs g" title="Marcar como leído" onclick="App.readNotif('${n.id}');App.openNotifications()">✓</button>`:''}<button class="icon-btn" title="Borrar" onclick="App.deleteNotif(['${n.id}'])">🗑</button></div>`; }).join('')}</div>`
+        ${n.link?`<a class="btn xs g" href="${esc(UI.safeUrl(n.link))}" onclick="App.readNotif('${n.id}');UI.close(true)">Ver</a>`:''}${unread?`<button class="btn xs g" title="Marcar como leído" onclick="App.readNotif('${n.id}');App.openNotifications()">✓</button>`:''}<button class="icon-btn" title="Borrar" onclick="App.deleteNotif(['${n.id}'])">🗑</button></div>`; }).join('')}</div>`
         : '<div class="empty"><div class="big">🔕</div>No tenés avisos</div>'}
       <div class="mfoot">${unreadAny?'<button class="btn g" onclick="App.readNotif();App.openNotifications()">Marcar todo como leído</button>':''}${list.length?'<button class="btn d" style="margin-right:auto" onclick="App.deleteNotif(\'all\')">Borrar todos</button>':''}<button class="btn g" data-close>Cerrar</button></div>`);
   };
   // Cada aviso se marca leído al verlo o con ✓
   App.readNotif = id=>{ const me = App.me();
     App.myNotifications().filter(n=>(!id || n.id===id) && !(n.readBy||[]).includes(me.id)).forEach(n=>Store.upsert('team','notifications',{ id:n.id, readBy:[...(n.readBy||[]), me.id] })); };
+  // Los avisos de más de 90 días se archivan
+  function archiveOld(){ try{ const lim = new Date(Date.now()-90*864e5).toISOString();
+    Store.all('team','notifications').filter(n=>(n.at||'')<lim).forEach(n=>Store.remove('team','notifications',n.id)); }catch(e){} }
   // Borrar avisos (de a uno, seleccionados o todos). Solo se borran para vos: si era para todo el equipo, los demás lo siguen viendo
   App.deleteNotif = ids=>{ const me = App.me(), list = App.myNotifications(), sel = ids==='all' ? list : list.filter(n=>ids.includes(n.id));
     if(!sel.length) return UI.toast('No seleccionaste ningún aviso','👆');
@@ -216,12 +241,13 @@
 
   // ── Alta rápida ──────────────────────────────────────────────────────────────
   App.quickAdd = ()=>{
-    const opt = (ic, t, d, fn) => `<div class="li click" onclick="UI.close();${fn}"><span style="font-size:20px">${ic}</span><div class="grow"><div class="b">${t}</div><div class="xs faint">${d}</div></div></div>`;
+    const opt = (ic, t, d, fn) => `<div class="li click" onclick="UI.close(true);${fn}"><span style="font-size:20px">${ic}</span><div class="grow"><div class="b">${t}</div><div class="xs faint">${d}</div></div></div>`;
     UI.modal(`<h2>＋ Crear<button class="icon-btn x" data-close>✕</button></h2><div class="list">
-      ${opt('📡','Actualización de cliente','¿En qué estamos con un cliente?','Ops.updateClient()')}
-      ${opt('✅','Tarea','Algo que hay que hacer, con responsable y fecha','Ops.editTask()')}
-      ${opt('🗓️','Pieza de contenido','Post, reel, campaña o entrega en el calendario','Ops.editContent()')}
-      ${opt('🤝','Reunión / minuta','Registrar una reunión y sus acuerdos','Ops.editMeeting()')}
+      ${App.onlySales()?'':[
+        opt('📡','Actualización de cliente','¿En qué estamos con un cliente?','Ops.updateClient()'),
+        opt('✅','Tarea','Algo que hay que hacer, con responsable y fecha','Ops.editTask()'),
+        opt('🗓️','Pieza de contenido','Post, reel, campaña o entrega en el calendario','Ops.editContent()'),
+        opt('🤝','Reunión / minuta','Registrar una reunión y sus acuerdos','Ops.editMeeting()')].join('')}
       ${App.canGrowth()?opt('🎯','Contacto / prospecto','Alguien a contactar o que contactamos','Growth.editLead()'):''}
       ${opt('📣','Alerta al equipo','Avisar algo a alguien','App.sendAlert()')}
     </div>`);
@@ -271,7 +297,7 @@
     });
     checkVersion(true); setInterval(()=>checkVersion(false), 5*60*1000);
     // Navegación y re-render listos ANTES de sincronizar (así los clics funcionan desde el primer segundo)
-    window.addEventListener('hashchange', ()=>{ UI.close(); App.render(); window.scrollTo(0,0); });
+    window.addEventListener('hashchange', ()=>{ UI.close(true); App.render(); window.scrollTo(0,0); });
     let pending = false;
     Store.on(ev=>{ if(ev.type!=='change' || rendering) return; if(pending) return; pending = true;
       requestAnimationFrame(()=>{ pending = false; if(!$('#modal').classList.contains('open') && !document.activeElement?.matches('input,textarea,select')) App.render(); }); });
@@ -282,14 +308,17 @@
     if(!Auth.loggedIn()){ gateState = 'login'; App.render(); return; }
     if(!acc){ gateState = 'denied'; App.render(); return; }
     lastAcc = acc;
-    Store.setDocs(acc.role==='invitado' ? ['ops','team'] : ['ops','growth','team']);
+    Store.setDocs(acc.role==='invitado' ? ['ops','team'] : acc.role==='ventas' ? ['growth','team'] : ['ops','growth','team']);
     Store.loadLocal();
     const ready = Store.init();
     const known = (acc.member_id && App.member(acc.member_id)) || App.members().some(x=>(x.email||'').toLowerCase()===Auth.email);
     if(known && bindMember(acc)){ gateState = 'ok'; App.render(); }
     await ready;
     if(gateState!=='ok' && bindMember(acc)) gateState = 'ok';
+    if(gateState==='ok') archiveOld();
     App.render();
+    // El dueño: crear/vincular los perfiles de los Gmails autorizados (para poder asignarles tareas antes de que entren)
+    if(gateState==='ok' && window.Asignar) Asignar.ensureProfiles();
   }
   window.App = App;
   document.addEventListener('DOMContentLoaded', boot);

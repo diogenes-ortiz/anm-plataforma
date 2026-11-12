@@ -96,21 +96,27 @@
     return '';
   };
 
-  function alerts(){
+  // Alertas de Ventas: con clave para poder descartarlas (BUG-18) y sin avisar por
+  // prospectos que ya son clientes activos (BUG-21)
+  const normN = x => (x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+  const yaEsCliente = l => (window.Ops ? Ops.activeClients() : []).some(c=>normN(c.name)===normN(l.company));
+  function allAlerts(){
     const t = UI.today(), out = [];
     L().filter(inUnit).forEach(l=>{
       const link = '#/crecimiento/lead/'+l.id;
+      if(OPEN.includes(l.stage) && yaEsCliente(l)) return;
       if(OPEN.includes(l.stage) && l.nextFollowUp && l.nextFollowUp<=t)
-        out.push({ level:l.nextFollowUp<t?'danger':'warn', icon:'📞', title:`Toca contactar: ${l.company}`, desc:`${l.nextAction||'Hacer seguimiento'} · ${l.nextFollowUp<t?'vencido '+UI.fdate(l.nextFollowUp):'hoy'}`, link, to:l.ownerId });
-      else if(OPEN.includes(l.stage) && l.stage!=='objetivo' && UI.diffDays((l.stageAt||l.createdAt).slice(0,10))>21 && !l.nextFollowUp)
-        out.push({ level:'warn', icon:'🧊', title:`${l.company} se enfrió`, desc:`Hace ${UI.diffDays((l.stageAt||l.createdAt).slice(0,10))} días en “${stage(l.stage)[1]}” y sin próximo contacto.`, link, to:l.ownerId });
-      if(l.stage==='ppt' && UI.diffDays((l.stageAt||l.createdAt).slice(0,10))>5)
-        out.push({ level:'warn', icon:'🖼️', title:`PPT de ${l.company}: hace ${UI.diffDays((l.stageAt||l.createdAt).slice(0,10))} días en armado`, desc:'Un prospecto interesado se enfría si la propuesta tarda. ¿Qué falta para presentarla?', link, to:l.ownerId });
-      if(l.stage==='ex' && l.winbackDate && l.winbackDate<=t)
-        out.push({ level:'warn', icon:'↩️', title:`Momento de recontactar a ${l.company}`, desc:`Ex cliente${l.churnReason?' · se fue por: '+l.churnReason:''}`, link, to:l.ownerId });
+        out.push({ key:`g-fu-${l.id}-${l.nextFollowUp}`, level:l.nextFollowUp<t?'danger':'warn', icon:'📞', title:`Toca contactar: ${l.company}`, desc:`${l.nextAction||'Hacer seguimiento'} · ${l.nextFollowUp<t?'vencido '+UI.fdate(l.nextFollowUp):'hoy'}`, link, to:l.ownerId });
+      else if(OPEN.includes(l.stage) && l.stage!=='objetivo' && UI.diffDays(UI.day(l.stageAt||l.createdAt))>21 && !l.nextFollowUp)
+        out.push({ key:`g-cold-${l.id}-${l.stage}`, level:'warn', icon:'🧊', title:`${l.company} se enfrió`, desc:`Hace ${UI.diffDays(UI.day(l.stageAt||l.createdAt))} días en “${stage(l.stage)[1]}” y sin próximo contacto.`, link, to:l.ownerId });
+      if(l.stage==='ppt' && UI.diffDays(UI.day(l.stageAt||l.createdAt))>5)
+        out.push({ key:`g-ppt-${l.id}`, level:'warn', icon:'🖼️', title:`PPT de ${l.company}: hace ${UI.diffDays(UI.day(l.stageAt||l.createdAt))} días en armado`, desc:'Un prospecto interesado se enfría si la propuesta tarda. ¿Qué falta para presentarla?', link, to:l.ownerId });
+      if(l.stage==='ex' && l.winbackDate && l.winbackDate<=t && !yaEsCliente(l))
+        out.push({ key:`g-wb-${l.id}-${l.winbackDate}`, level:'warn', icon:'↩️', title:`Momento de recontactar a ${l.company}`, desc:`Ex cliente${l.churnReason?' · se fue por: '+l.churnReason:''}`, link, to:l.ownerId });
     });
     return out;
   }
+  function alerts(){ const d = window.Ops ? Ops.dismissedKeys() : new Set(); return allAlerts().filter(a=>!d.has(a.key)); }
   const inUnit = l => !l.units?.length || App.matchUnit(l.units);
   const byGanas = (a,b) => (b.ganas||0)-(a.ganas||0) || (a.rank||999)-(b.rank||999) || a.company.localeCompare(b.company);
 
@@ -118,6 +124,7 @@
   // 'Hoy toca contactar' (viewToday) quedó fuera por ahora: Ventas abre en el Pipeline
   const TABS = [['pipeline','Pipeline'],['contactos','Base de contactos'],['ex','Ex clientes'],['mensajes','Mensajes'],['metricas','Métricas']];
   let q = '', stageF = '', ganasF = 0;
+  const qRender = UI.debounce(()=>{ const pos = document.activeElement?.selectionStart; App.render(); const i = UI.$('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } });
 
   App.route('crecimiento', ([tab='pipeline', id])=>{
     if(tab==='lead') return leadDetail(id);
@@ -145,7 +152,7 @@
     const due = leads.filter(l=>OPEN.includes(l.stage) && l.nextFollowUp && l.nextFollowUp<=t).sort((a,b)=>a.nextFollowUp.localeCompare(b.nextFollowUp)||byGanas(a,b));
     const fresh = leads.filter(l=>l.stage==='objetivo' && !l.touches).sort(byGanas);
     const week = leads.filter(l=>OPEN.includes(l.stage) && l.nextFollowUp>t && l.nextFollowUp<=UI.addDays(t,7)).sort((a,b)=>a.nextFollowUp.localeCompare(b.nextFollowUp));
-    const wk = Game.weekStart(), sent = Store.all('growth','interactions').filter(x=>x.at>=wk && x.type!=='etapa').length;
+    const wk = Game.weekStart(), sent = Store.all('growth','interactions').filter(x=>UI.day(x.at)>=wk && x.type!=='etapa').length;
     const hasHunter = leads.some(l=>l.source==='Hunter (investigación)');
     return { html:`
       <div class="grid g4" style="margin-bottom:22px">
@@ -160,7 +167,7 @@
         <div class="card"><div class="card-h"><h3>📞 Seguimientos de hoy</h3><span class="sub">${due.length}</span></div>${due.length?`<div class="list">${due.map(l=>leadRow(l)).join('')}</div>`:'<div class="empty small">Nada vencido. 🎉</div>'}</div>
         <div class="card"><div class="card-h"><h3>🎯 Para escribirles por primera vez</h3><span class="sub">ordenados por ganas</span></div>${fresh.length?`<div class="list">${fresh.slice(0,15).map(l=>leadRow(l)).join('')}</div>${fresh.length>15?`<a class="xs" href="#/crecimiento/contactos">Ver los ${fresh.length} →</a>`:''}`:'<div class="empty small">No hay prospectos sin contactar.</div>'}</div>
       </div><div class="col" style="gap:18px">
-        ${(()=>{ const ppts = leads.filter(l=>l.stage==='ppt').sort(byGanas); return `<div class="card"><div class="card-h"><h3>🖼️ PPTs en armado</h3><span class="sub">${ppts.length}</span></div>${ppts.length?`<div class="list">${ppts.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><div class="grow"><div class="small b ellip">${esc(l.company)}</div><div class="xs faint">${esc(label(PPT_ST,l.pptStatus||'armar'))} · hace ${UI.diffDays((l.stageAt||l.createdAt).slice(0,10))} días</div></div>${l.pptLink?'<span class="tag t-green">link ✓</span>':''}</div>`).join('')}</div>`:'<div class="small faint">Cuando alguien se interese, pasalo a “Armando la PPT” y se crea la tarea sola.</div>'}</div>`; })()}
+        ${(()=>{ const ppts = leads.filter(l=>l.stage==='ppt').sort(byGanas); return `<div class="card"><div class="card-h"><h3>🖼️ PPTs en armado</h3><span class="sub">${ppts.length}</span></div>${ppts.length?`<div class="list">${ppts.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><div class="grow"><div class="small b ellip">${esc(l.company)}</div><div class="xs faint">${esc(label(PPT_ST,l.pptStatus||'armar'))} · hace ${UI.diffDays(UI.day(l.stageAt||l.createdAt))} días</div></div>${l.pptLink?'<span class="tag t-green">link ✓</span>':''}</div>`).join('')}</div>`:'<div class="small faint">Cuando alguien se interese, pasalo a “Armando la PPT” y se crea la tarea sola.</div>'}</div>`; })()}
         <div class="card"><div class="card-h"><h3>📅 Próximos 7 días</h3></div>${week.length?`<div class="list">${week.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><div class="grow small b ellip">${esc(l.company)}</div><span class="tag">${UI.fdate(l.nextFollowUp)}</span></div>`).join('')}</div>`:'<div class="small faint">Sin seguimientos agendados.</div>'}</div>
         <div class="card small"><div class="card-h"><h3>Cómo funciona la secuencia</h3></div>
           <div class="muted" style="line-height:1.7">1º toque: una observación concreta de su negocio.<br>2º toque (4 días después): aportar una idea, no “¿viste mi mensaje?”.<br>3º toque: credencial del rubro (MiPileta).<br>Cada envío queda registrado y agenda solo el próximo contacto.</div></div>
@@ -172,7 +179,7 @@
     const cols = STAGES.filter(s=>OPEN.includes(s[0])||s[0]==='ganado');
     const lanes = cols.map(([k,l,e])=>{
       let items = leads.filter(x=>x.stage===k);
-      if(k==='ganado') items = items.filter(x=>UI.diffDays((x.stageAt||x.updatedAt).slice(0,10))<=60);
+      if(k==='ganado') items = items.filter(x=>UI.diffDays(UI.day(x.stageAt||x.updatedAt))<=60);
       items.sort(byGanas);
       return `<div class="lane" data-lane="${k}"><div class="lane-h">${e} ${l} <span class="n">${items.length}</span></div>
         ${items.map(leadCard).join('')}
@@ -236,7 +243,7 @@
     const contacted = leads.filter(l=>(l.touches||0)>0 || stageIdx(l.stage)>=1);
     const rate = won.length+lost.length ? Math.round(won.length/(won.length+lost.length)*100) : null;
     const reply = contacted.length ? Math.round(leads.filter(l=>['reunion','ppt','propuesta','negociacion','ganado'].includes(l.stage)).length/contacted.length*100) : null;
-    const cycle = won.filter(l=>l.stageAt&&l.createdAt).map(l=>UI.diffDays(l.createdAt.slice(0,10), l.stageAt.slice(0,10)));
+    const cycle = won.filter(l=>l.stageAt&&l.createdAt).map(l=>UI.diffDays(UI.day(l.createdAt), UI.day(l.stageAt)));
     const avgCycle = cycle.length ? Math.round(cycle.reduce((a,b)=>a+b,0)/cycle.length) : null;
     const touches = Store.all('growth','interactions').filter(t=>t.type!=='etapa');
     const funnel = STAGES.filter(s=>OPEN.includes(s[0])||s[0]==='ganado').map(s=>({ s, n:leads.filter(l=>l.stage===s[0] || (stageIdx(l.stage)>stageIdx(s[0]) && !['perdido','ex'].includes(l.stage))).length }));
@@ -251,7 +258,7 @@
         ${funnel.map(f=>`<div style="margin-bottom:12px"><div class="row small"><span class="grow">${f.s[2]} ${f.s[1]}</span><b>${f.n}</b></div><div class="bar" style="height:12px"><div style="width:${f.n/max*100}%"></div></div></div>`).join('')}</div>
       <div class="col" style="gap:18px"><div class="card"><div class="card-h"><h3>¿De dónde vienen las mejores oportunidades?</h3></div>
         ${Object.entries(bySrc).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`<div style="margin-bottom:10px"><div class="row small"><span class="grow b">${esc(k)}</span><span class="faint">${v.adv}/${v.n} avanzaron</span></div><div class="bar"><div style="width:${v.n?v.adv/v.n*100:0}%;background:var(--green)"></div></div></div>`).join('')||'<div class="small faint">Sin datos</div>'}</div>
-      <div class="card"><div class="card-h"><h3>Actividad comercial reciente</h3><span class="sub">${touches.filter(t=>t.at>=Game.weekStart()).length} esta semana</span></div>
+      <div class="card"><div class="card-h"><h3>Actividad comercial reciente</h3><span class="sub">${touches.filter(t=>UI.day(t.at)>=Game.weekStart()).length} esta semana</span></div>
         <div class="list">${touches.sort((a,b)=>b.at.localeCompare(a.at)).slice(0,8).map(t=>{ const l = Store.get('growth','leads',t.leadId); return `<div class="li">${UI.avatar(App.member(t.by),'sm')}<div class="grow"><div class="small b ellip">${esc(l?.company||'—')}</div><div class="xs faint ellip">${esc(label([...TOUCH,...TOUCH_ALL],t.type))} · ${esc(t.text||'')}</div></div><span class="xs faint">${UI.ago(t.at)}</span></div>`; }).join('')||'<div class="small faint">Sin actividad</div>'}</div></div></div></div>` };
   }
 
@@ -306,11 +313,11 @@
           ${l.pieza?`<div class="xs faint b" style="margin-bottom:4px">CON QUÉ ENTRARÍAMOS</div><div class="small" style="margin-bottom:14px">${esc(l.pieza)}</div>`:''}
           <div class="xs faint b" style="margin-bottom:4px">PUNTOS FUERTES DE ANM PARA ELLOS</div><div class="small prewrap">${esc(aporteOf(l))}</div></div>
         <div class="card"><div class="card-h"><h3>Historial de contactos</h3><span class="sub">${touches.length}</span></div>
-          ${touches.length?`<div class="tl">${touches.map(t=>`<div class="tl-i"><div class="when">${UI.fdate(t.at.slice(0,10),{abs:true})} · ${esc(label([...TOUCH,...TOUCH_ALL],t.type))} · ${esc(App.member(t.by)?.name||'')}</div><div class="small prewrap">${esc(t.text||'')}</div></div>`).join('')}</div>`:'<div class="empty small">Todavía no hubo contacto. Arrancá con “✉️ Armar y mandar mensaje”.</div>'}</div>
+          ${touches.length?`<div class="tl">${touches.map(t=>`<div class="tl-i"><div class="when">${UI.fdate(UI.day(t.at),{abs:true})} · ${esc(label([...TOUCH,...TOUCH_ALL],t.type))} · ${esc(App.member(t.by)?.name||'')}</div><div class="small prewrap">${esc(t.text||'')}</div></div>`).join('')}</div>`:'<div class="empty small">Todavía no hubo contacto. Arrancá con “✉️ Armar y mandar mensaje”.</div>'}</div>
       </div><div class="col" style="gap:18px">
         ${l.why?`<div class="card small"><div class="card-h"><h3>¿Por qué nos interesa?</h3></div><div class="muted">${esc(l.why)}</div></div>`:''}
         <div class="card small"><div class="card-h"><h3>Datos</h3></div>
-          <div class="list">${[...(l.channel?[['Canal',l.channel]]:[]),...(l.service?[['Servicio',l.service]]:[]),...(l.lastContact?[['Último contacto',UI.fdate(l.lastContact,{abs:true})]]:[]),...(l.notes?[['Notas',l.notes]]:[]),['Fuente',l.source||'—'],['Responsable',App.member(l.ownerId)?.name||'—'],['Alta',UI.fdate((l.createdAt||'').slice(0,10),{abs:true})],['En esta etapa',l.stageAt?UI.ago(l.stageAt):'—'],
+          <div class="list">${[...(l.channel?[['Canal',l.channel]]:[]),...(l.service?[['Servicio',l.service]]:[]),...(l.lastContact?[['Último contacto',UI.fdate(l.lastContact,{abs:true})]]:[]),...(l.notes?[['Notas',l.notes]]:[]),['Fuente',l.source||'—'],['Responsable',App.member(l.ownerId)?.name||'—'],['Alta',UI.fdate(UI.day(l.createdAt),{abs:true})],['En esta etapa',l.stageAt?UI.ago(l.stageAt):'—'],
             ...(l.lostReason?[['Motivo de pérdida',l.lostReason]]:[]),...(l.churnReason?[['Motivo de baja',l.churnReason]]:[])].map(([k,v])=>`<div class="li"><span class="faint grow">${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
           ${l.alt?`<div class="xs muted" style="margin-top:10px"><b>Otros contactos:</b> ${esc(l.alt)}</div>`:''}</div>
         ${l.notes?`<div class="card"><div class="card-h"><h3>Notas</h3></div><div class="small prewrap muted">${esc(l.notes)}</div></div>`:''}
@@ -397,7 +404,7 @@
       if(App.isAdmin()) setTimeout(()=>UI.toast('Recordá cargar su retainer en Finanzas','💡'), 900);
       App.render();
     },
-    setQ(v){ q = v; const pos = document.activeElement?.selectionStart; App.render(); const i = $('.search input'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
+    setQ(v){ q = v; qRender(); },
     setStageF(v){ stageF = v; App.render(); }, setGanasF(v){ ganasF = v; App.render(); },
     setGanas(id, n){ const l = Store.get('growth','leads',id); Store.upsert('growth','leads',{ id, ganas: l.ganas===n ? n-1 : n }); App.render(); },
 
@@ -420,7 +427,7 @@
       const ta = box.querySelector('#cm-text'), sel = box.querySelector('#cm-tpl');
       const load = ()=>{ ta.value = fill(tpls.find(t=>t.id===sel.value).text, l); };
       sel.onchange = load; load();
-      const done = channel => { Growth.recordSend(id, channel, sel.options[sel.selectedIndex].text, ta.value); UI.close(); };
+      const done = channel => { Growth.recordSend(id, channel, sel.options[sel.selectedIndex].text, ta.value); UI.close(true); };
       box.querySelector('#cm-wa').onclick = ()=>{ if(!wa) return; window.open(UI.waLink(ta.value, wa), '_blank'); done('whatsapp'); };
       box.querySelector('#cm-mail').onclick = ()=>{ if(!l.email) return; location.href = UI.mailLink(l.email, `${l.company} + ANM`, ta.value); done('email'); };
       box.querySelector('#cm-li').onclick = ()=>{ UI.copy(ta.value); window.open(UI.safeUrl(l.linkedin) || `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent((l.contactName||'')+' '+l.company)}`, '_blank'); done('linkedin'); };
@@ -530,12 +537,11 @@
       UI.form({ title:'Importar contactos (CSV)', submit:'Importar', fields:[
         { k:'csv', label:'Pegá el CSV (primera fila = encabezados)', type:'textarea', rows:10, req:true, hint:'Columnas reconocidas: empresa, contacto, cargo, email, whatsapp, telefono, web, rubro, zona, fuente, oportunidad, notas. Separador coma o punto y coma.' },
       ], onSubmit:v=>{
-        const rows = v.csv.split(/\r?\n/).filter(Boolean); if(rows.length<2) return UI.toast('Faltan filas','⚠️');
-        const sep = rows[0].includes(';') ? ';' : ',';
-        const heads = rows[0].split(sep).map(h=>h.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''));
+        const rows = UI.parseCsv(v.csv); if(rows.length<2) return UI.toast('Faltan filas','⚠️');
+        const heads = rows[0].map(h=>h.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''));
         const map = { empresa:'company', marca:'company', company:'company', contacto:'contactName', nombre:'contactName', cargo:'role', email:'email', mail:'email', whatsapp:'whatsapp', telefono:'phone', instagram:'instagram', web:'web', rubro:'industry', zona:'city', ciudad:'city', fuente:'source', oportunidad:'gap', notas:'notes' };
         let n = 0; const have = new Set(L().map(l=>l.company.toLowerCase()));
-        rows.slice(1).forEach(r=>{ const cells = r.split(sep); const rec = { stage:'objetivo', ownerId:App.me().id, stageAt:new Date().toISOString(), ganas:3 };
+        rows.slice(1).forEach(cells=>{ const rec = { stage:'objetivo', ownerId:App.me().id, stageAt:new Date().toISOString(), ganas:3 };
           heads.forEach((h,i)=>{ if(map[h]) rec[map[h]] = (cells[i]||'').trim(); });
           if(rec.company && !have.has(rec.company.toLowerCase())){ Store.upsert('growth','leads',rec); have.add(rec.company.toLowerCase()); n++; } });
         UI.toast(`${n} contactos importados`,'⇡'); App.render();

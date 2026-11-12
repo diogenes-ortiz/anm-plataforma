@@ -12,9 +12,9 @@
 
   function prompt({ cid, date, text }){
     const c = cid && Store.get('ops','clients',cid);
-    const tasks = cid ? Store.all('ops','tasks').filter(t=>t.clientId===cid && (t.status!=='done' || (t.doneAt||'').slice(0,10)>=UI.addDays(UI.today(),-30))) : [];
-    const who = id => (App.member(id)?.name||'').split(' ')[0];
-    const team = App.members().map(m=>`- ${m.name.split(' ')[0]} (${m.name}) — ${m.title || (m.role==='admin'?'Socio':'Equipo')}`).join('\n');
+    const tasks = cid ? Store.all('ops','tasks').filter(t=>t.clientId===cid && (t.status!=='done' || UI.day(t.doneAt)>=UI.addDays(UI.today(),-30))) : [];
+    const who = id => App.short(App.member(id));
+    const team = App.members().map(m=>`- ${App.short(m)} (${m.name}${m.nick?', le decimos '+m.nick:''}) — ${m.title || (m.role==='admin'?'Socio':'Equipo')}`).join('\n');
     const areas = [...new Set([...(c?.areas||[]).map(a=>a.name), ...tasks.map(t=>t.area).filter(Boolean)])];
     return `Sos el asistente de operaciones de ANM Content Studio, una agencia de marketing digital de Argentina. Te paso todo lo que se habló en una reunión${c?` con el cliente ${c.name}`:''}. Ordenalo para cargarlo en nuestra plataforma.
 
@@ -25,7 +25,7 @@ EQUIPO (usá el primer nombre como responsable):
 ${team}
 
 ${areas.length ? `ÁREAS QUE YA USAMOS CON ESTE CLIENTE (reusalas con el mismo nombre; podés crear otras nuevas en MAYÚSCULAS):\n${areas.join(' · ')}\n` : 'ÁREAS: agrupá las tareas en áreas cortas en MAYÚSCULAS (ej: CONTENIDO, GOOGLE ADS, WEB, CRM Y ATENCIÓN AL CLIENTE, INFLUENCERS Y CANJES, SEGUIMIENTO COMERCIAL).\n'}
-${tasks.length ? `TAREAS QUE YA EXISTEN PARA ESTE CLIENTE (id · estado · área · responsable · fecha · título):\n${tasks.map(t=>`${t.id} · ${t.status||'todo'} · ${t.area||'-'} · ${who(t.assigneeId)||'-'} · ${t.due||'-'} · ${t.title}${t.note?' — '+t.note:''}`).join('\n')}\n` : ''}
+${(c?.pins||[]).length ? `NO OLVIDAR CON ESTE CLIENTE (prioridades que marcaron los socios):\n${c.pins.map(p=>'- '+p.text).join('\n')}\n\n` : ''}${tasks.length ? `TAREAS QUE YA EXISTEN PARA ESTE CLIENTE (id · estado · área · responsable · fecha · título):\n${tasks.map(t=>`${t.id} · ${t.status||'todo'} · ${t.area||'-'} · ${who(t.assigneeId)||'-'} · ${t.due||'-'} · ${t.title}${t.note?' — '+t.note:''}`).join('\n')}\n` : ''}
 QUÉ NECESITO:
 1. "minuta": lo que se habló, ordenado por tema, en viñetas "• " cortas y claras (sin relleno, sin repetir). Nombrá quién se encarga cuando se dijo.
 2. "decisiones": solo lo que quedó decidido, en viñetas "• ".
@@ -88,9 +88,9 @@ ${text}
       const done = (raw, c)=>{
         let r; try { r = parse(raw); } catch(e){
           // Si en vez de JSON pegaron un status con ✅ 👀 🔸 ▫️, también sirve
-          const st = Ops.parseStatus(raw); if(st.areas.some(a=>a.items.length)){ UI.close(); return Ops.openImport({ id:'st-'+Store.uid(), kind:'status', clientId:c.cid, client:Store.get('ops','clients',c.cid)?.name, title:'Status', date:(c.date||UI.today())+'T12:00', minuta:raw, ...Ops.statusToTasks(st) }); }
+          const st = Ops.parseStatus(raw); if(st.areas.some(a=>a.items.length)){ UI.close(true); return Ops.openImport({ id:'st-'+Store.uid(), kind:'status', clientId:c.cid, client:Store.get('ops','clients',c.cid)?.name, title:'Status', date:(c.date||UI.today())+'T12:00', minuta:raw, ...Ops.statusToTasks(st) }); }
           return window.alert('No pude leer la respuesta: '+e.message+'\n\nAsegurate de pegar la respuesta completa de Claude.'); }
-        UI.close(); setTimeout(()=>Ops.openImport(toImport(r, c)), 60);
+        UI.close(true); setTimeout(()=>Ops.openImport(toImport(r, c)), 60);
       };
       box.querySelector('#rn-copy').onclick = ()=>{ const c = need(); if(c){ UI.copy(prompt(c)); UI.toast('Instrucciones copiadas: pegalas en Claude','📋'); box.querySelector('#rn-manual').style.display='block'; box.querySelector('#rn-read').style.display=''; } };
       box.querySelector('#rn-read').onclick = ()=>{ const c = need(), raw = box.querySelector('#rn-resp').value; if(!c) return; if(!raw.trim()) return UI.toast('Pegá la respuesta de Claude','👆'); done(raw, c); };
