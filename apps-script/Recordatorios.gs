@@ -121,7 +121,10 @@ function bloque(titulo, color, items) {
   return '<h3 style="font-size:14px;margin:18px 0 6px;color:' + color + '">' + titulo + ' (' + items.length + ')</h3>' +
     '<ul style="margin:0;padding-left:18px;line-height:1.6;font-size:14px">' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
 }
+// Los caracteres especiales (acentos, emojis) se mandan como entidades HTML para que no se rompan
+const entidades = h => Array.from(String(h)).map(c => c.codePointAt(0) > 127 ? '&#' + c.codePointAt(0) + ';' : c).join('');
 function enviar(to, asunto, html) {
+  html = entidades(html);
   GmailApp.sendEmail(to, asunto, 'Abrí este mail en un cliente que muestre HTML: ' + CONFIG.PLATAFORMA, { htmlBody: html, name: CONFIG.REMITENTE });
 }
 
@@ -172,44 +175,52 @@ function resumenDiario() {
 }
 
 // ── Reporte de cierre del día (19 h, solo al dueño) ─────────────────────────
-// Todas las tareas pendientes, agrupadas por empresa y dentro de cada una por responsable.
+// Todas las tareas pendientes, agrupadas por empresa (con link para entrar directo al cliente).
+// Cada tarea en grande; abajo, más chico, el responsable y los involucrados. Sin emojis.
 function armarReporte(d) {
   const t = hoy(), byId = {}; d.members.forEach(m => byId[m.id] = m);
   const quien = id => byId[id] ? nombre(byId[id]) : 'Sin responsable';
-  const cliente = id => (d.clients.find(c => c.id === id) || {}).name || 'Interno / sin cliente';
+  const SIN = 'Interno / sin cliente';
+  const cli = id => d.clients.find(c => c.id === id);
   const ST = { todo: 'Pendiente', doing: 'En curso', review: 'En revisión' };
   const abiertas = d.tasks.filter(x => x.status !== 'done');
   const vencidas = abiertas.filter(x => x.due && x.due < t);
-  // Resumen por persona (cuenta también a quienes comparten la tarea)
+  // Resumen por persona (cuenta también a los involucrados)
   const porPersona = {};
   abiertas.forEach(x => { const ps = [x.assigneeId].concat(x.alsoIds || []).filter(Boolean); (ps.length ? ps : ['']).forEach(p => {
     const k = quien(p); porPersona[k] = porPersona[k] || { n: 0, v: 0 }; porPersona[k].n++; if (x.due && x.due < t) porPersona[k].v++; }); });
-  const resumen = '<table style="border-collapse:collapse;font-size:13px;margin:4px 0 8px">' +
-    '<tr style="color:#5f5f6e"><td style="padding:4px 14px 4px 0"><b>Responsable</b></td><td style="padding:4px 14px 4px 0"><b>Pendientes</b></td><td><b>Vencidas</b></td></tr>' +
-    Object.keys(porPersona).sort().map(k => '<tr><td style="padding:4px 14px 4px 0">' + esc(k) + '</td><td style="padding:4px 14px 4px 0">' + porPersona[k].n + '</td><td style="color:' + (porPersona[k].v ? '#d93025' : '#5f5f6e') + '">' + porPersona[k].v + '</td></tr>').join('') + '</table>';
-  // Por empresa → por responsable
-  const empresas = {};
-  abiertas.forEach(x => { const e = cliente(x.clientId); (empresas[e] = empresas[e] || []).push(x); });
-  const orden = Object.keys(empresas).sort((a, b) => (a === 'Interno / sin cliente') - (b === 'Interno / sin cliente') || a.localeCompare(b));
-  const linea = x => {
-    const otros = (x.alsoIds || []).filter(Boolean).map(quien);
-    const venc = x.due && x.due < t;
-    return '<li>' + (x.priority === 'alta' ? '🔥 ' : '') + esc(x.title) +
-      ' <span style="color:#5f5f6e">· ' + (ST[x.status || 'todo'] || 'Pendiente') + (x.due ? ' · ' + (venc ? '<b style="color:#d93025">venció ' + fecha(x.due) + '</b>' : (x.due === t ? '<b style="color:#b06000">vence hoy</b>' : 'vence ' + fecha(x.due))) : '') +
-      (otros.length ? ' · con ' + esc(otros.join(', ')) : '') + '</span></li>';
+  const td = 'padding:5px 18px 5px 0;border-bottom:1px solid #f0f0f3';
+  const resumen = '<table style="border-collapse:collapse;font-size:13px;margin:4px 0 6px">' +
+    '<tr style="color:#5f5f6e"><td style="' + td + '"><b>Persona</b></td><td style="' + td + '"><b>Pendientes</b></td><td style="' + td + '"><b>Vencidas</b></td></tr>' +
+    Object.keys(porPersona).sort().map(k => '<tr><td style="' + td + '">' + esc(k) + '</td><td style="' + td + '">' + porPersona[k].n + '</td><td style="' + td + ';color:' + (porPersona[k].v ? '#d93025;font-weight:bold' : '#9a9aab') + '">' + porPersona[k].v + '</td></tr>').join('') + '</table>';
+  // Agrupar por empresa
+  const grupos = {};
+  abiertas.forEach(x => { const c = cli(x.clientId); const k = c ? c.id : ''; (grupos[k] = grupos[k] || { c: c, tareas: [] }).tareas.push(x); });
+  const orden = Object.keys(grupos).sort((a, b) => (a === '') - (b === '') || (grupos[a].c.name || '').localeCompare(grupos[b].c.name || ''));
+  const cuando = x => !x.due ? 'Sin fecha' : x.due < t ? '<b style="color:#d93025">Venció el ' + fecha(x.due) + '</b>' : x.due === t ? '<b style="color:#b06000">Vence hoy</b>' : 'Vence el ' + fecha(x.due);
+  const tarea = x => {
+    const inv = (x.alsoIds || []).filter(Boolean).map(quien);
+    return '<div style="padding:10px 0;border-bottom:1px solid #f0f0f3">' +
+      '<div style="font-size:16px;font-weight:bold;color:#18181c;line-height:1.35">' + esc(x.title) +
+      (x.priority === 'alta' ? ' <span style="background:#fde8e7;color:#d93025;font-size:11px;padding:2px 7px;border-radius:9px;vertical-align:2px">URGENTE</span>' : '') + '</div>' +
+      '<div style="font-size:12px;color:#5f5f6e;margin-top:3px">' + cuando(x) + ' &middot; ' + (ST[x.status || 'todo'] || 'Pendiente') +
+      ' &middot; Responsable: <b style="color:#3c3c46">' + esc(quien(x.assigneeId)) + '</b>' +
+      (inv.length ? ' &middot; Involucrados: ' + esc(inv.join(', ')) : '') + '</div></div>';
   };
-  const detalle = orden.map(e => {
-    const porResp = {};
-    empresas[e].forEach(x => { const k = quien(x.assigneeId); (porResp[k] = porResp[k] || []).push(x); });
-    return '<h3 style="font-size:15px;margin:22px 0 4px;padding-bottom:4px;border-bottom:1px solid #e3e3e8">🏢 ' + esc(e) + ' <span style="color:#5f5f6e;font-weight:normal">(' + empresas[e].length + ')</span></h3>' +
-      Object.keys(porResp).sort().map(k => '<div style="font-size:13px;font-weight:bold;margin:10px 0 2px;color:#1A73E8">👤 ' + esc(k) + '</div>' +
-        '<ul style="margin:0;padding-left:18px;line-height:1.6;font-size:14px">' +
-        porResp[k].sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).map(linea).join('') + '</ul>').join('');
+  const detalle = orden.map(k => {
+    const g = grupos[k], nombreE = g.c ? g.c.name : SIN;
+    const link = g.c ? CONFIG.PLATAFORMA + '#/ops/cliente/' + g.c.id : '';
+    return '<div style="margin:26px 0 0">' +
+      '<table style="width:100%;border-collapse:collapse;border-bottom:2px solid #18181c"><tr>' +
+      '<td style="font-size:17px;font-weight:bold;padding:0 0 6px">' + esc(nombreE) + ' <span style="color:#9a9aab;font-weight:normal;font-size:14px">(' + g.tareas.length + ')</span></td>' +
+      (link ? '<td style="text-align:right;padding:0 0 6px;white-space:nowrap"><a href="' + link + '" style="color:#1A73E8;font-size:13px;font-weight:bold;text-decoration:none">Ver cliente &rarr;</a></td>' : '') +
+      '</tr></table>' +
+      g.tareas.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).map(tarea).join('') + '</div>';
   }).join('');
   const intro = '<p style="margin:0 0 10px;font-size:14px">Cierre del ' + fecha(t) + ': <b>' + abiertas.length + '</b> tareas pendientes' +
     (vencidas.length ? ', <b style="color:#d93025">' + vencidas.length + ' vencidas</b>' : '') + '.</p>';
-  return { asunto: '📋 ANM · Tareas pendientes al cierre (' + fecha(t) + ') · ' + abiertas.length + (vencidas.length ? ' · ' + vencidas.length + ' vencidas' : ''),
-    html: cuerpo('Reporte de cierre del día', intro + (abiertas.length ? resumen + detalle : '<p>🎉 No quedan tareas pendientes.</p>')) };
+  return { asunto: 'ANM - Tareas pendientes al cierre (' + fecha(t) + '): ' + abiertas.length + (vencidas.length ? ', ' + vencidas.length + ' vencidas' : ''),
+    html: cuerpo('Reporte de cierre del día', intro + (abiertas.length ? resumen + detalle : '<p>No quedan tareas pendientes.</p>')) };
 }
 // El dueño (👑) de la plataforma; si no está cargado, quien ejecuta el script
 function duenio(d) {
