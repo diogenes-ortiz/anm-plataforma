@@ -99,7 +99,7 @@
       const box = UI.modal(`<h2>Repartir tareas<button class="icon-btn x" data-close>✕</button></h2>
         <p class="small muted" style="margin:-6px 0 12px">${changes.length} tarea${changes.length!==1?'s':''} cambiarían de responsable. Destildá las que no.</p>
         <div class="list" style="max-height:55vh;overflow:auto">${changes.map((c,i)=>`<label class="li" style="cursor:pointer"><input type="checkbox" checked data-i="${i}" style="width:18px;height:18px">
-          <div class="grow"><div class="b small">${esc(c.t.title)}</div><div class="xs faint">${esc(App.member(c.t.assigneeId)?.name||'sin asignar')} → <b>${c.s.map(id=>esc(App.member(id)?.name.split(' ')[0]||'')).join(' y ')}</b></div></div></label>`).join('')}</div>
+          <div class="grow"><div class="b small">${esc(c.t.title)}</div><div class="xs faint">${esc(App.member(c.t.assigneeId)?.name||'sin asignar')} → <b>${c.s.map(id=>esc(App.short(App.member(id)))).join(' y ')}</b></div></div></label>`).join('')}</div>
         <div class="mfoot"><button class="btn g" data-close>Cancelar</button><button class="btn p" id="rp-go">Repartir</button></div>`, true);
       box.querySelector('#rp-go').onclick = ()=>{
         let n = 0;
