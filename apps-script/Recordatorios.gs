@@ -5,7 +5,7 @@
  *   • resumenDiario()  → todos los días a la mañana: tareas vencidas, de hoy y próximas,
  *                        reuniones del día y seguimientos del CRM. A los socios, además,
  *                        un resumen del equipo (clientes sin actualizar, tareas vencidas).
- *   • reporteCierre()  → todos los días a las 19 h, SOLO al dueño (Diogenes): todas las tareas
+ *   • reporteCierre()  → todos los días a las 19 h, al dueño (Diogenes) y a info@: todas las tareas
  *                        pendientes, ordenadas por empresa y por responsable.
  *   • avisosNuevos()   → cada hora: los avisos nuevos de la plataforma (tareas asignadas,
  *                        alertas mandadas con "Avisar", clientes en riesgo, nuevos clientes…).
@@ -28,6 +28,7 @@ const CONFIG = {
   PLATAFORMA: 'https://diogenes-ortiz.github.io/anm-plataforma/',
   HORA_RESUMEN: 8,              // hora del resumen diario (0-23)
   HORA_REPORTE: 19,             // hora del reporte de cierre del día (solo al dueño)
+  REPORTE_COPIA: 'info@anmcontentstudio.com', // también recibe el reporte de cierre (vacío = nadie más)
   RESUMEN_FINDE: false,         // true = también sábados y domingos
   ZONA: 'America/Argentina/Buenos_Aires',
   REMITENTE: 'ANM Plataforma',  // nombre que aparece como remitente
@@ -232,6 +233,7 @@ function reporteCierre() {
   if (!para) { Logger.log('No encontré el mail del dueño.'); return; }
   const mail = armarReporte(d);
   enviar(para, mail.asunto, mail.html);
+  if (CONFIG.REPORTE_COPIA && CONFIG.REPORTE_COPIA !== para) enviar(CONFIG.REPORTE_COPIA, mail.asunto, mail.html);
 }
 function probarReporte() {
   const yo = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
