@@ -101,7 +101,19 @@
 
   // Comisión: % del ingreso de un cliente/proyecto que va para otra persona (ej: quien lo trajo)
   // (en clientes rige desde el mes en que se cargó, así los meses anteriores no cambian)
-  const comOf = (x, ym) => { const c = x?.comision; return c && +c.pct > 0 && (!c.desde || !ym || c.desde<=ym) ? { pct:+c.pct, para:c.para||'' } : null; };
+  // Puede ser un % del total o un monto fijo por mes
+  const comOf = (x, ym) => { const c = x?.comision; return c && (+c.pct > 0 || +c.monto > 0) && (!c.desde || !ym || c.desde<=ym) ? { pct:+c.pct||0, fijo:+c.monto||0, para:c.para||'' } : null; };
+  const comMonto = (com, total) => com.fijo ? Math.round(com.fijo) : Math.round((+total||0)*com.pct/100);
+  const comTxt = com => com.fijo ? `${fmt(com.fijo)} fijo` : `${com.pct}%`;
+  // Campos del formulario de comisión y cómo se guardan
+  const comFields = c => [
+    { k:'comTipo', label:'Comisión', type:'select', default: c?.monto ? 'monto' : c?.pct ? 'pct' : '', half:true, options:[['','Sin comisión'],['pct','% del total'],['monto','Monto fijo ($)']], hint:'Si una parte de lo que paga va para otra persona.' },
+    { k:'comValor', label:'Cuánto (% o $)', type:'number', default: c?.monto || c?.pct || '', half:true, placeholder:'Ej: 10 o 15000' },
+    { k:'comPara', label:'¿Para quién?', default:c?.para||'', placeholder:'Ej: Juan (lo trajo)' } ];
+  const comFrom = (v, prev, ym) => { const n = +v.comValor||0; if(!v.comTipo || n<=0) return null;
+    const out = { para:(v.comPara||'').trim(), ...(v.comTipo==='monto' ? { monto:n } : { pct:n }) };
+    if(ym) out.desde = (prev && prev.desde && prev.desde<=ym) ? prev.desde : ym;
+    return out; };
   const cliCands = ym => S.clientes.filter(x=>(!(x.estado==='inactivo' && !x.finServicio) && enRango(x.inicioServicio, x.finServicio, ym)) || ovGet(ym,'cli',x.id).in);
   function cliRow(x, ym){
     const o = ovGet(ym,'cli',x.id), base = retainerAt(x, ym)+extrasOf(x.id, ym), monto = o.monto ?? base, cob = isCobrado(x.id, ym);
@@ -122,8 +134,8 @@
       ...fjRows(ym).filter(x=>x.incluir).map(x=>({ grupo:'Fijos', kind:'fj', id:x.id, concepto:x.concepto, monto:x.monto })),
       ...(c?.extras||[]).map((x,i)=>({ grupo:'Extras del mes', kind:'ex', id:i, concepto:x.concepto, monto:+x.monto||0 })),
       ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo })),
-      ...cli.filter(x=>x.com).map(x=>({ grupo:'Comisiones', kind:'cm', id:x.id, concepto:`${x.com.para||'Comisión'} · ${x.com.pct}% de ${x.nombre}`, monto:Math.round(x.total*x.com.pct/100) })),
-      ...pro.filter(p=>p.com).map(p=>({ grupo:'Comisiones', kind:'cmp', id:p.id, concepto:`${p.com.para||'Comisión'} · ${p.com.pct}% de ${p.cliente} (${p.nombre})`, monto:Math.round((+p.monto||0)*p.com.pct/100) }))];
+      ...cli.filter(x=>x.com).map(x=>({ grupo:'Comisiones', kind:'cm', id:x.id, concepto:`${x.com.para||'Comisión'} · ${comTxt(x.com)} de ${x.nombre}`, monto:comMonto(x.com, x.total) })),
+      ...pro.filter(p=>p.com).map(p=>({ grupo:'Comisiones', kind:'cmp', id:p.id, concepto:`${p.com.para||'Comisión'} · ${comTxt(p.com)} de ${p.cliente} (${p.nombre})`, monto:comMonto(p.com, p.monto) }))];
     return build(ym, cli, pro, gastos, !!c?.closedAt, c);
   }
 
@@ -253,7 +265,7 @@
         <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
-        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}${x.com?` · <span class="tag t-purple" style="font-size:11px" title="Se descuenta abajo, en Comisiones">💸 Comisión ${x.com.pct}%${x.com.para?' → '+esc(x.com.para):''}: ${fmt(Math.round(x.monto*x.com.pct/100))}</span>`:''}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}${x.com?` · <span class="tag t-purple" style="font-size:11px" title="Se descuenta abajo, en Comisiones">💸 Comisión ${comTxt(x.com)}${x.com.para?' → '+esc(x.com.para):''}: ${fmt(comMonto(x.com, x.monto))}</span>`:''}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind==='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('c','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
         ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td>${g.kind==='eq'?`<button class="tag ${g.pagado?'t-green':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.pagoEq('${g.id}')">${g.pagado?'✓ Pagado':'✗ No pagado'}</button>`:''}</td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
@@ -585,12 +597,11 @@
         UI.form({ title:`✎ ${c.nombre} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
           { k:'monto', label:`Monto de ${ymLabel(ym)}`, type:'number', default:r.monto, req:true },
           { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${ymLabel(ym)} en adelante (nuevo precio)`],['solo',`Solo ${ymLabel(ym)} (los demás meses quedan igual)`]] },
-          { k:'comPct', label:'Comisión (% del total)', type:'number', default:c.comision?.pct||'', half:true, placeholder:'Ej: 10', hint:'Si una parte de lo que paga este cliente va para otra persona. Vacío = sin comisión.' },
-          { k:'comPara', label:'¿Para quién?', default:c.comision?.para||'', half:true, placeholder:'Ej: Juan (lo trajo)' },
+          ...comFields(c.comision),
           ...((c.retainerHistory||[]).length ? [{ k:'h', type:'html', html:`<div class="xs faint" style="margin-top:4px"><b>Historial de precios:</b> ${[...c.retainerHistory].sort((a,b)=>a.desde.localeCompare(b.desde)).map(h=>`${ymLabel(h.desde,1)} ${fmt(h.monto)}`).join(' → ')}</div>` }] : []),
         ], danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('c', id, ym), 60) },
         onSubmit:v=>{ const monto = +v.monto||0;
-          c.comision = +v.comPct>0 ? { pct:+v.comPct, para:(v.comPara||'').trim(), desde: (c.comision && c.comision.desde && c.comision.desde<=ym) ? c.comision.desde : ym } : null;
+          c.comision = comFrom(v, c.comision, ym);
           if(v.alcance==='solo') ovSet(ym,'cli',c.id,{ monto: monto===r.base ? null : monto });
           else {
             const base = monto - extrasOf(c.id, ym);
@@ -607,9 +618,9 @@
           { k:'cliente', label:'Cliente', default:p.cliente, half:true, req:true }, { k:'nombre', label:'Proyecto', default:p.nombre, half:true, req:true },
           { k:'monto', label:'Monto', type:'number', default:p.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:p.empCosto, half:true },
           { k:'fecha', label:'Fecha (define el mes)', type:'date', default:p.fecha },
-          { k:'comPct', label:'Comisión (% del total)', type:'number', default:p.comision?.pct||'', half:true, placeholder:'Ej: 10' }, { k:'comPara', label:'¿Para quién?', default:p.comision?.para||'', half:true },
+          ...comFields(p.comision),
         ], danger:{ label:'🗑 Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); touch(ym); render(); } },
-        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha, comision: +v.comPct>0 ? { pct:+v.comPct, para:(v.comPara||'').trim() } : null }); touch(ym); render(); } });
+        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha, comision: comFrom(v, p.comision) }); touch(ym); render(); } });
       }
     },
     editGasto(kind, id, ymArg){
