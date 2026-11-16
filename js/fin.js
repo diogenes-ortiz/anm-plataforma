@@ -99,14 +99,17 @@
   const enRango = (ini, fin, ym) => (!ini || ini<=ym) && (!fin || fin>=ym);
   const clearIn = (ym, g, id) => Object.keys(S.mes).filter(k=>k>=ym).forEach(k=>ovSet(k, g, id, { in:null }));
 
+  // Comisión: % del ingreso de un cliente/proyecto que va para otra persona (ej: quien lo trajo)
+  // (en clientes rige desde el mes en que se cargó, así los meses anteriores no cambian)
+  const comOf = (x, ym) => { const c = x?.comision; return c && +c.pct > 0 && (!c.desde || !ym || c.desde<=ym) ? { pct:+c.pct, para:c.para||'' } : null; };
   const cliCands = ym => S.clientes.filter(x=>(!(x.estado==='inactivo' && !x.finServicio) && enRango(x.inicioServicio, x.finServicio, ym)) || ovGet(ym,'cli',x.id).in);
   function cliRow(x, ym){
     const o = ovGet(ym,'cli',x.id), base = retainerAt(x, ym)+extrasOf(x.id, ym), monto = o.monto ?? base, cob = isCobrado(x.id, ym);
     const pendiente = cob ? 0 : o.pendiente!=null ? Math.min(+o.pendiente||0, monto) : monto;
-    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente };
+    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente, com:comOf(x, ym), rec:o.rec||null };
   }
   const proRows = ym => projectsOf(ym).filter(p=>!ovGet(ym,'pro',p.id).off).map(p=>{ const m = +p.monto||0, cob = p.estado==='cobrado', par = !cob && p.pendienteParcial!=null;
-    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m }; });
+    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m, com:comOf(p), rec:ovGet(ym,'pro',p.id).rec||null }; });
   const eqCands = ym => S.empleados.filter(e=>!isSocio(e) && ((!(e.estado==='inactivo' && !e.finLaboral) && enRango(e.inicioLaboral, e.finLaboral, ym)) || ovGet(ym,'eq',e.id).in));
   const eqRow = (e, ym) => { const base = sueldoAt(e, ym), o = ovGet(ym,'eq',e.id); return { id:e.id, nombre:e.nombre, base, monto:o.monto ?? base, incluir:!S.skips.includes(ckey('skip', e.id, ym)) }; };
   const fjRows = ym => S.gastos.filter(g=>gastoMensual(g) && enRango(g.desde, g.hasta, ym)).map(g=>{ const base = Math.round(gastoMensual(g)), o = ovGet(ym,'fj',g.id); return { id:g.id, concepto:g.concepto, base, monto:o.monto ?? base, incluir:!o.off }; });
@@ -118,7 +121,9 @@
     const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre, monto:x.monto, pagado:!!ovGet(ym,'eq',x.id).pagado })),
       ...fjRows(ym).filter(x=>x.incluir).map(x=>({ grupo:'Fijos', kind:'fj', id:x.id, concepto:x.concepto, monto:x.monto })),
       ...(c?.extras||[]).map((x,i)=>({ grupo:'Extras del mes', kind:'ex', id:i, concepto:x.concepto, monto:+x.monto||0 })),
-      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo }))];
+      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo })),
+      ...cli.filter(x=>x.com).map(x=>({ grupo:'Comisiones', kind:'cm', id:x.id, concepto:`${x.com.para||'Comisión'} · ${x.com.pct}% de ${x.nombre}`, monto:Math.round(x.total*x.com.pct/100) })),
+      ...pro.filter(p=>p.com).map(p=>({ grupo:'Comisiones', kind:'cmp', id:p.id, concepto:`${p.com.para||'Comisión'} · ${p.com.pct}% de ${p.cliente} (${p.nombre})`, monto:Math.round((+p.monto||0)*p.com.pct/100) }))];
     return build(ym, cli, pro, gastos, !!c?.closedAt, c);
   }
 
@@ -225,8 +230,8 @@
   // Reparto: primero se separa el % de la agencia y lo que queda se divide entre los socios.
   const reparto = () => { const r = S.reparto || {}; return { agencia: r.agencia ?? 20, socios: (r.socios && r.socios.length) ? r.socios : [{ nombre:'Dio', pct:50 }, { nombre:'Santi', pct:50 }] }; };
   function cuentaDe(M){
-    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado })),
-      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado }))];
+    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado, com:x.com, rec:x.rec })),
+      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado, com:p.com, rec:p.rec }))];
     const R = reparto(), sum = (a,k) => a.reduce((s,x)=>s+x[k],0);
     const tot = { debe:sum(ing,'monto'), entro:sum(ing,'entro') }, gas = M.gas;
     const calc = base => { const queda = base - gas, ag = Math.max(0, queda) * R.agencia/100, soc = Math.max(0, queda) - ag;
@@ -240,12 +245,15 @@
     const sg = v => v<0 ? '− '+fmt(-v) : fmt(v);
     const sec = t => `<tr><td colspan="4" class="xs faint b" style="letter-spacing:1px;padding-top:16px">${t}</td></tr>`;
     const tot2 = (l, a, b, color, big) => `<tr style="border-top:2px solid var(--border)${big?';font-size:15px':''}"><td class="b"${color?` style="color:${color}"`:''}>${l}</td><td></td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(a)}</td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(b)}</td></tr>`;
-    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`;
+    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`
+      + (x.cob==='si' ? '' : `<div style="margin-top:4px">${x.rec
+          ? `<button class="tag t-blue" style="border:0;cursor:pointer" title="Recordatorio enviado el ${UI.fdate(x.rec.slice(0,10),{abs:true})}. Tocá para desmarcar." onclick="Fin.recordar('${x.kind}','${x.id}')">🔔 Recordado ${UI.fdate(x.rec.slice(0,10),{abs:true})}</button>`
+          : `<button class="tag" style="border:1px dashed var(--border);cursor:pointer;background:none" title="Copia un mensaje de recordatorio de pago y lo marca como enviado" onclick="Fin.recordar('${x.kind}','${x.id}')">🔕 Sin recordar · Recordar</button>`}</div>`);
     return `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>🧮 La cuenta del mes</h3><span class="sub">${ymLabel(M.ym)}</span><span class="grow"></span>
         <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
-        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}${x.com?` · <span class="tag t-purple" style="font-size:11px" title="Se descuenta abajo, en Comisiones">💸 Comisión ${x.com.pct}%${x.com.para?' → '+esc(x.com.para):''}: ${fmt(Math.round(x.monto*x.com.pct/100))}</span>`:''}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind==='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('c','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
         ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td>${g.kind==='eq'?`<button class="tag ${g.pagado?'t-green':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.pagoEq('${g.id}')">${g.pagado?'✓ Pagado':'✗ No pagado'}</button>`:''}</td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
@@ -289,7 +297,7 @@
     }
     if(debeCli.length || debeEq.length){
       L.push('', '*Pendientes*');
-      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre).join(', ')}`);
+      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre+(x.rec?' (🔔 ya recordado)':'')).join(', ')}`);
       if(debeEq.length) L.push(`⏳ Falta pagar ${fmt(debeEq.reduce((s,g)=>s+g.monto,0))}: ${debeEq.map(g=>g.concepto).join(', ')}`);
     } else L.push('', '🎉 Todo cobrado y todo pagado.');
     const notas = M.cierre?.answers?.notas; if(notas) L.push('', `📝 ${notas}`);
@@ -492,6 +500,17 @@
       UI.form({ title:`＋ Gasto · ${ymLabel(ym)}`, submit:'Siguiente', fields:[ { k:'t', label:'¿Qué tipo de gasto?', type:'select', options:[['ex',`Gasto extra (solo ${ymLabel(ym)})`],['fj',`Gasto fijo (todos los meses desde ${ymLabel(ym)})`],['eq','Sueldo de una persona nueva']] } ],
         onSubmit:v=>{ setTimeout(()=>Fin[{ ex:'addEx', fj:'addFijo', eq:'addEq' }[v.t]](ym), 60); } }); },
     // Marca si un cliente/proyecto pagó (en el mes que se está viendo)
+    // Recordatorio de pago: copia un mensaje listo para WhatsApp/mail y lo marca como enviado (por mes)
+    recordar(kind, id){
+      const ym = cursor, g = kind==='c' ? 'cli' : 'pro', cur = ovGet(ym, g, id).rec;
+      if(cur){ if(confirm('¿Desmarcar el recordatorio de este mes?')){ ovSet(ym, g, id, { rec:null }); touch(ym); render(); } return; }
+      const M = month(ym), x = kind==='c' ? M.cli.find(y=>String(y.id)===String(id)) : M.pro.find(y=>String(y.id)===String(id)); if(!x) return;
+      const debe = +x.pendiente || (kind==='c' ? x.total : x.monto);
+      const quien = kind==='c' ? x.nombre : (x.cliente||x.nombre);
+      UI.copy(`¡Hola! ¿Cómo va? Te escribimos de ANM para recordarte el pago de ${kind==='c' ? ymLabel(ym) : `“${x.nombre}”`}: ${fmt(debe)}. Cualquier cosa nos avisás. ¡Gracias! 🙌`);
+      ovSet(ym, g, id, { rec:new Date().toISOString() }); touch(ym); render();
+      UI.toast(`Mensaje copiado y marcado: ya le recordaste a ${quien}`,'🔔');
+    },
     cobro(kind, id){
       const ym = cursor;
       if(kind==='c'){ setCobro(id, ym, !isCobrado(id, ym)); ovSet(ym,'cli',id,{ pendiente:null }); }
@@ -534,6 +553,8 @@
     // 🗑 Sacar algo de un mes, darlo de baja o eliminarlo (mismo efecto en Actualidad y en el Cierre)
     quitar(kind, id, ymArg){
       const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
+      if(kind==='cm' || kind==='cmp'){ const x = (kind==='cm' ? S.clientes : S.proyectos).find(sid); if(!x) return;
+        if(confirm(`¿Sacar la comisión de ${x.nombre||x.cliente}? (deja de descontarse en todos los meses)`)){ x.comision = null; touch(ym); render(); UI.toast('Comisión sacada','🗑'); } return; }
       const nm = kind==='c' ? S.clientes.find(sid)?.nombre : kind==='eq' ? S.empleados.find(sid)?.nombre : kind==='fj' ? S.gastos.find(sid)?.concepto
         : kind==='ex' ? S.cierres[ym]?.extras?.[+id]?.concepto : (()=>{ const p = S.proyectos.find(sid); return p ? `${p.cliente} · ${p.nombre}` : ''; })();
       const opts = {
@@ -564,9 +585,12 @@
         UI.form({ title:`✎ ${c.nombre} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
           { k:'monto', label:`Monto de ${ymLabel(ym)}`, type:'number', default:r.monto, req:true },
           { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${ymLabel(ym)} en adelante (nuevo precio)`],['solo',`Solo ${ymLabel(ym)} (los demás meses quedan igual)`]] },
+          { k:'comPct', label:'Comisión (% del total)', type:'number', default:c.comision?.pct||'', half:true, placeholder:'Ej: 10', hint:'Si una parte de lo que paga este cliente va para otra persona. Vacío = sin comisión.' },
+          { k:'comPara', label:'¿Para quién?', default:c.comision?.para||'', half:true, placeholder:'Ej: Juan (lo trajo)' },
           ...((c.retainerHistory||[]).length ? [{ k:'h', type:'html', html:`<div class="xs faint" style="margin-top:4px"><b>Historial de precios:</b> ${[...c.retainerHistory].sort((a,b)=>a.desde.localeCompare(b.desde)).map(h=>`${ymLabel(h.desde,1)} ${fmt(h.monto)}`).join(' → ')}</div>` }] : []),
         ], danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('c', id, ym), 60) },
         onSubmit:v=>{ const monto = +v.monto||0;
+          c.comision = +v.comPct>0 ? { pct:+v.comPct, para:(v.comPara||'').trim(), desde: (c.comision && c.comision.desde && c.comision.desde<=ym) ? c.comision.desde : ym } : null;
           if(v.alcance==='solo') ovSet(ym,'cli',c.id,{ monto: monto===r.base ? null : monto });
           else {
             const base = monto - extrasOf(c.id, ym);
@@ -583,14 +607,16 @@
           { k:'cliente', label:'Cliente', default:p.cliente, half:true, req:true }, { k:'nombre', label:'Proyecto', default:p.nombre, half:true, req:true },
           { k:'monto', label:'Monto', type:'number', default:p.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:p.empCosto, half:true },
           { k:'fecha', label:'Fecha (define el mes)', type:'date', default:p.fecha },
+          { k:'comPct', label:'Comisión (% del total)', type:'number', default:p.comision?.pct||'', half:true, placeholder:'Ej: 10' }, { k:'comPara', label:'¿Para quién?', default:p.comision?.para||'', half:true },
         ], danger:{ label:'🗑 Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); touch(ym); render(); } },
-        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha }); touch(ym); render(); } });
+        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha, comision: +v.comPct>0 ? { pct:+v.comPct, para:(v.comPara||'').trim() } : null }); touch(ym); render(); } });
       }
     },
     editGasto(kind, id, ymArg){
       const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
       const alc = { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${L} en adelante`],['solo',`Solo ${L} (los demás meses quedan igual)`]] };
-      if(kind==='pc') return Fin.editIngreso('p', id, ym);
+      if(kind==='pc' || kind==='cmp') return Fin.editIngreso('p', id, ym);
+      if(kind==='cm') return Fin.editIngreso('c', id, ym);
       if(kind==='eq'){ const e = S.empleados.find(sid); if(!e) return; const r = eqRow(e, ym);
         return UI.form({ title:`✎ ${e.nombre} · ${L}`, submit:'Guardar', fields:[ { k:'monto', label:`Sueldo de ${L}`, type:'number', default:r.monto, req:true }, alc ],
           danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('eq', id, ym), 60) },

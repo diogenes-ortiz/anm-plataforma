@@ -352,14 +352,20 @@
       ${pins.length ? `<div class="list">${pins.map(p=>`<div class="li"><span>${p.top?'🔥':'•'}</span><div class="grow small b">${esc(p.text)}</div><span class="xs faint">${esc(App.short(App.member(p.by)))}</span>${admin?`<button class="icon-btn" title="${p.top?'Sacar de urgente':'Marcar urgente'}" onclick="Ops.topPin('${c.id}','${p.id}')">${p.top?'⬇':'🔥'}</button><button class="icon-btn" title="Quitar" onclick="Ops.delPin('${c.id}','${p.id}')">🗑</button>`:''}</div>`).join('')}</div>`
         : '<div class="small faint">Nada cargado. Agregá lo que el equipo no se puede olvidar con este cliente (ej: “siempre mandar el calendario antes del 20”, “no usar el color rojo”).</div>'}</div>`;
   }
+  // Tareas con extra: la principal se cumplió y se desprendió una nueva (parentId)
+  function extraInfo(t){
+    const parent = t.parentId && Store.get('ops','tasks',t.parentId), kids = S('tasks').filter(x=>x.parentId===t.id);
+    if(!parent && !kids.length) return '';
+    return `<div class="xs" style="color:var(--blue)">${parent?`↳ Extra de “${esc(parent.title)}” (✓ ya hecha)`:''}${kids.length?`${parent?' · ':''}＋ ${kids.length} extra${kids.length>1?'s':''}: ${kids.map(k=>esc(k.title)+(k.status==='done'?' ✓':'')).join(', ')}`:''}</div>`;
+  }
   function taskRow(t, showClient=true){
     const over = t.status!=='done' && t.due && t.due<UI.today();
     const m = App.member(t.assigneeId);
     return `<div class="li"><input type="checkbox" ${t.status==='done'?'checked':''} onchange="Ops.toggleTask('${t.id}')" style="width:18px;height:18px;cursor:pointer">
       <div class="grow" style="cursor:pointer" onclick="Ops.editTask('${t.id}')"><div class="b small" style="${t.status==='done'?'text-decoration:line-through;color:var(--text3)':''}">${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
-      <div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
+      ${extraInfo(t)}<div class="xs faint">${showClient?esc(clientName(t.clientId))+' · ':''}${ST_ICON[t.status||'todo']} ${esc(label(TASK_ST,t.status))}${t.unit?' · '+esc(App.unit(t.unit).label):''}${t.note?' · '+esc(t.note):''}</div></div>
       ${UI.safeUrl(t.link)?`<a href="${esc(UI.safeUrl(t.link))}" target="_blank" title="Abrir link" onclick="event.stopPropagation()" style="text-decoration:none">🔗</a>`:''}
-      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${assignBtn(t)}<button class="icon-btn" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button></div>`;
+      ${t.due?`<span class="tag ${over?'t-red':t.due===UI.today()?'t-yellow':''}">${UI.fdate(t.due)}</span>`:''}${t.status!=='done'?`<button class="icon-btn" title="La tarea se hizo, pero se suma algo extra" onclick="event.stopPropagation();Ops.doneWithExtra('${t.id}')">✓＋</button>`:''}${assignBtn(t)}<button class="icon-btn" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button></div>`;
   }
   function taskList(ts, hideClient){ return ts.length ? `<div class="list">${ts.map(t=>taskRow(t,!hideClient)).join('')}</div>` : '<div class="empty small">Sin tareas</div>'; }
 
@@ -423,6 +429,7 @@
         ${plegada?'<div class="xs faint" style="padding:8px 2px">Las tareas terminadas quedan acá, ocultas. Tocá “Ver” para mostrarlas.</div>':''}
         ${items.map(t=>{ const over = k!=='done' && t.due && t.due<UI.today();
           return `<div class="kc ${over?'over':''} ${pickCls(t.id)}" ${selMode?'':`data-drag="${t.id}"`} onclick="${selMode?`Ops.pick('${t.id}')`:`Ops.editTask('${t.id}')`}"><div class="t">${selMode?`<input type="checkbox" ${sel.has(t.id)?'checked':''} style="pointer-events:none;margin-right:6px;vertical-align:-2px">`:''}${t.priority==='alta'?'🔥 ':''}${esc(t.title)}</div>
+          ${t.parentId?`<div class="xs" style="color:var(--blue);margin:2px 0 4px">↳ extra de “${esc(Store.get('ops','tasks',t.parentId)?.title||'')}”</div>`:''}
           <div class="m">${selMode?peopleAvs(t):assignBtn(t)}<span>${esc(clientName(t.clientId))}</span>${t.due?`<span class="tag ${over?'t-red':''}">${UI.fdate(t.due)}</span>`:''}${selMode?'':`<button class="icon-btn" style="margin-left:auto" title="Borrar tarea" onclick="event.stopPropagation();Ops.deleteTask('${t.id}')">🗑</button>`}</div></div>`; }).join('')}
         ${k==='todo'?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.editTask()">＋ Agregar</button>`:''}
         ${k==='done'&&!plegada&&totalK>items.length?`<button class="btn g sm" style="width:100%;justify-content:center" onclick="Ops.moreDone()">Ver más (${totalK-items.length})</button>`:''}</div>`;
@@ -697,6 +704,24 @@
       ids.forEach(id=>Store.remove('ops','meetings',id)); meetSel.clear(); meetSelMode = false;
       UI.toast(ids.length===1 ? 'Reunión borrada' : `${ids.length} reuniones borradas`,'🗑'); App.render();
     },
+    // La tarea principal se cumplió, pero se desprende algo extra: se marca hecha y nace una tarea nueva vinculada
+    doneWithExtra(id){
+      const t = Store.get('ops','tasks',id); if(!t) return;
+      UI.close(true);
+      setTimeout(()=>{ const box = UI.form({ title:'✓＋ Hecha, con algo extra', submit:'Guardar', values:{ assigneeId:t.assigneeId||App.me().id, alsoIds:t.alsoIds||[], due:'' }, fields:[
+          { k:'info', type:'html', html:`<div class="alert info" style="margin:0 0 12px"><div class="ai">✓</div><div class="ad"><b>${esc(t.title)}</b> queda como <b>hecha</b>. Lo que se agregó va como una tarea nueva, vinculada a esta.</div></div>` },
+          { k:'title', label:'¿Qué es lo extra?', req:true, placeholder:'Ej: sumar 2 placas más para historias' },
+          { k:'assigneeId', label:'Responsable', type:'select', options:assigneeOpts(t.clientId, t.assigneeId), half:true }, { k:'due', label:'Vence', type:'date', half:true },
+          ...(App.me().role==='invitado' ? [] : [{ k:'alsoIds', label:'También se encargan', type:'multi', options:App.members().map(m=>[m.id,App.short(m)]) }]),
+          { k:'note', label:'Nota para el cliente', placeholder:'Ej: lo pidieron en la reunión del martes' },
+        ], onSubmit:v=>{
+          const n = Store.upsert('ops','tasks',{ title:v.title, clientId:t.clientId||'', unit:t.unit||'', area:t.area||'', priority:t.priority||'media', status:'todo',
+            assigneeId:v.assigneeId||'', alsoIds:(v.alsoIds||[]).filter(x=>x && x!==v.assigneeId), due:v.due||'', note:v.note||'', parentId:t.id, link:t.link||'' });
+          setTaskStatus(t.id, 'done');
+          taskPeople(n).filter(x=>x!==App.me().id).forEach(x=>App.notify(x, `Se sumó un extra a “${t.title}”: ${n.title}`, '#/ops/tareas'));
+          UI.toast('Listo: la principal quedó hecha y se sumó el extra','✓'); App.render();
+        } }); box.querySelector('#f_title')?.focus(); }, 60);
+    },
     pickAssignee(id){
       const t = Store.get('ops','tasks',id); if(!t) return;
       const team = clientTeam(t.clientId), chosen = taskPeople(t);
@@ -744,7 +769,8 @@
         { k:'area', label:'Área (para el status del cliente)', half:true, placeholder:'CONTENIDO, GOOGLE ADS, WEB…' }, { k:'link', label:'Link', half:true, placeholder:'Canva, Drive, publicación…' },
         { k:'note', label:'Nota para el cliente', placeholder:'Ej: falta OK final para empezar a salir' },
         { k:'desc', label:'Detalle interno', type:'textarea', rows:3 },
-      ], danger: id ? { label:'Eliminar', confirm:'¿Eliminar la tarea?', fn:()=>{ Store.remove('ops','tasks',id); App.render(); } } : null,
+      ], extra: id && t.status!=='done' ? `<div style="margin:4px 0 2px"><button type="button" class="btn g sm" onclick="Ops.doneWithExtra('${id}')">✓＋ Se hizo, pero se suma algo extra</button></div>` : '',
+      danger: id ? { label:'Eliminar', confirm:'¿Eliminar la tarea?', fn:()=>{ Store.remove('ops','tasks',id); App.render(); } } : null,
       onSubmit:v=>{
         const prevStatus = t.status;
         v.area = (v.area||'').trim().toUpperCase();
