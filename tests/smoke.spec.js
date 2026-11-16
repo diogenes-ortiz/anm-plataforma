@@ -180,3 +180,41 @@ test('apodos: se editan en el perfil y se usan en avisos, @menciones y reglas', 
   expect(r.regla).toBe(id);
   expect(errores).toEqual([]);
 });
+
+test('Finanzas: comisión de un cliente y recordatorio de pago', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page, { seed: { main: { clientes: [{ id:1, nombre:'Mipileta', tipo:'mensual', retainer:100000, moneda:'ARS', estado:'activo', inicioServicio:'2026-01', retainerHistory:[{ monto:100000, desde:'2026-01' }], empleadoIds:[] }], empleados:[], gastos:[], proyectos:[] } } });
+  await entrar(page);
+  await page.waitForTimeout(1200);
+  await page.goto('/finanzas.html');
+  await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
+  await page.click('a[title="Editar monto"][onclick*="editIngreso(\'c\',\'1\'"] >> nth=0');
+  await page.fill('#f_comPct', '10');
+  await page.fill('#f_comPara', 'Juan');
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('text=COMISIONES').first()).toBeVisible();
+  await expect(page.locator('text=Juan · 10% de Mipileta').first()).toBeVisible();
+  await expect(page.locator('text=Comisión 10% → Juan')).toBeVisible();
+  await page.click('text=Sin recordar · Recordar');
+  await expect(page.locator('button:has-text("Recordado")')).toBeVisible();
+  expect(errores).toEqual([]);
+});
+
+test('completar una tarea y sumar un extra', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page);
+  await entrar(page);
+  const id = await page.evaluate(() => { const c = Store.upsert('ops','clients',{ name:'Mipileta', active:true, units:['social'], health:'ok' });
+    return Store.upsert('ops','tasks',{ title:'Armar 5 placas', clientId:c.id, status:'doing', assigneeId:App.me().id }).id; });
+  await page.goto('/#/ops/tareas');
+  await page.evaluate(() => Ops.setMode('list'));
+  await page.click('button[title="La tarea se hizo, pero se suma algo extra"]');
+  await page.fill('#f_title', 'Sumar 2 placas para historias');
+  await page.click('#mform button[type=submit]');
+  const r = await page.evaluate(i => ({ padre: Store.get('ops','tasks',i).status, hijo: Store.all('ops','tasks').find(t => t.parentId === i) }), id);
+  expect(r.padre).toBe('done');
+  expect(r.hijo.title).toBe('Sumar 2 placas para historias');
+  expect(r.hijo.status).toBe('todo');
+  await expect(page.locator('text=↳ Extra de “Armar 5 placas”')).toBeVisible();
+  expect(errores).toEqual([]);
+});
