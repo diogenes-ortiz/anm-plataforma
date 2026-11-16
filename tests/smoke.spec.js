@@ -189,12 +189,19 @@ test('Finanzas: comisión de un cliente y recordatorio de pago', async ({ page }
   await page.goto('/finanzas.html');
   await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
   await page.click('a[title="Editar monto"][onclick*="editIngreso(\'c\',\'1\'"] >> nth=0');
-  await page.fill('#f_comPct', '10');
+  await page.selectOption('#f_comTipo', 'pct');
+  await page.fill('#f_comValor', '10');
   await page.fill('#f_comPara', 'Juan');
   await page.click('#mform button[type=submit]');
   await expect(page.locator('text=COMISIONES').first()).toBeVisible();
   await expect(page.locator('text=Juan · 10% de Mipileta').first()).toBeVisible();
   await expect(page.locator('text=Comisión 10% → Juan')).toBeVisible();
+  // Monto fijo en vez de %
+  await page.click('a[title="Editar monto"][onclick*="editIngreso(\'c\',\'1\'"] >> nth=0');
+  await page.selectOption('#f_comTipo', 'monto');
+  await page.fill('#f_comValor', '15000');
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('text=Comisión $15.000 fijo → Juan').first()).toBeVisible();
   await page.click('text=Sin recordar · Recordar');
   await expect(page.locator('button:has-text("Recordado")')).toBeVisible();
   expect(errores).toEqual([]);
