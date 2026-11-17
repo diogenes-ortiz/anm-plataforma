@@ -11,7 +11,7 @@
     const soon = Ops.openTasks().filter(x=>Ops.isMine(x, me.id) && (!x.due || x.due>t)).sort((a,b)=>(a.due||'9').localeCompare(b.due||'9')).slice(0,4);
     const myMeet = Store.all('ops','meetings').filter(m=>m.date?.slice(0,10)===t && (m.attendees||[]).includes(me.id));
     const myFollow = App.canGrowth() ? Store.all('growth','leads').filter(l=>l.ownerId===me.id && l.nextFollowUp && l.nextFollowUp<=t && Growth.OPEN.includes(l.stage)) : [];
-    const myClients = Ops.activeClients().filter(c=>c.ownerId===me.id && Ops.daysSinceUpdate(c)>7);
+    const myClients = Ops.activeClients().filter(c=>c.ownerId===me.id && Ops.daysSinceUpdate(c)>7 && !(c.updSnoozeUntil && c.updSnoozeUntil>t));
     const focus = myTasks.length + myMeet.length + myFollow.length + myClients.length;
     const board = Game.leaderboard(wk);
     const alerts = [...Ops.alerts(), ...(App.canGrowth()?Growth.alerts():[])].filter(a=>a.level!=='info');
@@ -40,8 +40,8 @@
             ${focus ? `<div class="list">
               ${myMeet.map(m=>`<div class="li click" onclick="Ops.viewMeeting('${m.id}')"><span>🤝</span><div class="grow"><div class="b small">${esc(m.title)}</div><div class="xs faint">${UI.time(m.date)} · ${esc(Ops.clientName(m.clientId))}</div></div></div>`).join('')}
               ${myTasks.map(x=>Ops.taskRow(x)).join('')}
-              ${myFollow.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><span>📞</span><div class="grow"><div class="b small">Seguimiento: ${esc(l.company)}</div><div class="xs faint">${esc(l.nextAction||'')}</div></div><span class="tag ${l.nextFollowUp<t?'t-red':'t-yellow'}">${UI.fdate(l.nextFollowUp)}</span></div>`).join('')}
-              ${myClients.map(c=>`<div class="li click" onclick="Ops.updateClient('${c.id}')"><span>📡</span><div class="grow"><div class="b small">Actualizar ${esc(c.name)}</div><div class="xs faint">${Ops.daysSinceUpdate(c)>=999?'Sin seguimiento todavía':Ops.daysSinceUpdate(c)+' días sin novedades'}</div></div></div>`).join('')}
+              ${myFollow.map(l=>`<div class="li click" onclick="App.go('#/crecimiento/lead/${l.id}')"><span>📞</span><div class="grow"><div class="b small">Seguimiento: ${esc(l.company)}</div><div class="xs faint">${esc(l.nextAction||'')}</div></div><span class="tag ${l.nextFollowUp<t?'t-red':'t-yellow'}">${UI.fdate(l.nextFollowUp)}</span><button class="icon-btn" title="Posponer o sacar el seguimiento" onclick="event.stopPropagation();Growth.snooze('${l.id}')">⏰</button></div>`).join('')}
+              ${myClients.map(c=>`<div class="li click" onclick="Ops.updateClient('${c.id}')"><span>📡</span><div class="grow"><div class="b small">Actualizar ${esc(c.name)}</div><div class="xs faint">${Ops.daysSinceUpdate(c)>=999?'Sin seguimiento todavía':Ops.daysSinceUpdate(c)+' días sin novedades'}</div></div><button class="icon-btn" title="Posponer este recordatorio" onclick="event.stopPropagation();Ops.snoozeUpdate('${c.id}')">⏰</button></div>`).join('')}
             </div>` : '<div class="empty"><div class="big">🌤️</div>Nada urgente para hoy</div>'}
             ${soon.length?`<div class="sec-t" style="margin-top:18px">Lo que viene</div><div class="list">${soon.map(x=>Ops.taskRow(x)).join('')}</div>`:''}</div>
           <div class="card"><div class="card-h"><h3>🚨 Alertas del equipo</h3><span class="sub">${alerts.length}</span><span class="grow"></span><a class="btn xs g" href="#/ops/alertas">Ver todas</a></div>

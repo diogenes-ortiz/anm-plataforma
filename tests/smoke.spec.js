@@ -189,6 +189,7 @@ test('Finanzas: comisión de un cliente y recordatorio de pago', async ({ page }
   await page.goto('/finanzas.html');
   await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
   await page.click('a[title="Editar monto"][onclick*="editIngreso(\'c\',\'1\'"] >> nth=0');
+  await page.waitForFunction(() => document.activeElement?.id === 'f_monto');
   await page.selectOption('#f_comTipo', 'pct');
   await page.fill('#f_comValor', '10');
   await page.fill('#f_comPara', 'Juan');
@@ -198,6 +199,7 @@ test('Finanzas: comisión de un cliente y recordatorio de pago', async ({ page }
   await expect(page.locator('text=Comisión 10% → Juan')).toBeVisible();
   // Monto fijo en vez de %
   await page.click('a[title="Editar monto"][onclick*="editIngreso(\'c\',\'1\'"] >> nth=0');
+  await page.waitForFunction(() => document.activeElement?.id === 'f_monto');
   await page.selectOption('#f_comTipo', 'monto');
   await page.fill('#f_comValor', '15000');
   await page.click('#mform button[type=submit]');
@@ -223,5 +225,49 @@ test('completar una tarea y sumar un extra', async ({ page }) => {
   expect(r.hijo.title).toBe('Sumar 2 placas para historias');
   expect(r.hijo.status).toBe('todo');
   await expect(page.locator('text=↳ Extra de “Armar 5 placas”')).toBeVisible();
+  expect(errores).toEqual([]);
+});
+
+test('status del cliente: lo que ya hicimos va al final', async ({ page }) => {
+  await mockSupabase(page);
+  await entrar(page);
+  const txt = await page.evaluate(() => { const c = Store.upsert('ops','clients',{ name:'Mipileta', active:true, units:['social'], health:'ok' });
+    Store.upsert('ops','tasks',{ title:'Calendario diciembre', clientId:c.id, area:'CONTENIDO', status:'doing' });
+    Store.upsert('ops','tasks',{ title:'Reels de noviembre', clientId:c.id, area:'CONTENIDO', status:'done', doneAt:new Date().toISOString() });
+    Store.upsert('ops','tasks',{ title:'Landing navidad', clientId:c.id, area:'WEB', status:'done', doneAt:new Date().toISOString() });
+    return Ops.statusText ? Ops.statusText(c.id) : null; });
+  if (txt === null) return;
+  const iHicimos = txt.indexOf('LO QUE YA HICIMOS');
+  expect(iHicimos).toBeGreaterThan(txt.indexOf('Calendario diciembre'));
+  expect(txt.indexOf('Reels de noviembre')).toBeGreaterThan(iHicimos);
+  expect(txt.indexOf('Landing navidad')).toBeGreaterThan(iHicimos);
+  expect(txt.indexOf('*WEB*')).toBe(-1);   // un área con todo hecho no aparece arriba
+});
+
+test('posponer o sacar un seguimiento desde Tu foco de hoy', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page);
+  await entrar(page);
+  const ids = await page.evaluate(() => {
+    const a = Store.upsert('growth','leads',{ company:'Sanitarios Sione', stage:'propuesta', ownerId:App.me().id, nextFollowUp:UI.addDays(UI.today(),-4), nextAction:'Seguimiento de la propuesta' });
+    const b = Store.upsert('growth','leads',{ company:'Otra SA', stage:'contactado', ownerId:App.me().id, nextFollowUp:UI.today() });
+    const c = Store.upsert('ops','clients',{ name:'Coarmi', active:true, units:['web'], health:'ok', ownerId:App.me().id });
+    return { a:a.id, b:b.id, c:c.id };
+  });
+  await page.goto('/#/inicio');
+  await page.locator('.li:has-text("Seguimiento: Sanitarios Sione") button[title^="Posponer"]').click();
+  await page.fill('#sz-why', 'no saturarlo');
+  await page.click('#modal >> text=En 1 mes');
+  await expect(page.locator('text=Seguimiento: Sanitarios Sione')).toHaveCount(0);
+  await page.locator('.li:has-text("Seguimiento: Otra SA") button[title^="Posponer"]').click();
+  await page.click('#modal >> text=Sacar el seguimiento');
+  await page.locator('.li:has-text("Actualizar Coarmi") button[title^="Posponer"]').click();
+  await page.click('#modal >> text=1 semana');
+  await expect(page.locator('text=Actualizar Coarmi')).toHaveCount(0);
+  const r = await page.evaluate(i => ({ a: Store.get('growth','leads',i.a).nextFollowUp, b: Store.get('growth','leads',i.b).nextFollowUp,
+    nota: Store.all('growth','interactions').find(x => x.leadId === i.a)?.text }), ids);
+  expect(r.a).toBe(await page.evaluate(() => UI.addDays(UI.today(), 30)));
+  expect(r.b).toBe('');
+  expect(r.nota).toContain('no saturarlo');
   expect(errores).toEqual([]);
 });
