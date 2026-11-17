@@ -73,51 +73,10 @@
   async function checkGate(){
     const acc = Auth.loggedIn() ? (Auth.access || await Auth.check()) : null;
     if(!acc || !['owner','socio'].includes(acc.role)){ gate(`<div class="mtitle">No tenés acceso a Finanzas</div><div class="csub" style="font-size:12px">Esta sección es solo para admins. Pedile acceso a un admin del equipo.</div>`); return; }
-    const last = +sessionStorage.getItem(OK_KEY)||0;
-    if(last && Date.now()-last < IDLE_MIN*6e4){ sessionStorage.setItem(OK_KEY, String(Date.now())); return; }
-    sessionStorage.removeItem(OK_KEY);
-    gate(`<div class="csub" style="font-size:12px">Verificando…</div>`);
-    let sec = S.seguridad;
-    try{ const r = await remoteSecurity(); if(r){ sec = r; S.seguridad = r; } }catch(e){ if(!sec){ gate(`<div class="mtitle">Sin conexión</div><div class="csub" style="font-size:12px;margin-bottom:14px">No puedo verificar la contraseña sin conexión a la base de datos.</div><button class="btn bp" onclick="location.reload()">Reintentar</button>`); return; } }
-    if(!sec){
-      const g = gate(`<div class="mtitle">Creá la contraseña de Finanzas</div>
-        <div class="csub" style="font-size:12px;margin-bottom:14px">Se va a pedir cada vez que alguien entre a esta sección. Compartila solo con los socios.</div>
-        <div class="fr"><label>Contraseña (mínimo 6 caracteres)</label><input class="fx-in" id="fx-p1" type="password"></div>
-        <div class="fr"><label>Repetila</label><input class="fx-in" id="fx-p2" type="password"></div>
-        <button class="btn bp" style="width:100%;justify-content:center" id="fx-go">Crear y entrar</button>`);
-      g.querySelector('#fx-go').onclick = async ()=>{
-        const a = g.querySelector('#fx-p1').value, b = g.querySelector('#fx-p2').value;
-        if(a.length<6) return alert('Mínimo 6 caracteres'); if(a!==b) return alert('Las contraseñas no coinciden');
-        const salt = rnd(12), recovery = rnd(10);
-        S.seguridad = { salt, hash:await hash(salt+a), recovery:await hash(salt+recovery), creada:new Date().toISOString() };
-        guardarAhora();
-        alert(`Contraseña creada ✅\n\nGuardá este CÓDIGO DE RECUPERACIÓN en un lugar seguro (sirve para cambiar la contraseña si se olvida):\n\n${recovery}`);
-        unlock();
-      };
-      return;
-    }
-    const g = gate(`<div class="mtitle">🔒 Ingresá la contraseña</div>
-      <div class="fr"><input class="fx-in" id="fx-p" type="password" placeholder="Contraseña" autocomplete="current-password"></div>
-      <button class="btn bp" style="width:100%;justify-content:center" id="fx-go">Entrar</button>
-      <div style="margin-top:12px"><a href="#" id="fx-forgot" style="font-size:11px;color:var(--text2)">Olvidé la contraseña</a></div>`);
-    const go = async ()=>{ const v = g.querySelector('#fx-p').value; if(await hash(sec.salt+v)===sec.hash) unlock(); else { g.querySelector('#fx-p').value=''; g.querySelector('#fx-p').style.borderColor='var(--red)'; } };
-    g.querySelector('#fx-go').onclick = go;
-    g.querySelector('#fx-p').onkeydown = e=>{ if(e.key==='Enter') go(); };
-    g.querySelector('#fx-forgot').onclick = async e=>{ e.preventDefault();
-      const code = prompt('Ingresá el código de recuperación que se mostró al crear la contraseña:'); if(!code) return;
-      if(await hash(sec.salt+code.trim().toUpperCase())!==sec.recovery) return alert('Código incorrecto');
-      S.seguridad = null; guardarAhora(); alert('Listo. Ahora creá una contraseña nueva.'); checkGate(); };
+    // Sin contraseña aparte: alcanza con entrar con el Gmail de un socio
+    unlock();
   }
-  window.finChangePassword = async ()=>{
-    const sec = S.seguridad; if(!sec) return;
-    const cur = prompt('Contraseña actual:'); if(cur==null) return;
-    if(await hash(sec.salt+cur)!==sec.hash) return alert('Contraseña incorrecta');
-    const nw = prompt('Nueva contraseña (mínimo 6):'); if(!nw || nw.length<6) return alert('Mínimo 6 caracteres');
-    S.seguridad = { ...sec, hash:await hash(sec.salt+nw) }; guardarAhora(); alert('Contraseña actualizada ✅');
-  };
-  // Auto-bloqueo por inactividad
-  ['click','keydown','scroll'].forEach(ev=>document.addEventListener(ev, ()=>{ if(sessionStorage.getItem(OK_KEY)) sessionStorage.setItem(OK_KEY, String(Date.now())); }, { passive:true }));
-  setInterval(()=>{ const last = +sessionStorage.getItem(OK_KEY)||0; if(last && Date.now()-last > IDLE_MIN*6e4) finLock(); }, 30000);
+  window.finChangePassword = ()=>{};
 
   // ── Métricas por mes ────────────────────────────────────────────────────────
   function atMonth(ym, fn){

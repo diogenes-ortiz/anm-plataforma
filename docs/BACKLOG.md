@@ -91,52 +91,52 @@ Hoy la protección ocurre solo en el navegador. Con la URL y la clave pública, 
 ### Se pierden o alteran datos
 
 - [x] **BUG-01 · P0 [Confirmado]** Editar una tarea ajena reasigna sin aviso. Un usuario de rol Equipo solo tiene su nombre en el selector (`js/app.js:35`, `js/ops.js:597`); al guardar, la tarea pasa a ser suya. Acepta: la persona actual se conserva como opción. — hecho: el selector conserva al responsable actual y el equipo puede asignar a cualquiera.
-- [ ] **BUG-02 · P0 [Confirmado]** Editar una tarea de un cliente dado de baja la convierte en interna, porque `clientOpts` solo lista activos (`js/ops.js:531`). Conservar el cliente actual como opción. Revisar el mismo caso en contenido y reuniones.
-- [ ] **BUG-03 · P0 [Confirmado]** `Store.upsert` pisa `createdAt` en cada actualización parcial (`js/store.js:141-144`); se reprodujo en una prueba. Afecta "Alta", "Ciclo de venta" (`js/growth.js:202`) y las alertas que usan `createdAt`. Acepta: se conserva la fecha original. Evaluar si se puede reconstruir la fecha perdida desde `interactions`.
-- [ ] **BUG-04 · P0 [Confirmado]** Escape o un clic fuera del formulario lo cierran sin avisar y se pierde lo escrito (`js/ui.js:93-94`). Pedir confirmación si hubo cambios y guardar borrador de minutas y formularios largos.
-- [ ] **BUG-05 · P1 [Confirmado]** Cerrar la pestaña dentro de los 900 ms siguientes a un cambio puede perderlo: `beforeunload` lanza un `flush` asíncrono (`js/store.js:128`). Usar `fetch` con `keepalive` o avisar de que hay cambios sin guardar.
-- [ ] **BUG-06 · P1 [Confirmado]** Dos personas pueden pisarse: la secuencia leer, fusionar y escribir no es atómica (`js/store.js:80-88`). Se resuelve de raíz con DATOS-01; mientras tanto, comparar `updated_at` antes de escribir y reintentar.
-- [ ] **BUG-07 · P1 [Confirmado]** Gana el registro más nuevo completo: si una persona cambia la fecha y otra el estado, se pierde un cambio (`js/store.js:37`). Fusionar por campo o resolverlo con DATOS-01.
-- [ ] **BUG-08 · P1 [Confirmado]** La fusión depende del reloj de cada computadora. Usar la hora del servidor.
-- [ ] **BUG-09 · P1 [Confirmado]** Los borrados pueden revivir: los registros eliminados se purgan a los 60 días (`js/store.js:39`) y una copia local más vieja los vuelve a subir.
-- [ ] **BUG-10 · P1 [Confirmado]** `localStorage` lleno falla sin aviso (`js/store.js:78`). Avisar en pantalla.
-- [ ] **BUG-11 · P1 [Revisar]** Hay tareas repetidas en la actividad del 5 de octubre ("Video / animación: cómo se coloca el sifón", "Propuesta para que los arquitectos..."). La causa probable es que al cargar un status o una minuta no se detectan las tareas ya cerradas (`js/ops.js:859`) y las minutas comunes no deduplican. Confirmar, corregir y ofrecer una limpieza revisada a mano.
-- [ ] **BUG-12 · P2 [Confirmado]** `pendingMinutas` escribe en la base durante el dibujado de pantalla (`js/ops.js:106-108`). Separar lectura de escritura.
-- [ ] **BUG-13 · P2** Borrar reuniones deja tareas con un `meetingId` huérfano. Definir qué pasa con ellas.
-- [ ] **BUG-14 · P2** Quitar a una persona deja tareas con avatar "?". Pedir reasignación antes de quitarla.
+- [x] **BUG-02 · P0 [Confirmado]** Editar una tarea de un cliente dado de baja la convierte en interna, porque `clientOpts` solo lista activos (`js/ops.js:531`). Conservar el cliente actual como opción. Revisar el mismo caso en contenido y reuniones. — hecho: se conserva el cliente dado de baja en tareas, contenido y reuniones.
+- [x] **BUG-03 · P0 [Confirmado]** `Store.upsert` pisa `createdAt` en cada actualización parcial (`js/store.js:141-144`); se reprodujo en una prueba. Afecta "Alta", "Ciclo de venta" (`js/growth.js:202`) y las alertas que usan `createdAt`. Acepta: se conserva la fecha original. Evaluar si se puede reconstruir la fecha perdida desde `interactions`. — hecho: `createdAt` solo se pone al crear (prueba en `tests/datos.spec.js`). Las fechas ya perdidas no se pueden reconstruir con certeza.
+- [x] **BUG-04 · P0 [Confirmado]** Escape o un clic fuera del formulario lo cierran sin avisar y se pierde lo escrito (`js/ui.js:93-94`). Pedir confirmación si hubo cambios y guardar borrador de minutas y formularios largos. — hecho: confirmación al cerrar con cambios y borrador de los campos largos.
+- [x] **BUG-05 · P1 [Confirmado]** Cerrar la pestaña dentro de los 900 ms siguientes a un cambio puede perderlo: `beforeunload` lanza un `flush` asíncrono (`js/store.js:128`). Usar `fetch` con `keepalive` o avisar de que hay cambios sin guardar. — hecho: aviso del navegador si quedan cambios sin subir.
+- [x] **BUG-06 · P1 [Confirmado]** Dos personas pueden pisarse: la secuencia leer, fusionar y escribir no es atómica (`js/store.js:80-88`). Se resuelve de raíz con DATOS-01; mientras tanto, comparar `updated_at` antes de escribir y reintentar. — hecho: escritura condicionada a `updated_at` con reintento.
+- [x] **BUG-07 · P1 [Confirmado]** Gana el registro más nuevo completo: si una persona cambia la fecha y otra el estado, se pierde un cambio (`js/store.js:37`). Fusionar por campo o resolverlo con DATOS-01. — hecho: fusión por campo (`_f`).
+- [x] **BUG-08 · P1 [Confirmado]** La fusión depende del reloj de cada computadora. Usar la hora del servidor. — hecho: se corrige el reloj con la hora del servidor cuando la base la informa.
+- [x] **BUG-09 · P1 [Confirmado]** Los borrados pueden revivir: los registros eliminados se purgan a los 60 días (`js/store.js:39`) y una copia local más vieja los vuelve a subir. — hecho: los borrados viejos se achican pero no se eliminan.
+- [x] **BUG-10 · P1 [Confirmado]** `localStorage` lleno falla sin aviso (`js/store.js:78`). Avisar en pantalla. — hecho: aviso en pantalla.
+- [x] **BUG-11 · P1 [Revisar]** Hay tareas repetidas en la actividad del 5 de octubre ("Video / animación: cómo se coloca el sifón", "Propuesta para que los arquitectos..."). La causa probable es que al cargar un status o una minuta no se detectan las tareas ya cerradas (`js/ops.js:859`) y las minutas comunes no deduplican. Confirmar, corregir y ofrecer una limpieza revisada a mano. — hecho: al cargar minutas o status se actualizan las tareas existentes (abiertas o cerradas); botón “🧹 Repetidas” en Tareas para limpiar a mano.
+- [x] **BUG-12 · P2 [Confirmado]** `pendingMinutas` escribe en la base durante el dibujado de pantalla (`js/ops.js:106-108`). Separar lectura de escritura. — hecho: `pendingMinutas` solo lee.
+- [x] **BUG-13 · P2** Borrar reuniones deja tareas con un `meetingId` huérfano. Definir qué pasa con ellas. — hecho: al borrar una reunión, sus tareas se conservan sin `meetingId`.
+- [x] **BUG-14 · P2** Quitar a una persona deja tareas con avatar "?". Pedir reasignación antes de quitarla. — hecho: al quitar a alguien se elige a quién pasar sus tareas.
 
 ### Fechas
 
-- [ ] **BUG-15 · P1 [Confirmado]** Una tarea hecha después de las 21 h figura al día siguiente por usar la fecha UTC (`doneAt.slice(0,10)`, `js/game.js:25`); se reprodujo en una prueba. Baja el "% a tiempo" y mueve tareas de mes. Revisar todos los `.slice(0,10)` sobre fechas ISO (`updates.at`, `activity.at`).
-- [ ] **BUG-16 · P2 [Confirmado]** `parseAction` no valida fechas: `31/02` genera una fecha imposible y un `05/01` escrito en diciembre queda en el pasado (`js/ops.js:501-502`). Pasar al año siguiente y rechazar fechas inválidas.
-- [ ] **BUG-17 · P2 [Confirmado]** `Growth.viewToday` compara `x.at` en UTC con una fecha local. Unificar.
+- [x] **BUG-15 · P1 [Confirmado]** Una tarea hecha después de las 21 h figura al día siguiente por usar la fecha UTC (`doneAt.slice(0,10)`, `js/game.js:25`); se reprodujo en una prueba. Baja el "% a tiempo" y mueve tareas de mes. Revisar todos los `.slice(0,10)` sobre fechas ISO (`updates.at`, `activity.at`). — hecho: `UI.day()` en todas las marcas de tiempo.
+- [x] **BUG-16 · P2 [Confirmado]** `parseAction` no valida fechas: `31/02` genera una fecha imposible y un `05/01` escrito en diciembre queda en el pasado (`js/ops.js:501-502`). Pasar al año siguiente y rechazar fechas inválidas. — hecho.
+- [x] **BUG-17 · P2 [Confirmado]** `Growth.viewToday` compara `x.at` en UTC con una fecha local. Unificar. — hecho.
 
 ### Alertas
 
-- [ ] **BUG-18 · P1 [Confirmado]** Las alertas de Crecimiento no se pueden descartar porque no tienen `key` (`js/growth.js:63-77`). En Inicio se ve que Nesgamet e Hidronorte no muestran la X.
-- [ ] **BUG-19 · P1 [Confirmado]** "Ver todas" lleva a Operaciones, donde las alertas de Crecimiento no aparecen.
-- [ ] **BUG-20 · P1 [Confirmado]** El filtro de unidad queda guardado en el navegador y oculta alertas y contadores en todas las pantallas (`js/ops.js:121`). Las alertas urgentes deben contarse siempre, o indicar claramente que hay un filtro activo.
-- [ ] **BUG-21 · P1 [Confirmado]** Un cliente puede seguir como prospecto "enfriado": Hidronorte figura así en el CRM. Si existe un cliente activo con el mismo nombre, vincular el prospecto y no alertar. Ofrecer una conciliación entre `growth.leads` y `ops.clients`.
+- [x] **BUG-18 · P1 [Confirmado]** Las alertas de Crecimiento no se pueden descartar porque no tienen `key` (`js/growth.js:63-77`). En Inicio se ve que Nesgamet e Hidronorte no muestran la X. — hecho: claves en las alertas de Crecimiento.
+- [x] **BUG-19 · P1 [Confirmado]** "Ver todas" lleva a Operaciones, donde las alertas de Crecimiento no aparecen. — hecho: las alertas de Crecimiento aparecen en Operaciones → Alertas.
+- [x] **BUG-20 · P1 [Confirmado]** El filtro de unidad queda guardado en el navegador y oculta alertas y contadores en todas las pantallas (`js/ops.js:121`). Las alertas urgentes deben contarse siempre, o indicar claramente que hay un filtro activo. — hecho: aviso fijo en el menú y en Inicio cuando hay un filtro de unidad.
+- [x] **BUG-21 · P1 [Confirmado]** Un cliente puede seguir como prospecto "enfriado": Hidronorte figura así en el CRM. Si existe un cliente activo con el mismo nombre, vincular el prospecto y no alertar. Ofrecer una conciliación entre `growth.leads` y `ops.clients`. — hecho: no se alerta por prospectos con el mismo nombre que un cliente activo. La conciliación guiada queda en CRM-01.
 
 ### Avisos
 
-- [ ] **BUG-22 · P1 [Confirmado]** Reasignar una tarea o cambiar su fecha no avisa; solo se notifica al crearla (`js/ops.js:608`).
-- [ ] **BUG-23 · P2 [Confirmado]** Los avisos se marcan como leídos todos juntos al abrir la campana, aunque no se hayan visto (`js/app.js:237`).
-- [ ] **BUG-24 · P2 [Confirmado]** Las notificaciones crecen sin límite. Archivar las de más de 90 días.
+- [x] **BUG-22 · P1 [Confirmado]** Reasignar una tarea o cambiar su fecha no avisa; solo se notifica al crearla (`js/ops.js:608`). — hecho: aviso al reasignar y al cambiar la fecha.
+- [x] **BUG-23 · P2 [Confirmado]** Los avisos se marcan como leídos todos juntos al abrir la campana, aunque no se hayan visto (`js/app.js:237`). — hecho.
+- [x] **BUG-24 · P2 [Confirmado]** Las notificaciones crecen sin límite. Archivar las de más de 90 días. — hecho.
 
 ### Listas e interfaz
 
-- [ ] **BUG-25 · P1 [Confirmado]** El tablero no funciona en el celular: usa arrastre HTML5, que no responde al tacto (`js/ui.js:131-142`). Agregar arrastre táctil o un selector de estado en la tarjeta. Aplica también al pipeline.
-- [ ] **BUG-26 · P2 [Confirmado]** Solo se ven las últimas 20 tareas hechas en el tablero y 15 en la lista (`js/ops.js:351,357`), y no hay forma de ver las anteriores. Agregar "Ver más". Revisar también los límites de 25 actualizaciones y 40 reuniones.
-- [ ] **BUG-27 · P2 [Confirmado]** El texto de búsqueda se comparte entre pestañas (`js/ops.js:162`). Separarlo por pestaña.
-- [ ] **BUG-28 · P2 [Confirmado]** Cada tecla redibuja toda la pantalla en las búsquedas (`Ops.setSearch`, `Growth.setQ`). Agregar una espera de 200 ms.
-- [ ] **BUG-29 · P2 [Confirmado]** Redibujar con `innerHTML` pierde el desplazamiento interno de columnas y listas. Conservarlo.
-- [ ] **BUG-30 · P2 [Confirmado]** La importación CSV separa mal los campos entre comillas (`js/growth.js:455`). Usar un parser real.
-- [ ] **BUG-31 · P2 [Confirmado]** Reemplazar `confirm`, `prompt` y `alert` nativos por modales propios.
-- [ ] **BUG-32 · P3 [Confirmado]** Error de texto: "Hay un status lista para cargar" (`js/home.js:32`).
-- [ ] **BUG-33 · P3 [Confirmado]** La misión "Cerrar 10 tareas" muestra un tilde con 0/10 (`js/game.js:114`), y dos misiones aparecen cumplidas sin haber hecho nada.
-- [ ] **BUG-34 · P3 [Confirmado]** Quedan textos de XP ("+8 XP", "Guardar (+8 XP)") aunque el nivel ya se calcula por tareas (`js/home.js:40`, `js/ops.js:576`). Eliminarlos o resolverlos según INI-05.
-- [ ] **BUG-35 · P3 [Revisar]** `Store.flush` fusiona datos remotos sin avisar a la pantalla (`js/store.js:90-98`). Verificar si queda información vieja hasta el siguiente cambio.
+- [x] **BUG-25 · P1 [Confirmado]** El tablero no funciona en el celular: usa arrastre HTML5, que no responde al tacto (`js/ui.js:131-142`). Agregar arrastre táctil o un selector de estado en la tarjeta. Aplica también al pipeline. — hecho: botón “⇄ Mover” en pantallas táctiles (tareas y pipeline).
+- [ ] **BUG-26 · P2 [Confirmado]** Solo se ven las últimas 20 tareas hechas en el tablero y 15 en la lista (`js/ops.js:351,357`), y no hay forma de ver las anteriores. Agregar "Ver más". Revisar también los límites de 25 actualizaciones y 40 reuniones. — parcial: “Ver más” en tareas hechas (tablero y lista). Faltan actualizaciones y reuniones.
+- [x] **BUG-27 · P2 [Confirmado]** El texto de búsqueda se comparte entre pestañas (`js/ops.js:162`). Separarlo por pestaña. — hecho.
+- [x] **BUG-28 · P2 [Confirmado]** Cada tecla redibuja toda la pantalla en las búsquedas (`Ops.setSearch`, `Growth.setQ`). Agregar una espera de 200 ms. — hecho.
+- [x] **BUG-29 · P2 [Confirmado]** Redibujar con `innerHTML` pierde el desplazamiento interno de columnas y listas. Conservarlo. — hecho.
+- [x] **BUG-30 · P2 [Confirmado]** La importación CSV separa mal los campos entre comillas (`js/growth.js:455`). Usar un parser real. — hecho: `UI.parseCsv`.
+- [ ] **BUG-31 · P2 [Confirmado]** Reemplazar `confirm`, `prompt` y `alert` nativos por modales propios. — pendiente: reemplazar `confirm`/`prompt` nativos por modales propios.
+- [x] **BUG-32 · P3 [Confirmado]** Error de texto: "Hay un status lista para cargar" (`js/home.js:32`). — hecho.
+- [x] **BUG-33 · P3 [Confirmado]** La misión "Cerrar 10 tareas" muestra un tilde con 0/10 (`js/game.js:114`), y dos misiones aparecen cumplidas sin haber hecho nada. — hecho: sin trabajo pendiente la misión no cuenta como cumplida.
+- [x] **BUG-34 · P3 [Confirmado]** Quedan textos de XP ("+8 XP", "Guardar (+8 XP)") aunque el nivel ya se calcula por tareas (`js/home.js:40`, `js/ops.js:576`). Eliminarlos o resolverlos según INI-05. — hecho: textos de XP eliminados.
+- [x] **BUG-35 · P3 [Revisar]** `Store.flush` fusiona datos remotos sin avisar a la pantalla (`js/store.js:90-98`). Verificar si queda información vieja hasta el siguiente cambio. — hecho.
 
 ---
 

@@ -10,6 +10,8 @@
   const pad = n => String(n).padStart(2,'0');
   const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const today = () => ymd(new Date());
+  // Día LOCAL de una marca de tiempo ISO (BUG-15): "2026-11-06T01:30Z" en Argentina es el 5/11, no el 6
+  const day = iso => { if(!iso) return ''; const v = String(iso); if(v.length<=10) return v; const d = new Date(v); return isNaN(d) ? v.slice(0,10) : ymd(d); };
   const parse = s => { if(!s) return null; const [y,m,d] = s.slice(0,10).split('-').map(Number); return new Date(y,m-1,d||1); };
   const addDays = (s,n) => { const d = parse(s); d.setDate(d.getDate()+n); return ymd(d); };
   const diffDays = (a,b=today()) => Math.round((parse(b)-parse(a))/864e5);   // b - a
@@ -79,21 +81,41 @@
         else out[f.k] = el.value.trim();
         if(f.req && (out[f.k]===''||out[f.k]==null||(Array.isArray(out[f.k])&&!out[f.k].length))){ toast('Completá: '+f.label,'⚠️'); el.focus?.(); return; }
       }
-      if(onSubmit(out, box)!==false) close();
+      if(onSubmit(out, box)!==false){ clearDrafts(); close(true); }
     });
-    if(danger) box.querySelector('#mdanger').onclick = ()=>{ if(!danger.confirm || confirm(danger.confirm)){ danger.fn(); close(); } };
+    // Borradores (BUG-04): lo que se escribe en los campos largos se guarda en este navegador
+    // hasta que se guarda el formulario; si se cierra sin querer, se recupera al volver a abrirlo.
+    const dkey = k => 'anm_draft:'+title+':'+k;
+    const longs = fields.filter(f=>f.type==='textarea');
+    const clearDrafts = ()=>longs.forEach(f=>{ try{ localStorage.removeItem(dkey(f.k)); }catch(e){} });
+    let recovered = false;
+    longs.forEach(f=>{ const el = box.querySelector('#f_'+f.k); if(!el) return;
+      el.dataset.draft = dkey(f.k);   // lo guarda el escucha general de abajo, aunque el campo se vuelva a dibujar
+      try{ const d = localStorage.getItem(dkey(f.k)); if(d && d!==el.value && !el.value.trim()){ el.value = d; recovered = true; } }catch(e){} });
+    if(recovered) toast('Recuperé lo que habías escrito antes','📝');
+    if(danger) box.querySelector('#mdanger').onclick = ()=>{ if(!danger.confirm || confirm(danger.confirm)){ danger.fn(); close(true); } };
     setTimeout(()=>box.querySelector('input:not([type=checkbox]),textarea')?.focus(), 30);
     return box;
   }
 
+  // Si se escribió algo, cerrar con Escape, clic afuera o Cancelar pregunta antes (BUG-04)
+  let modalDirty = false;
   function modal(inner, wide){
     const mo = $('#modal');
-    mo.innerHTML = `<div class="mbox ${wide?'wide':''}">${inner}</div>`;
-    mo.classList.add('open');
-    mo.querySelectorAll('[data-close]').forEach(b=>b.onclick = close);
+    mo.innerHTML = `<div class="mbox ${wide?'wide':''}" role="dialog" aria-modal="true">${inner}</div>`;
+    mo.classList.add('open'); modalDirty = false;
+    mo.querySelectorAll('[data-close]').forEach(b=>b.onclick = ()=>close());
+    mo.querySelector('.mbox').addEventListener('input', e=>{ if(e.target.matches('input:not([readonly]),textarea')) modalDirty = true; });
     return mo.querySelector('.mbox');
   }
-  function close(){ const mo=$('#modal'); mo.classList.remove('open'); mo.innerHTML=''; }
+  function close(force){
+    const mo=$('#modal'); if(!mo.classList.contains('open')) return;
+    if(force!==true && modalDirty && !confirm('Hay cambios sin guardar. ¿Cerrar igual?')) return;
+    mo.classList.remove('open'); mo.innerHTML=''; modalDirty = false;
+  }
+  // Borradores: cualquier campo con data-draft se guarda mientras se escribe
+  document.addEventListener('input', e=>{ const k = e.target?.dataset?.draft; if(!k) return;
+    try{ e.target.value.trim() ? localStorage.setItem(k, e.target.value) : localStorage.removeItem(k); }catch(err){} }, true);
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') close(); });
   document.addEventListener('mousedown', e=>{ if(e.target.id==='modal') close(); });
 
@@ -133,6 +155,17 @@
 
   // Drag & drop simple para tableros kanban: cards [data-drag=id], lanes [data-lane=value]
   function kanban(root, onDrop){
+    // En el celular el arrastre no funciona (BUG-25): cada tarjeta tiene un botón "Mover"
+    if(window.matchMedia?.('(hover: none)').matches){
+      const lanes = [...root.querySelectorAll('[data-lane]')].map(l=>[l.dataset.lane, (l.querySelector('.lane-h, h4, .ph')?.childNodes[0]?.textContent || l.dataset.lane).trim()]);
+      root.querySelectorAll('[data-drag]').forEach(c=>{
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn xs g kc-move'; b.textContent = '⇄ Mover'; b.style.marginTop = '6px';
+        b.onclick = e=>{ e.stopPropagation(); const cur = c.closest('[data-lane]')?.dataset.lane;
+          const box = modal(`<h2>Mover a…<button class="icon-btn x" data-close>✕</button></h2><div class="list">${lanes.map(([k,l])=>`<div class="li click" data-to="${esc(k)}" style="cursor:pointer;${k===cur?'opacity:.5':''}"><div class="grow b">${esc(l)}</div>${k===cur?'<span class="xs faint">acá está</span>':'<span>›</span>'}</div>`).join('')}</div>`);
+          box.querySelectorAll('[data-to]').forEach(el=>el.onclick = ()=>{ close(true); if(el.dataset.to!==cur) onDrop(c.dataset.drag, el.dataset.to); }); };
+        c.appendChild(b);
+      });
+    }
     root.querySelectorAll('[data-drag]').forEach(c=>{
       c.draggable = true;
       c.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', c.dataset.drag); c.classList.add('dragging'); });
@@ -145,6 +178,20 @@
     });
   }
 
-  window.UI = { $, esc, MONTHS, DAYS, COLORS, pad, ymd, today, parse, addDays, diffDays, ym, ymLabel, fdate, ago, time, initials,
+  // CSV con comillas: "a, b" queda como un solo campo; "" es una comilla (BUG-30)
+  function parseCsv(text, sep){
+    const t = String(text||''); sep = sep || ((t.split(/\r?\n/)[0]||'').split(';').length > (t.split(/\r?\n/)[0]||'').split(',').length ? ';' : ',');
+    const rows = []; let row = [], cell = '', q = false;
+    for(let i=0;i<t.length;i++){ const ch = t[i];
+      if(q){ if(ch==='"'){ if(t[i+1]==='"'){ cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+      if(ch==='"') q = true; else if(ch===sep){ row.push(cell); cell = ''; }
+      else if(ch==='\n' || ch==='\r'){ if(ch==='\r' && t[i+1]==='\n') i++; row.push(cell); cell = ''; if(row.some(c=>c.trim())) rows.push(row); row = []; }
+      else cell += ch; }
+    row.push(cell); if(row.some(c=>c.trim())) rows.push(row);
+    return rows;
+  }
+  // Espera a que se deje de escribir antes de ejecutar (búsquedas, BUG-28)
+  const debounce = (fn, ms=200) => { let t; return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; };
+  window.UI = { debounce, parseCsv, $, esc, MONTHS, DAYS, COLORS, pad, ymd, today, day, parse, addDays, diffDays, ym, ymLabel, fdate, ago, time, initials,
     safeUrl, safeColor, safeId, avatar, form, modal, close, toast, confetti, copy, waLink, mailLink, download, kanban };
 })();

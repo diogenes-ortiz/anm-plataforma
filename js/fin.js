@@ -99,14 +99,29 @@
   const enRango = (ini, fin, ym) => (!ini || ini<=ym) && (!fin || fin>=ym);
   const clearIn = (ym, g, id) => Object.keys(S.mes).filter(k=>k>=ym).forEach(k=>ovSet(k, g, id, { in:null }));
 
+  // Comisión: % del ingreso de un cliente/proyecto que va para otra persona (ej: quien lo trajo)
+  // (en clientes rige desde el mes en que se cargó, así los meses anteriores no cambian)
+  // Puede ser un % del total o un monto fijo por mes
+  const comOf = (x, ym) => { const c = x?.comision; return c && (+c.pct > 0 || +c.monto > 0) && (!c.desde || !ym || c.desde<=ym) ? { pct:+c.pct||0, fijo:+c.monto||0, para:c.para||'' } : null; };
+  const comMonto = (com, total) => com.fijo ? Math.round(com.fijo) : Math.round((+total||0)*com.pct/100);
+  const comTxt = com => com.fijo ? `${fmt(com.fijo)} fijo` : `${com.pct}%`;
+  // Campos del formulario de comisión y cómo se guardan
+  const comFields = c => [
+    { k:'comTipo', label:'Comisión', type:'select', default: c?.monto ? 'monto' : c?.pct ? 'pct' : '', half:true, options:[['','Sin comisión'],['pct','% del total'],['monto','Monto fijo ($)']], hint:'Si una parte de lo que paga va para otra persona.' },
+    { k:'comValor', label:'Cuánto (% o $)', type:'number', default: c?.monto || c?.pct || '', half:true, placeholder:'Ej: 10 o 15000' },
+    { k:'comPara', label:'¿Para quién?', default:c?.para||'', placeholder:'Ej: Juan (lo trajo)' } ];
+  const comFrom = (v, prev, ym) => { const n = +v.comValor||0; if(!v.comTipo || n<=0) return null;
+    const out = { para:(v.comPara||'').trim(), ...(v.comTipo==='monto' ? { monto:n } : { pct:n }) };
+    if(ym) out.desde = (prev && prev.desde && prev.desde<=ym) ? prev.desde : ym;
+    return out; };
   const cliCands = ym => S.clientes.filter(x=>(!(x.estado==='inactivo' && !x.finServicio) && enRango(x.inicioServicio, x.finServicio, ym)) || ovGet(ym,'cli',x.id).in);
   function cliRow(x, ym){
     const o = ovGet(ym,'cli',x.id), base = retainerAt(x, ym)+extrasOf(x.id, ym), monto = o.monto ?? base, cob = isCobrado(x.id, ym);
     const pendiente = cob ? 0 : o.pendiente!=null ? Math.min(+o.pendiente||0, monto) : monto;
-    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente };
+    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente, com:comOf(x, ym), rec:o.rec||null };
   }
   const proRows = ym => projectsOf(ym).filter(p=>!ovGet(ym,'pro',p.id).off).map(p=>{ const m = +p.monto||0, cob = p.estado==='cobrado', par = !cob && p.pendienteParcial!=null;
-    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m }; });
+    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m, com:comOf(p), rec:ovGet(ym,'pro',p.id).rec||null }; });
   const eqCands = ym => S.empleados.filter(e=>!isSocio(e) && ((!(e.estado==='inactivo' && !e.finLaboral) && enRango(e.inicioLaboral, e.finLaboral, ym)) || ovGet(ym,'eq',e.id).in));
   const eqRow = (e, ym) => { const base = sueldoAt(e, ym), o = ovGet(ym,'eq',e.id); return { id:e.id, nombre:e.nombre, base, monto:o.monto ?? base, incluir:!S.skips.includes(ckey('skip', e.id, ym)) }; };
   const fjRows = ym => S.gastos.filter(g=>gastoMensual(g) && enRango(g.desde, g.hasta, ym)).map(g=>{ const base = Math.round(gastoMensual(g)), o = ovGet(ym,'fj',g.id); return { id:g.id, concepto:g.concepto, base, monto:o.monto ?? base, incluir:!o.off }; });
@@ -118,7 +133,9 @@
     const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre, monto:x.monto, pagado:!!ovGet(ym,'eq',x.id).pagado })),
       ...fjRows(ym).filter(x=>x.incluir).map(x=>({ grupo:'Fijos', kind:'fj', id:x.id, concepto:x.concepto, monto:x.monto })),
       ...(c?.extras||[]).map((x,i)=>({ grupo:'Extras del mes', kind:'ex', id:i, concepto:x.concepto, monto:+x.monto||0 })),
-      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo }))];
+      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo })),
+      ...cli.filter(x=>x.com).map(x=>({ grupo:'Comisiones', kind:'cm', id:x.id, concepto:`${x.com.para||'Comisión'} · ${comTxt(x.com)} de ${x.nombre}`, monto:comMonto(x.com, x.total) })),
+      ...pro.filter(p=>p.com).map(p=>({ grupo:'Comisiones', kind:'cmp', id:p.id, concepto:`${p.com.para||'Comisión'} · ${comTxt(p.com)} de ${p.cliente} (${p.nombre})`, monto:comMonto(p.com, p.monto) }))];
     return build(ym, cli, pro, gastos, !!c?.closedAt, c);
   }
 
@@ -225,8 +242,8 @@
   // Reparto: primero se separa el % de la agencia y lo que queda se divide entre los socios.
   const reparto = () => { const r = S.reparto || {}; return { agencia: r.agencia ?? 20, socios: (r.socios && r.socios.length) ? r.socios : [{ nombre:'Dio', pct:50 }, { nombre:'Santi', pct:50 }] }; };
   function cuentaDe(M){
-    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado })),
-      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado }))];
+    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado, com:x.com, rec:x.rec })),
+      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado, com:p.com, rec:p.rec }))];
     const R = reparto(), sum = (a,k) => a.reduce((s,x)=>s+x[k],0);
     const tot = { debe:sum(ing,'monto'), entro:sum(ing,'entro') }, gas = M.gas;
     const calc = base => { const queda = base - gas, ag = Math.max(0, queda) * R.agencia/100, soc = Math.max(0, queda) - ag;
@@ -240,12 +257,15 @@
     const sg = v => v<0 ? '− '+fmt(-v) : fmt(v);
     const sec = t => `<tr><td colspan="4" class="xs faint b" style="letter-spacing:1px;padding-top:16px">${t}</td></tr>`;
     const tot2 = (l, a, b, color, big) => `<tr style="border-top:2px solid var(--border)${big?';font-size:15px':''}"><td class="b"${color?` style="color:${color}"`:''}>${l}</td><td></td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(a)}</td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(b)}</td></tr>`;
-    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`;
+    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`
+      + (x.cob==='si' ? '' : `<div style="margin-top:4px">${x.rec
+          ? `<button class="tag t-blue" style="border:0;cursor:pointer" title="Recordatorio enviado el ${UI.fdate(x.rec.slice(0,10),{abs:true})}. Tocá para desmarcar." onclick="Fin.recordar('${x.kind}','${x.id}')">🔔 Recordado ${UI.fdate(x.rec.slice(0,10),{abs:true})}</button>`
+          : `<button class="tag" style="border:1px dashed var(--border);cursor:pointer;background:none" title="Copia un mensaje de recordatorio de pago y lo marca como enviado" onclick="Fin.recordar('${x.kind}','${x.id}')">🔕 Sin recordar · Recordar</button>`}</div>`);
     return `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>🧮 La cuenta del mes</h3><span class="sub">${ymLabel(M.ym)}</span><span class="grow"></span>
         <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
-        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}${x.com?` · <span class="tag t-purple" style="font-size:11px" title="Se descuenta abajo, en Comisiones">💸 Comisión ${comTxt(x.com)}${x.com.para?' → '+esc(x.com.para):''}: ${fmt(comMonto(x.com, x.monto))}</span>`:''}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind==='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('c','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
         ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td>${g.kind==='eq'?`<button class="tag ${g.pagado?'t-green':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.pagoEq('${g.id}')">${g.pagado?'✓ Pagado':'✗ No pagado'}</button>`:''}</td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
@@ -257,7 +277,8 @@
         ${sec('🏢 REPARTO')}
         <tr><td>Para la agencia (${R.agencia}%)</td><td></td>${n(A.ag)}${n(B.ag)}</tr>
         <tr><td class="b">Para los socios</td><td></td>${n(A.soc)}${n(B.soc)}</tr>
-        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td></td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
+        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td>${(()=>{ const pg = ovGet(M.ym,'soc',x.nombre).pagado;
+          return `<button class="tag ${pg?'t-green':'t-red'}" style="border:0;cursor:pointer" title="${pg?'Tocá para desmarcar':'Tocá para marcar que se le pagó'}" onclick="Fin.pagoSocio(${esc(JSON.stringify(x.nombre))})">${pg?`✓ Pagado ${UI.fdate(pg,{abs:true})}`:'✗ No pagado'}</button>`; })()}</td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
       </tbody></table></div>
       ${A.queda<0?`<div class="alert warn" style="margin-top:12px"><div class="ai">⚠️</div><div class="ad">Este mes los sueldos y gastos superan lo que entra: no queda para repartir.</div></div>`:''}
       ${tot.debe>tot.entro?`<p class="xs faint" style="margin-top:10px">Falta cobrar ${fmt(tot.debe-tot.entro)}. “Con lo cobrado” es lo que se puede repartir hoy; “Si cobramos todo”, lo que queda cuando paguen todos. Tocá ✓/✗ para marcar quién pagó.</p>`:''}
@@ -280,7 +301,7 @@
     L.push(`💰 Ingresos: *${fmt(tot.debe)}*`, `💸 Sueldos y gastos: *${fmt(M.gas)}*`, `🟰 Queda: *${fmt(A.queda)}*`);
     if(tot.debe>tot.entro) L.push(`   _(con lo cobrado hasta hoy: ${fmt(B.queda)})_`);
     L.push('', '*Reparto*', `🏢 Agencia (${R.agencia}%): ${fmt(A.ag)}`);
-    A.socios.forEach((x,i)=>L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''}`));
+    A.socios.forEach((x,i)=>{ const pg = ovGet(M.ym,'soc',x.nombre).pagado; L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''} ${pg?`✅ pagado ${UI.fdate(pg,{abs:true})}`:'⏳ sin pagar'}`); });
     if(modo==='completo'){
       L.push('', `*Clientes* (${fmt(tot.entro)} cobrado de ${fmt(tot.debe)})`);
       ing.forEach(x=>L.push(`${ic(x.cob)} ${x.nombre}${x.kind==='p'?' _(puntual)_':''}: ${fmt(x.monto)}${x.cob==='parcial'?` _(falta ${fmt(x.monto-x.entro)})_`:''}`));
@@ -289,7 +310,7 @@
     }
     if(debeCli.length || debeEq.length){
       L.push('', '*Pendientes*');
-      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre).join(', ')}`);
+      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre+(x.rec?' (🔔 ya recordado)':'')).join(', ')}`);
       if(debeEq.length) L.push(`⏳ Falta pagar ${fmt(debeEq.reduce((s,g)=>s+g.monto,0))}: ${debeEq.map(g=>g.concepto).join(', ')}`);
     } else L.push('', '🎉 Todo cobrado y todo pagado.');
     const notas = M.cierre?.answers?.notas; if(notas) L.push('', `📝 ${notas}`);
@@ -453,6 +474,14 @@
     move(n){ cursor = ymAdd(cursor, n); render(); },
     hoy(){ cursor = UI.ym(); render(); },
     // Sueldo pagado / no pagado en el mes que se está viendo
+    // Si ya se les pagó a los socios ese mes y cuándo
+    pagoSocio(nombre){
+      const ym = cursor, cur = ovGet(ym,'soc',nombre).pagado;
+      if(cur){ if(confirm(`¿Desmarcar el pago a ${nombre} de ${ymLabel(ym)}?`)){ ovSet(ym,'soc',nombre,{ pagado:null }); touch(ym); render(); } return; }
+      UI.form({ title:`💸 Pago a ${nombre} · ${ymLabel(ym)}`, submit:'Marcar como pagado', values:{ fecha:UI.today() }, fields:[
+        { k:'fecha', label:'¿Cuándo se le pagó?', type:'date', req:true },
+      ], onSubmit:v=>{ ovSet(ym,'soc',nombre,{ pagado:v.fecha }); touch(ym); render(); UI.toast(`Pago a ${nombre} marcado (${UI.fdate(v.fecha,{abs:true})})`,'💸'); } });
+    },
     pagoEq(id){ const ym = cursor; ovSet(ym,'eq',id,{ pagado: ovGet(ym,'eq',id).pagado ? null : true }); touch(ym); render(); },
     nota(k,v){ const c = draft(cursor); c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; touch(cursor); },
     startClose(ym){ ciYm = ym; step = 0; tab = 'cierre'; render(); window.scrollTo(0,0); },
@@ -492,6 +521,17 @@
       UI.form({ title:`＋ Gasto · ${ymLabel(ym)}`, submit:'Siguiente', fields:[ { k:'t', label:'¿Qué tipo de gasto?', type:'select', options:[['ex',`Gasto extra (solo ${ymLabel(ym)})`],['fj',`Gasto fijo (todos los meses desde ${ymLabel(ym)})`],['eq','Sueldo de una persona nueva']] } ],
         onSubmit:v=>{ setTimeout(()=>Fin[{ ex:'addEx', fj:'addFijo', eq:'addEq' }[v.t]](ym), 60); } }); },
     // Marca si un cliente/proyecto pagó (en el mes que se está viendo)
+    // Recordatorio de pago: copia un mensaje listo para WhatsApp/mail y lo marca como enviado (por mes)
+    recordar(kind, id){
+      const ym = cursor, g = kind==='c' ? 'cli' : 'pro', cur = ovGet(ym, g, id).rec;
+      if(cur){ if(confirm('¿Desmarcar el recordatorio de este mes?')){ ovSet(ym, g, id, { rec:null }); touch(ym); render(); } return; }
+      const M = month(ym), x = kind==='c' ? M.cli.find(y=>String(y.id)===String(id)) : M.pro.find(y=>String(y.id)===String(id)); if(!x) return;
+      const debe = +x.pendiente || (kind==='c' ? x.total : x.monto);
+      const quien = kind==='c' ? x.nombre : (x.cliente||x.nombre);
+      UI.copy(`¡Hola! ¿Cómo va? Te escribimos de ANM para recordarte el pago de ${kind==='c' ? ymLabel(ym) : `“${x.nombre}”`}: ${fmt(debe)}. Cualquier cosa nos avisás. ¡Gracias! 🙌`);
+      ovSet(ym, g, id, { rec:new Date().toISOString() }); touch(ym); render();
+      UI.toast(`Mensaje copiado y marcado: ya le recordaste a ${quien}`,'🔔');
+    },
     cobro(kind, id){
       const ym = cursor;
       if(kind==='c'){ setCobro(id, ym, !isCobrado(id, ym)); ovSet(ym,'cli',id,{ pendiente:null }); }
@@ -534,6 +574,8 @@
     // 🗑 Sacar algo de un mes, darlo de baja o eliminarlo (mismo efecto en Actualidad y en el Cierre)
     quitar(kind, id, ymArg){
       const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
+      if(kind==='cm' || kind==='cmp'){ const x = (kind==='cm' ? S.clientes : S.proyectos).find(sid); if(!x) return;
+        if(confirm(`¿Sacar la comisión de ${x.nombre||x.cliente}? (deja de descontarse en todos los meses)`)){ x.comision = null; touch(ym); render(); UI.toast('Comisión sacada','🗑'); } return; }
       const nm = kind==='c' ? S.clientes.find(sid)?.nombre : kind==='eq' ? S.empleados.find(sid)?.nombre : kind==='fj' ? S.gastos.find(sid)?.concepto
         : kind==='ex' ? S.cierres[ym]?.extras?.[+id]?.concepto : (()=>{ const p = S.proyectos.find(sid); return p ? `${p.cliente} · ${p.nombre}` : ''; })();
       const opts = {
@@ -550,7 +592,7 @@
         if(kind==='fj'){ const g = S.gastos.find(sid); if(k==='mes') ovSet(ym,'fj',id,{ off:true }); else if(g){ if(g.desde && g.desde>=ym) S.gastos = S.gastos.filter(x=>!sid(x)); else g.hasta = ymAdd(ym,-1); } }
         if(kind==='p' || kind==='pc') S.proyectos = S.proyectos.filter(x=>!sid(x));
         if(kind==='ex') S.cierres[ym]?.extras?.splice(+id, 1);
-        UI.close(); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
+        UI.close(true); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
     },
     quitarMes(id, ymArg){ Fin.quitar('c', id, ymArg); },
     volver(kind, id, ymArg){ const ym = ymArg || cursor;
@@ -564,9 +606,11 @@
         UI.form({ title:`✎ ${c.nombre} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
           { k:'monto', label:`Monto de ${ymLabel(ym)}`, type:'number', default:r.monto, req:true },
           { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${ymLabel(ym)} en adelante (nuevo precio)`],['solo',`Solo ${ymLabel(ym)} (los demás meses quedan igual)`]] },
+          ...comFields(c.comision),
           ...((c.retainerHistory||[]).length ? [{ k:'h', type:'html', html:`<div class="xs faint" style="margin-top:4px"><b>Historial de precios:</b> ${[...c.retainerHistory].sort((a,b)=>a.desde.localeCompare(b.desde)).map(h=>`${ymLabel(h.desde,1)} ${fmt(h.monto)}`).join(' → ')}</div>` }] : []),
         ], danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('c', id, ym), 60) },
         onSubmit:v=>{ const monto = +v.monto||0;
+          c.comision = comFrom(v, c.comision, ym);
           if(v.alcance==='solo') ovSet(ym,'cli',c.id,{ monto: monto===r.base ? null : monto });
           else {
             const base = monto - extrasOf(c.id, ym);
@@ -583,14 +627,16 @@
           { k:'cliente', label:'Cliente', default:p.cliente, half:true, req:true }, { k:'nombre', label:'Proyecto', default:p.nombre, half:true, req:true },
           { k:'monto', label:'Monto', type:'number', default:p.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:p.empCosto, half:true },
           { k:'fecha', label:'Fecha (define el mes)', type:'date', default:p.fecha },
+          ...comFields(p.comision),
         ], danger:{ label:'🗑 Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); touch(ym); render(); } },
-        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha }); touch(ym); render(); } });
+        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha, comision: comFrom(v, p.comision) }); touch(ym); render(); } });
       }
     },
     editGasto(kind, id, ymArg){
       const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
       const alc = { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${L} en adelante`],['solo',`Solo ${L} (los demás meses quedan igual)`]] };
-      if(kind==='pc') return Fin.editIngreso('p', id, ym);
+      if(kind==='pc' || kind==='cmp') return Fin.editIngreso('p', id, ym);
+      if(kind==='cm') return Fin.editIngreso('c', id, ym);
       if(kind==='eq'){ const e = S.empleados.find(sid); if(!e) return; const r = eqRow(e, ym);
         return UI.form({ title:`✎ ${e.nombre} · ${L}`, submit:'Guardar', fields:[ { k:'monto', label:`Sueldo de ${L}`, type:'number', default:r.monto, req:true }, alc ],
           danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('eq', id, ym), 60) },
@@ -671,18 +717,16 @@
       UI.modal(`<h2>⚙ Finanzas<button class="icon-btn x" data-close>✕</button></h2><div class="list">
         <div class="li click" onclick="Fin.backup()"><span>⇣</span><div class="grow"><div class="b">Descargar backup</div><div class="xs faint">Archivo .json con todos los datos de Finanzas</div></div></div>
         <label class="li click" style="cursor:pointer"><span>⇡</span><div class="grow"><div class="b">Restaurar backup</div><div class="xs faint">Cargá el archivo de la app anterior o de un backup</div></div><input type="file" accept=".json" style="display:none" onchange="Fin.restore(this)"></label>
-        <div class="li click" onclick="UI.close();Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
-        <div class="li click" onclick="UI.close();FinGate.changePassword()"><span>🔑</span><div class="grow"><div class="b">Cambiar contraseña de Finanzas</div></div></div>
-        <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a>
-        <div class="li click" onclick="FinGate.lock()"><span>🔒</span><div class="grow"><div class="b">Bloquear</div></div></div></div>`);
+        <div class="li click" onclick="UI.close(true);Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
+        <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a></div>`);
     },
     backup(){ UI.download(`ANM_finanzas_${UI.today()}.json`, S); },
     restore(input){
       const f = input.files[0]; if(!f) return;
       const r = new FileReader();
       r.onload = ()=>{ try{ const d = JSON.parse(r.result); if(!d.clientes) throw 0;
-        if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas (la contraseña se mantiene).`)) return;
-        const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(); UI.toast('Backup restaurado','⇡'); render();
+        if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas.`)) return;
+        const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(true); UI.toast('Backup restaurado','⇡'); render();
       }catch(e){ UI.toast('Archivo inválido','⚠️'); } };
       r.readAsText(f);
     },
@@ -695,11 +739,6 @@
 
   // ── Contraseña de Finanzas (misma que la app anterior: S.seguridad) ─────────
   const OK_KEY = 'anm_fin_ok', IDLE_MIN = 20;
-  async function hash(txt){
-    if(window.crypto?.subtle){ const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
-    let h = 5381; for(const c of txt) h = (h*33) ^ c.charCodeAt(0); return 'djb'+(h>>>0).toString(16);
-  }
-  const rnd = n => [...crypto.getRandomValues(new Uint8Array(n))].map(x=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[x%32]).join('');
   function gate(html){ $('#app').style.display = 'none'; const g = $('#gate'); g.style.display = ''; g.innerHTML = `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Finanzas · acceso restringido</div></div></div>${html}<p class="xs" style="margin-top:16px"><a href="index.html">← Volver a la plataforma</a></p></div>`; setTimeout(()=>g.querySelector('input')?.focus(), 30); return g; }
   function open(){ $('#gate').style.display = 'none'; $('#app').style.display = ''; sessionStorage.setItem(OK_KEY, String(Date.now()));
     tab = 'actualidad'; render(); }
@@ -708,37 +747,11 @@
       if(!Auth.loggedIn()) return gate('<h2>Ingresá primero a la plataforma</h2><p class="muted">Finanzas se abre desde la plataforma, con tu cuenta de Google de socio.</p><a class="btn p" href="index.html" style="margin-top:14px">Ir a la plataforma</a>');
       const acc = Auth.access || await Auth.check();
       if(!acc || !['owner','socio'].includes(acc.role)) return gate('<h2>Sin acceso</h2><p class="muted">Finanzas es solo para los socios.</p>');
-      const last = +sessionStorage.getItem(OK_KEY)||0;
-      if(last && Date.now()-last < IDLE_MIN*6e4) return open();
-      const sec = S.seguridad;
-      if(!sec){
-        if(status!=='synced') return gate('<h2>Sin conexión</h2><p class="muted">No puedo verificar la contraseña sin conexión a la base de datos.</p><button class="btn p" onclick="location.reload()" style="margin-top:12px">Reintentar</button>');
-        const g = gate(`<h2>Creá la contraseña de Finanzas</h2><p class="muted small" style="margin-bottom:14px">Se va a pedir cada vez que entren. Compartila solo entre socios.</p>
-          <div class="frow"><div class="fld"><label>Contraseña</label><input class="inp" id="fp1" type="password"></div><div class="fld"><label>Repetila</label><input class="inp" id="fp2" type="password"></div></div>
-          <button class="btn p" style="width:100%;justify-content:center" id="fgo">Crear y entrar</button>`);
-        g.querySelector('#fgo').onclick = async ()=>{ const a = g.querySelector('#fp1').value, b = g.querySelector('#fp2').value;
-          if(a.length<6) return UI.toast('Mínimo 6 caracteres','⚠️'); if(a!==b) return UI.toast('No coinciden','⚠️');
-          const salt = rnd(12), rec = rnd(10); S.seguridad = { salt, hash:await hash(salt+a), recovery:await hash(salt+rec), creada:new Date().toISOString() }; await push();
-          alert(`Contraseña creada ✅\n\nGuardá este CÓDIGO DE RECUPERACIÓN en un lugar seguro:\n\n${rec}`); open(); };
-        return;
-      }
-      const g = gate(`<h2>🔒 Contraseña de Finanzas</h2><div class="fld"><input class="inp" id="fp" type="password" placeholder="Contraseña"></div>
-        <button class="btn p" style="width:100%;justify-content:center" id="fgo">Entrar</button><p class="xs" style="margin-top:10px"><a href="#" id="fforgot">Olvidé la contraseña</a></p>`);
-      const go = async ()=>{ const i = g.querySelector('#fp'); if(await hash(sec.salt+i.value)===sec.hash) open(); else { i.value = ''; i.style.borderColor = 'var(--red)'; UI.toast('Contraseña incorrecta','⛔'); } };
-      g.querySelector('#fgo').onclick = go; g.querySelector('#fp').onkeydown = e=>{ if(e.key==='Enter') go(); };
-      g.querySelector('#fforgot').onclick = async e=>{ e.preventDefault(); const code = prompt('Código de recuperación:'); if(!code) return;
-        if(await hash(sec.salt+code.trim().toUpperCase())!==sec.recovery) return UI.toast('Código incorrecto','⛔');
-        S.seguridad = null; await push(); FinGate.check(); };
+      // Sin contraseña aparte: alcanza con entrar con el Gmail de un socio (lo autoriza el dueño en Equipo → Accesos)
+      return open();
     },
-    lock(){ sessionStorage.removeItem(OK_KEY); UI.close(); FinGate.check(); },
-    async changePassword(){ const sec = S.seguridad; if(!sec) return;
-      const cur = prompt('Contraseña actual:'); if(cur==null) return; if(await hash(sec.salt+cur)!==sec.hash) return UI.toast('Contraseña incorrecta','⛔');
-      const nw = prompt('Nueva contraseña (mínimo 6):'); if(!nw || nw.length<6) return UI.toast('Mínimo 6 caracteres','⚠️');
-      S.seguridad = { ...sec, hash:await hash(sec.salt+nw) }; save(); UI.toast('Contraseña actualizada','🔑'); },
   };
   window.FinGate = FinGate;
-  ['click','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ if(sessionStorage.getItem(OK_KEY)) sessionStorage.setItem(OK_KEY, String(Date.now())); }, { passive:true }));
-  setInterval(()=>{ const l = +sessionStorage.getItem(OK_KEY)||0; if(l && Date.now()-l > IDLE_MIN*6e4) FinGate.lock(); }, 30000);
 
   document.addEventListener('DOMContentLoaded', async ()=>{
     try{ localStorage.removeItem('anm_theme'); }catch(e){}
