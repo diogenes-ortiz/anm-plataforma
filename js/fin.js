@@ -277,7 +277,8 @@
         ${sec('🏢 REPARTO')}
         <tr><td>Para la agencia (${R.agencia}%)</td><td></td>${n(A.ag)}${n(B.ag)}</tr>
         <tr><td class="b">Para los socios</td><td></td>${n(A.soc)}${n(B.soc)}</tr>
-        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td></td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
+        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td>${(()=>{ const pg = ovGet(M.ym,'soc',x.nombre).pagado;
+          return `<button class="tag ${pg?'t-green':'t-red'}" style="border:0;cursor:pointer" title="${pg?'Tocá para desmarcar':'Tocá para marcar que se le pagó'}" onclick="Fin.pagoSocio(${esc(JSON.stringify(x.nombre))})">${pg?`✓ Pagado ${UI.fdate(pg,{abs:true})}`:'✗ No pagado'}</button>`; })()}</td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
       </tbody></table></div>
       ${A.queda<0?`<div class="alert warn" style="margin-top:12px"><div class="ai">⚠️</div><div class="ad">Este mes los sueldos y gastos superan lo que entra: no queda para repartir.</div></div>`:''}
       ${tot.debe>tot.entro?`<p class="xs faint" style="margin-top:10px">Falta cobrar ${fmt(tot.debe-tot.entro)}. “Con lo cobrado” es lo que se puede repartir hoy; “Si cobramos todo”, lo que queda cuando paguen todos. Tocá ✓/✗ para marcar quién pagó.</p>`:''}
@@ -300,7 +301,7 @@
     L.push(`💰 Ingresos: *${fmt(tot.debe)}*`, `💸 Sueldos y gastos: *${fmt(M.gas)}*`, `🟰 Queda: *${fmt(A.queda)}*`);
     if(tot.debe>tot.entro) L.push(`   _(con lo cobrado hasta hoy: ${fmt(B.queda)})_`);
     L.push('', '*Reparto*', `🏢 Agencia (${R.agencia}%): ${fmt(A.ag)}`);
-    A.socios.forEach((x,i)=>L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''}`));
+    A.socios.forEach((x,i)=>{ const pg = ovGet(M.ym,'soc',x.nombre).pagado; L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''} ${pg?`✅ pagado ${UI.fdate(pg,{abs:true})}`:'⏳ sin pagar'}`); });
     if(modo==='completo'){
       L.push('', `*Clientes* (${fmt(tot.entro)} cobrado de ${fmt(tot.debe)})`);
       ing.forEach(x=>L.push(`${ic(x.cob)} ${x.nombre}${x.kind==='p'?' _(puntual)_':''}: ${fmt(x.monto)}${x.cob==='parcial'?` _(falta ${fmt(x.monto-x.entro)})_`:''}`));
@@ -473,6 +474,14 @@
     move(n){ cursor = ymAdd(cursor, n); render(); },
     hoy(){ cursor = UI.ym(); render(); },
     // Sueldo pagado / no pagado en el mes que se está viendo
+    // Si ya se les pagó a los socios ese mes y cuándo
+    pagoSocio(nombre){
+      const ym = cursor, cur = ovGet(ym,'soc',nombre).pagado;
+      if(cur){ if(confirm(`¿Desmarcar el pago a ${nombre} de ${ymLabel(ym)}?`)){ ovSet(ym,'soc',nombre,{ pagado:null }); touch(ym); render(); } return; }
+      UI.form({ title:`💸 Pago a ${nombre} · ${ymLabel(ym)}`, submit:'Marcar como pagado', values:{ fecha:UI.today() }, fields:[
+        { k:'fecha', label:'¿Cuándo se le pagó?', type:'date', req:true },
+      ], onSubmit:v=>{ ovSet(ym,'soc',nombre,{ pagado:v.fecha }); touch(ym); render(); UI.toast(`Pago a ${nombre} marcado (${UI.fdate(v.fecha,{abs:true})})`,'💸'); } });
+    },
     pagoEq(id){ const ym = cursor; ovSet(ym,'eq',id,{ pagado: ovGet(ym,'eq',id).pagado ? null : true }); touch(ym); render(); },
     nota(k,v){ const c = draft(cursor); c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; touch(cursor); },
     startClose(ym){ ciYm = ym; step = 0; tab = 'cierre'; render(); window.scrollTo(0,0); },
