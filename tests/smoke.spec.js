@@ -206,6 +206,11 @@ test('Finanzas: comisión de un cliente y recordatorio de pago', async ({ page }
   await expect(page.locator('text=Comisión $15.000 fijo → Juan').first()).toBeVisible();
   await page.click('text=Sin recordar · Recordar');
   await expect(page.locator('button:has-text("Recordado")')).toBeVisible();
+  // Pago a los socios con fecha
+  await page.click('button[onclick*="Fin.pagoSocio"] >> nth=0');
+  await page.fill('#f_fecha', '2026-11-14');
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('button:has-text("Pagado 14 nov")').first()).toBeVisible();
   expect(errores).toEqual([]);
 });
 
