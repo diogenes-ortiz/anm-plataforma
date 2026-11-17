@@ -119,15 +119,27 @@
     const areaOf = t => (t.area || (t.unit && App.unit(t.unit)?.label) || '').toUpperCase();
     const order = [...new Set([...(c.areas||[]).map(a=>a.name), ...ts.map(areaOf).filter(Boolean), '' ])];
     const d = new Date(), lines = [`*EN QUÉ ESTAMOS* — ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`, '', ST_LEGEND];
+    const linea = t => `${ST_ICON[t.status||'todo']} ${t.title}${t.note?' - '+t.note:''}${t.link?' - '+t.link:''}`;
+    // Arriba: lo que está en marcha (en revisión, en curso, por hacer), por área
+    const open = ts.filter(t=>t.status!=='done');
     order.forEach(name=>{
-      const items = ts.filter(t=>areaOf(t)===name).sort((a,b)=>ST_ORDER.indexOf(a.status||'todo')-ST_ORDER.indexOf(b.status||'todo'));
+      const items = open.filter(t=>areaOf(t)===name).sort((a,b)=>ST_ORDER.indexOf(a.status||'todo')-ST_ORDER.indexOf(b.status||'todo'));
       if(!items.length) return;
       const meta = (c.areas||[]).find(a=>a.name===name) || {};
       lines.push('', `*${name||'OTROS'}*`);
       if(meta.link) lines.push(meta.link);
-      items.forEach(t=>lines.push(`${ST_ICON[t.status||'todo']} ${t.title}${t.note?' - '+t.note:''}${t.link?' - '+t.link:''}`));
+      items.forEach(t=>lines.push(linea(t)));
       if(meta.note) lines.push(meta.note);
     });
+    // Al final: lo que ya hicimos (lo cerrado en el período elegido), también por área
+    const done = ts.filter(t=>t.status==='done').sort((a,b)=>(a.doneAt||'').localeCompare(b.doneAt||''));
+    if(done.length){
+      lines.push('', `✅ *LO QUE YA HICIMOS*${closedDays<=30?` (últimos ${closedDays} días)`:''}`);
+      order.forEach(name=>{ const items = done.filter(t=>areaOf(t)===name); if(!items.length) return;
+        if(order.filter(n=>done.some(t=>areaOf(t)===n)).length>1) lines.push(`_${name||'OTROS'}_`);
+        items.forEach(t=>lines.push(linea(t))); });
+    }
+    if(!open.length && !done.length) lines.push('', 'Sin novedades por ahora.');
     return lines.join('\n');
   }
 
@@ -619,7 +631,7 @@
     if(cur && !o.some(x=>x[0]===cur)) o.push([cur, (client(cur)?.name||'Cliente')+' (dado de baja)']); return o; };   // BUG-02
 
   const Ops = {
-    HEALTH, activeClients, isOneShot, isMine, taskPeople, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
+    HEALTH, activeClients, isOneShot, isMine, taskPeople, statusText, daysSinceUpdate, overdueTasks, openTasks, alerts, nextMonthCalendarPending, clientName, client, alertRow, taskRow, meetRow, label, TASK_ST,
     // La búsqueda es propia de cada pestaña (BUG-27) y espera a que se deje de escribir (BUG-28)
     moreDone(){ doneLimit += 50; App.render(); },
     setSearch(v){ search = v; searchByTab[curTab] = v; searchRender(); },
@@ -721,6 +733,15 @@
           taskPeople(n).filter(x=>x!==App.me().id).forEach(x=>App.notify(x, `Se sumó un extra a “${t.title}”: ${n.title}`, '#/ops/tareas'));
           UI.toast('Listo: la principal quedó hecha y se sumó el extra','✓'); App.render();
         } }); box.querySelector('#f_title')?.focus(); }, 60);
+    },
+    // Posponer el recordatorio de "Actualizar cliente" en Tu foco de hoy
+    snoozeUpdate(cid){
+      const c = client(cid); if(!c) return; const t = UI.today();
+      const box = UI.modal(`<h2>⏰ Actualizar ${esc(c.name)}<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="small muted" style="margin:-6px 0 12px">¿Hasta cuándo no te lo recordamos?</div>
+        <div class="list">${[[3,'3 días'],[7,'1 semana'],[14,'2 semanas'],[30,'1 mes']].map(([d,l])=>`<div class="li click" data-d="${d}"><span>📅</span><div class="grow b small">${l}</div><span class="xs faint">${UI.fdate(UI.addDays(t,d),{abs:true})}</span></div>`).join('')}</div>`);
+      box.querySelectorAll('[data-d]').forEach(el=>el.onclick = ()=>{ const f = UI.addDays(t, +el.dataset.d);
+        Store.upsert('ops','clients',{ id:cid, updSnoozeUntil:f }); UI.close(true); UI.toast(`Te lo recordamos el ${UI.fdate(f,{abs:true})}`,'⏰'); App.render(); });
     },
     pickAssignee(id){
       const t = Store.get('ops','tasks',id); if(!t) return;
@@ -873,10 +894,10 @@
     clientStatus(cid){
       const c = client(cid); if(!c) return;
       const box = UI.modal(`<h2>📋 Status para ${esc(c.name)}<button class="icon-btn x" data-close>✕</button></h2>
-        <div class="row wrap small muted" style="margin-bottom:10px;gap:8px">Incluir lo cerrado de los últimos <select class="inp sm" id="cs-days">${[[7,'7 días'],[15,'15 días'],[30,'30 días'],[90,'90 días']].map(([v,l])=>`<option value="${v}" ${v===30?'selected':''}>${l}</option>`).join('')}</select>
+        <div class="row wrap small muted" style="margin-bottom:10px;gap:8px">“Lo que ya hicimos” incluye lo terminado en los últimos <select class="inp sm" id="cs-days">${[[7,'7 días'],[15,'15 días'],[30,'30 días'],[90,'90 días']].map(([v,l])=>`<option value="${v}" ${v===30?'selected':''}>${l}</option>`).join('')}</select>
           ${c.lastStatusAt?`<span>· último enviado ${UI.ago(c.lastStatusAt)}</span>`:''}</div>
         <textarea class="inp" id="cs-text" rows="18" style="font-family:inherit;line-height:1.55"></textarea>
-        <p class="xs faint" style="margin-top:6px">Sale de las tareas del cliente: el ícono es su estado (Hecho ✅, En revisión 👀, En curso 🔸, Por hacer ▫️) y se agrupan por <b>Área</b>. Podés editar el texto antes de mandarlo.</p>
+        <p class="xs faint" style="margin-top:6px">Sale de las tareas del cliente: el ícono es su estado (Hecho ✅, En revisión 👀, En curso 🔸, Por hacer ▫️) y se agrupan por <b>Área</b>. Lo terminado va al final, en “Lo que ya hicimos”. Podés editar el texto antes de mandarlo.</p>
         <div class="mfoot"><button class="btn g" style="margin-right:auto" onclick="UI.close(true);Ops.pasteStatus('${cid}')">⇣ Pegar status existente</button>
           <button class="btn g" id="cs-copy">📋 Copiar</button><button class="btn g" id="cs-mail">✉️ Email</button><button class="btn p" id="cs-wa">💬 WhatsApp</button></div>`, true);
       const ta = box.querySelector('#cs-text'), load = ()=>{ ta.value = statusText(cid, { closedDays:+box.querySelector('#cs-days').value }); };

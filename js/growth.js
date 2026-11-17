@@ -143,7 +143,7 @@
         ${l.nextAction?`<div class="xs" style="margin-top:3px">→ ${esc(l.nextAction)}</div>`:''}</div>
       ${flames(l.ganas, l.id)}
       <span class="tag hide-m">${s[2]} ${s[1]}${l.touches?` · ${l.touches} toque${l.touches>1?'s':''}`:''}</span>
-      ${l.nextFollowUp?`<span class="tag ${over?'t-red':l.nextFollowUp===UI.today()?'t-yellow':''}">${UI.fdate(l.nextFollowUp)}</span>`:''}
+      ${l.nextFollowUp?`<span class="tag ${over?'t-red':l.nextFollowUp===UI.today()?'t-yellow':''}">${UI.fdate(l.nextFollowUp)}</span><button class="icon-btn" title="Posponer o sacar el seguimiento" onclick="event.stopPropagation();Growth.snooze('${l.id}')">⏰</button>`:''}
       ${action?`<button class="btn xs p" onclick="event.stopPropagation();Growth.compose('${l.id}')">✉️ Mensaje</button>`:''}</div>`;
   }
 
@@ -307,7 +307,7 @@
       <div class="grid g3"><div class="span2 col" style="gap:18px">
         ${l.stage==='ganado'?`<div class="alert info" style="margin:0;border-color:var(--green);background:var(--green-d)"><div class="ai">🏆</div><div class="grow"><div class="at">¡Es cliente!</div><div class="ad">Ya pasó a Operaciones: el seguimiento, tareas y calendario siguen ahí.</div></div>${l.opsClientId?`<a class="btn sm ok" href="#/ops/cliente/${l.opsClientId}">Ver en Operaciones →</a>`:`<button class="btn sm ok" onclick="Growth.toClient('${id}')">Crear en Operaciones</button>`}</div>`:''}
         ${['reunion','ppt','propuesta','negociacion'].includes(l.stage)||l.pptLink?pptCard(l):''}
-        ${l.nextFollowUp||l.nextAction?`<div class="alert ${l.nextFollowUp&&l.nextFollowUp<UI.today()?'danger':'info'}" style="margin:0"><div class="ai">📞</div><div class="grow"><div class="at">${esc(l.nextAction||'Hacer seguimiento')}</div><div class="ad">${l.nextFollowUp?UI.fdate(l.nextFollowUp,{abs:true}):'Sin fecha'}${l.touches?` · ${l.touches} toque${l.touches>1?'s':''} hechos`:''}</div></div></div>`:''}
+        ${l.nextFollowUp||l.nextAction?`<div class="alert ${l.nextFollowUp&&l.nextFollowUp<UI.today()?'danger':'info'}" style="margin:0"><div class="ai">📞</div><div class="grow"><div class="at">${esc(l.nextAction||'Hacer seguimiento')}</div><div class="ad">${l.nextFollowUp?UI.fdate(l.nextFollowUp,{abs:true}):'Sin fecha'}${l.touches?` · ${l.touches} toque${l.touches>1?'s':''} hechos`:''}</div></div>${l.nextFollowUp?`<button class="btn sm g" onclick="Growth.snooze('${id}')">⏰ Posponer / sacar</button>`:''}</div>`:''}
         <div class="card"><div class="card-h"><h3>💪 Lo que le podemos aportar</h3>${pitch?`<span class="tag t-purple">${pitch.e} ${esc(pitch.t)}</span>`:''}<span class="grow"></span><button class="btn xs g" onclick="Growth.editLead('${id}')">Editar</button></div>
           ${l.gap?`<div class="xs faint b" style="margin-bottom:4px">OPORTUNIDAD QUE VEMOS</div><div class="small" style="margin-bottom:14px">${esc(l.gap)}</div>`:''}
           ${l.pieza?`<div class="xs faint b" style="margin-bottom:4px">CON QUÉ ENTRARÍAMOS</div><div class="small" style="margin-bottom:14px">${esc(l.pieza)}</div>`:''}
@@ -327,6 +327,26 @@
 
   // ── Acciones ────────────────────────────────────────────────────────────────
   const Growth = {
+    // Posponer o sacar un seguimiento (para no saturar, darle más tiempo, recontactar en un mes…)
+    snooze(id){
+      const l = Store.get('growth','leads',id); if(!l) return;
+      const t = UI.today(), opts = [[7,'En 1 semana'],[14,'En 2 semanas'],[30,'En 1 mes'],[60,'En 2 meses'],[90,'En 3 meses']];
+      const box = UI.modal(`<h2>⏰ Seguimiento de ${esc(l.company)}<button class="icon-btn x" data-close>✕</button></h2>
+        <div class="small muted" style="margin:-6px 0 12px">${l.nextFollowUp?`Hoy está para el <b>${UI.fdate(l.nextFollowUp,{abs:true})}</b>.`:'No tiene fecha de seguimiento.'} ¿Cuándo lo volvemos a contactar?</div>
+        <div class="fld"><label>Motivo (opcional)</label><input class="inp" id="sz-why" placeholder="Ej: no saturarlo, nos pidió más tiempo, cierran el año…"></div>
+        <div class="list">${opts.map(([d,lab])=>`<div class="li click" data-d="${d}"><span>📅</span><div class="grow b small">${lab}</div><span class="xs faint">${UI.fdate(UI.addDays(t,d),{abs:true})}</span></div>`).join('')}
+          <div class="li"><span>🗓️</span><div class="grow b small">Otra fecha</div><input type="date" class="inp sm" id="sz-date" style="width:auto" min="${t}"><button class="btn xs p" id="sz-go">Listo</button></div>
+          <div class="li click" data-d="none"><span>🚫</span><div class="grow"><div class="b small" style="color:var(--red)">Sacar el seguimiento</div><div class="xs faint">Deja de aparecer en “Tu foco de hoy” y en alertas. Podés volver a ponerle fecha cuando quieras.</div></div></div></div>`);
+      const apply = fecha => {
+        const why = box.querySelector('#sz-why').value.trim();
+        Store.upsert('growth','leads',{ id, nextFollowUp:fecha||'' });
+        Store.upsert('growth','interactions',{ leadId:id, at:new Date().toISOString(), by:App.me().id, type:'etapa',
+          text: fecha ? `⏰ Seguimiento pospuesto al ${UI.fdate(fecha,{abs:true})}${why?' · '+why:''}` : `🚫 Se sacó el seguimiento${why?' · '+why:''}` });
+        UI.close(true); UI.toast(fecha ? `Lo recontactamos el ${UI.fdate(fecha,{abs:true})}` : 'Seguimiento sacado','⏰'); App.render();
+      };
+      box.querySelectorAll('[data-d]').forEach(el=>el.onclick = ()=>apply(el.dataset.d==='none' ? '' : UI.addDays(t, +el.dataset.d)));
+      box.querySelector('#sz-go').onclick = ()=>{ const v = box.querySelector('#sz-date').value; if(!v) return UI.toast('Elegí una fecha','📅'); apply(v); };
+    },
     // ⟳ Traer del Sheet: la lista de Ventas pasa a ser igual a la hoja "Base" del Sheet comercial
     async syncSheet(){
       const id = sheetId(sheetUrl());
