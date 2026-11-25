@@ -190,12 +190,108 @@
 
   // ── Render general ──────────────────────────────────────────────────────────
   function render(){
-    if(tab!=='proyecciones') tab = 'actualidad';   // todo se carga en Actualidad (ya no hay cierre del mes aparte)
-    $('#tabs').innerHTML = [['actualidad','📊 Actualidad'],['proyecciones','🔭 Proyecciones']].map(([k,l])=>
+    if(!['proyecciones','capacidad'].includes(tab)) tab = 'actualidad';   // todo se carga en Actualidad (ya no hay cierre del mes aparte)
+    $('#tabs').innerHTML = [['actualidad','📊 Actualidad'],['proyecciones','🔭 Proyecciones'],['capacidad','👥 Capacidad']].map(([k,l])=>
       `<a href="#" class="${tab===k?'active':''}" onclick="Fin.go('${k}');return false">${l}</a>`).join('');
     Object.values(charts).forEach(c=>c.destroy?.()); charts = {};
-    const v = tab==='proyecciones' ? viewProjections() : viewNow();
+    const v = tab==='proyecciones' ? viewProjections() : tab==='capacidad' ? viewCapacity() : viewNow();
     $('#page').innerHTML = v.html; v.after?.();
+  }
+
+
+  // ── 📈 Inflación vs. precios y sueldos (se revisa cada 3 meses) ─────────────
+  // Datos del INDEC (IPC mensual) desde una API pública y gratuita; si no responde, se cargan a mano.
+  const INFL_CADA = 3;   // meses entre revisiones
+  const infl = () => S.inflacion || (S.inflacion = {});
+  async function inflFetch(silencio){
+    try{
+      const r = await fetch('https://api.argentinadatos.com/v1/finanzas/indices/inflacion', { cache:'no-store' });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const rows = await r.json(); let n = 0;
+      rows.forEach(x=>{ const ym = String(x.fecha||'').slice(0,7), v = +x.valor; if(/^\d{4}-\d{2}$/.test(ym) && isFinite(v) && infl()[ym]!==v){ infl()[ym] = v; n++; } });
+      S.inflacionAt = new Date().toISOString(); if(n) save();
+      if(!silencio) UI.toast(n ? `Inflación actualizada (${n} mes${n!==1?'es':''})` : 'La inflación ya estaba al día','📈');
+      render();
+    }catch(e){ if(!silencio) UI.toast('No pude traer la inflación automáticamente: cargala a mano','⚠️'); }
+  }
+  const inflUlt = () => Object.keys(infl()).sort().pop() || '';
+  // Inflación acumulada desde el mes "desde" (incluido) hasta el último dato
+  function inflDesde(desde){
+    const ks = Object.keys(infl()).filter(k=>k>=desde).sort(); if(!ks.length) return { pct:0, meses:0 };
+    return { pct: (ks.reduce((f,k)=>f*(1+(+infl()[k]||0)/100), 1) - 1) * 100, meses:ks.length };
+  }
+  const ultCambio = (hist, ini) => { const h = (hist||[]).filter(x=>x.desde<=UI.ym()).sort((a,b)=>b.desde.localeCompare(a.desde))[0]; return h ? h.desde : (ini || UI.ym()); };
+  const tocaRevisar = () => { const r = S.inflRevisadoAt; return !r || ymAdd(r.slice(0,7), INFL_CADA) <= UI.ym(); };
+  function inflAviso(){
+    if(!tocaRevisar() || cursor!==UI.ym()) return '';
+    return `<div class="small muted" style="margin:-4px 0 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">📈 Toca la revisión trimestral de precios y sueldos contra la inflación.
+      <a href="#infl" onclick="document.getElementById('infl').open=true">Ver recomendación</a></div>`;
+  }
+  function inflCard(){
+    const ult = inflUlt(), last6 = Object.keys(infl()).sort().slice(-6), tri = last6.slice(-INFL_CADA);
+    const acTri = tri.length ? (tri.reduce((f,k)=>f*(1+(+infl()[k]||0)/100),1)-1)*100 : 0;
+    const p1 = v => (Math.round(v*10)/10).toLocaleString('es-AR')+'%';
+    const fila = (nombre, actual, desde) => { const a = inflDesde(desde), sug = Math.round(actual*(1+a.pct/100)/1000)*1000;
+      return `<tr><td>${esc(nombre)}</td><td style="text-align:right">${fmt(actual)}</td><td class="xs faint">${ymLabel(desde,1)}</td><td style="text-align:right;color:${a.pct>=10?'var(--red)':a.pct>=5?'var(--yellow)':'inherit'}">${a.meses?p1(a.pct):'—'}</td><td style="text-align:right" class="b">${a.pct>0.5?fmt(sug):'—'}</td></tr>`; };
+    const clientes = S.clientes.filter(c=>c.estado!=='inactivo' && !(c.finServicio && c.finServicio<UI.ym())).map(c=>({ n:c.nombre, a:retainerAt(c, UI.ym()), d:ultCambio(c.retainerHistory, c.inicioServicio) })).filter(x=>x.a>0);
+    const sueldos = S.empleados.filter(e=>e.estado!=='inactivo' && !isSocio(e)).map(e=>({ n:e.nombre, a:sueldoAt(e, UI.ym()), d:ultCambio(e.sueldoHistory, e.inicioLaboral) })).filter(x=>x.a>0);
+    const tabla = (titulo, rows, col) => rows.length ? `<div class="xs faint b" style="letter-spacing:1px;margin:14px 0 6px">${titulo}</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${col}</th><th style="text-align:right">Hoy</th><th>Último aumento</th><th style="text-align:right">Inflación desde entonces</th><th style="text-align:right">Recomendado</th></tr></thead>
+      <tbody>${rows.sort((a,b)=>inflDesde(b.d).pct-inflDesde(a.d).pct).map(x=>fila(x.n, x.a, x.d)).join('')}</tbody></table></div>` : '';
+    return `<details id="infl" class="card" style="margin-top:20px"><summary style="cursor:pointer;list-style:none" class="row"><span class="b">📈 Inflación y precios</span><span class="grow"></span>
+        <span class="xs faint">${ult?`último dato: ${ymLabel(ult)} ${p1(+infl()[ult])} · últimos ${INFL_CADA} meses ${p1(acTri)}`:'sin datos'}${tocaRevisar()?' · <b style="color:var(--blue)">toca revisar</b>':''}</span></summary>
+      <div style="margin-top:12px">
+        <div class="row wrap" style="gap:6px;margin-bottom:6px">${last6.map(k=>`<span class="tag" title="Tocá para corregir" style="cursor:pointer" onclick="Fin.inflEdit('${k}')">${ymLabel(k,1)}: ${p1(+infl()[k])}</span>`).join('') || '<span class="small faint">Todavía no hay datos de inflación.</span>'}</div>
+        <div class="row wrap" style="gap:8px;margin:8px 0"><button class="btn xs g" onclick="Fin.inflTraer()">⟳ Traer del INDEC</button><button class="btn xs g" onclick="Fin.inflEdit()">＋ Cargar un mes a mano</button>
+          ${tocaRevisar()?`<button class="btn xs p" onclick="Fin.inflRevisado()">✓ Ya lo revisé (avisame en ${INFL_CADA} meses)</button>`:`<span class="xs faint">Próxima revisión: ${ymLabel(ymAdd(S.inflRevisadoAt.slice(0,7), INFL_CADA))}</span>`}</div>
+        <p class="xs faint">“Recomendado” = el precio de hoy actualizado por la inflación acumulada desde el último aumento (redondeado a miles). Es una guía: vos decidís cuánto y cuándo aumentar.</p>
+        ${tabla('💰 FEES DE CLIENTES', clientes, 'Cliente')}
+        ${tabla('👥 SUELDOS DEL EQUIPO', sueldos, 'Persona')}
+      </div></details>`;
+  }
+
+  // ── 👥 Capacidad del equipo: ¿quién está saturado y cuándo hay que contratar? ──
+  // Se calcula con los datos de Operaciones: clientes que trabaja cada persona y sus tareas abiertas.
+  const UNIT_LBL = { social:'Social Media', pauta:'Pauta', branding:'Branding', web:'Web', contenido:'Producción de contenido', otros:'Otros' };
+  const CAP_DEF = 6;   // clientes que una persona puede llevar bien, por defecto
+  function capData(){
+    if(!window.Store) return null;
+    const ms = Store.all('team','members'), cs = Store.all('ops','clients').filter(c=>c.active!==false), ts = Store.all('ops','tasks').filter(t=>t.status!=='done');
+    if(!ms.length) return null;
+    const t = UI.today(), en7 = UI.addDays(t, 7);
+    const units = (Store.get('team','settings','units')?.value || []).reduce((o,u)=>(o[u.id]=u.label, o), { ...UNIT_LBL });
+    const gente = ms.map(m=>{
+      const cl = cs.filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
+      const mine = ts.filter(x=>x.assigneeId===m.id || (x.alsoIds||[]).includes(m.id));
+      const cap = +m.capClientes || CAP_DEF, carga = Math.round(cl.length/cap*100);
+      const venc = mine.filter(x=>x.due && x.due<t).length, semana = mine.filter(x=>x.due && x.due>=t && x.due<=en7).length;
+      const presion = carga + Math.min(40, venc*8);   // las vencidas suman presión
+      return { m, cl, cap, carga, abiertas:mine.length, venc, semana, presion };
+    }).sort((a,b)=>b.presion-a.presion);
+    const porUnidad = Object.keys(units).map(u=>{
+      const cli = cs.filter(c=>(c.units||[]).includes(u)), quien = gente.filter(g=>(g.m.units||[]).includes(u));
+      const cap = quien.reduce((s,g)=>s+g.cap,0);
+      return { u, label:units[u], cli:cli.length, quien, cap, carga: cap ? Math.round(cli.length/cap*100) : (cli.length ? 999 : 0) };
+    }).filter(x=>x.cli || x.quien.length).sort((a,b)=>b.carga-a.carga);
+    return { gente, porUnidad };
+  }
+  const semaforo = p => p>=100 ? ['var(--red)','🔴','Saturado: hay que sumar a alguien'] : p>=80 ? ['var(--yellow)','🟡','Al límite'] : ['var(--green)','🟢','Con espacio'];
+  function viewCapacity(){
+    const D = capData();
+    if(!D) return { html:`<div class="empty">Para ver la capacidad, entrá primero a la plataforma (así se cargan el equipo y los clientes de Operaciones) y volvé a Finanzas.</div>` };
+    const bar = (p, color) => `<div class="bar" style="height:8px;margin-top:6px"><div style="width:${Math.min(100,p)}%;background:${color}"></div></div>`;
+    const urg = D.porUnidad.filter(x=>x.carga>=100);
+    return { html:`
+      <p class="small muted" style="margin-bottom:16px">Cuántos clientes lleva cada persona contra lo que puede llevar bien (su <b>capacidad</b>, editable con ✎), más la presión de las tareas vencidas. Sirve para ver si alguien está saturado y cuándo conviene contratar.</p>
+      ${urg.length?`<div class="alert danger" style="margin-bottom:18px"><div class="ai">🚨</div><div class="grow"><div class="at">Contratar o redistribuir: ${urg.map(x=>esc(x.label)).join(', ')}</div><div class="ad">${urg.map(x=>`${esc(x.label)}: ${x.cli} clientes para ${x.quien.length?`${x.quien.length} persona${x.quien.length>1?'s':''} (capacidad ${x.cap})`:'nadie asignado'}`).join(' · ')}</div></div></div>`:''}
+      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Por área</h3><span class="sub">clientes ÷ capacidad de quienes trabajan esa área</span></div>
+        <div class="list">${D.porUnidad.map(x=>{ const [c,ic,txt] = semaforo(x.carga); return `<div class="li"><div class="grow"><div class="row"><span class="b">${esc(x.label)}</span><span class="grow"></span><span class="small b" style="color:${c}">${ic} ${x.carga>=999?'sin nadie':x.carga+'%'}</span></div>
+          <div class="xs faint">${x.cli} cliente${x.cli!==1?'s':''} · ${x.quien.length?x.quien.map(g=>esc(g.m.nick||g.m.name.split(' ')[0])).join(', ')+` (capacidad ${x.cap})`:'nadie tiene esta área en su perfil'} · ${txt}</div>${bar(x.carga>=999?100:x.carga, c)}</div></div>`; }).join('') || '<div class="small faint">Cargá las unidades de cada cliente y de cada persona en la plataforma.</div>'}</div></div>
+      <div class="grid g-auto">${D.gente.map(g=>{ const [c,ic,txt] = semaforo(g.presion);
+        return `<div class="card"><div class="row" style="margin-bottom:8px"><span class="b grow">${esc(g.m.name)}</span><span class="b" style="color:${c}">${ic} ${g.carga}%</span></div>
+          <div class="small">${g.cl.length} de ${g.cap} clientes <a href="#" class="xs" title="Editar capacidad" onclick="Fin.capEdit('${g.m.id}');return false">✎</a></div>${bar(g.carga, c)}
+          <div class="grid g3 small" style="gap:6px;margin-top:10px"><div><div class="b">${g.abiertas}</div><div class="xs faint">tareas abiertas</div></div><div><div class="b">${g.semana}</div><div class="xs faint">vencen en 7 días</div></div><div><div class="b" style="color:${g.venc?'var(--red)':'inherit'}">${g.venc}</div><div class="xs faint">vencidas</div></div></div>
+          <div class="xs faint" style="margin-top:8px">${txt}${g.cl.length?' · '+g.cl.map(x=>esc(x.name)).join(', '):''}</div></div>`; }).join('')}</div>` };
   }
 
   // ── 📊 Actualidad ───────────────────────────────────────────────────────────
@@ -208,7 +304,7 @@
       .map(r=>({ ...r, suma:r.total+r.proyMonto, queda:(+r.pendiente||0)+r.proyPend })).sort((a,b)=>b.suma-a.suma);
     const groups = {}; M.gastos.forEach(g=>{ (groups[g.grupo] = groups[g.grupo]||[]).push(g); });
     const cobroTag = r => r.queda ? `<span class="tag t-yellow">Falta ${fmt(r.queda)}</span>` : '<span class="tag t-green">Cobrado ✓</span>';
-    return { html:`
+    return { html:`${inflAviso()}
       <div class="toolbar"><button class="btn g sm" onclick="Fin.move(-1)">‹</button><div class="b" style="font-size:18px;min-width:170px;text-align:center">${ymLabel(cursor)}</div><button class="btn g sm" onclick="Fin.move(1)">›</button>
         <span class="grow"></span>${cursor!==UI.ym()?`<button class="btn g sm" onclick="Fin.hoy()">Ir a este mes</button>`:''}<button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button></div>
       ${(()=>{ const prev = S.proyectos.filter(p=>p.estado!=='cobrado' && p.fecha && p.fecha.slice(0,7)<cursor && isOneShot(p)); return prev.length ? `<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>⏳ Pendientes de cobro de meses anteriores</h3><span class="sub">${fmt(prev.reduce((s,p)=>s+(+(p.pendienteParcial ?? p.monto) || 0),0))}</span></div><div class="list">
@@ -235,7 +331,7 @@
           <div class="xs faint b" style="margin:18px 0 6px">📝 NOTAS DEL MES</div>
           <div class="fld"><label>Saldo real en cuentas (opcional)</label><input class="inp sm" type="number" step="any" value="${M.cierre?.answers?.saldo??''}" onchange="Fin.nota('saldo',this.value)"></div>
           <div class="fld"><label>¿Algo importante? (bajas, aumentos, imprevistos)</label><textarea class="inp" rows="3" onchange="Fin.nota('notas',this.value)">${esc(M.cierre?.answers?.notas||'')}</textarea></div></div>
-      </div>`, after:()=>{ const w = document.getElementById('mpm'); if(w) w.scrollLeft = w.scrollWidth; } };
+      </div>${inflCard()}`, after:()=>{ const w = document.getElementById('mpm'); if(w) w.scrollLeft = w.scrollWidth; } };
   }
 
   // ── 🧮 La cuenta del mes: ingresos − sueldos − gastos = queda → agencia → socios ──
@@ -470,6 +566,20 @@
   // ── Acciones ────────────────────────────────────────────────────────────────
   const syncPend = x => { if(x.cobrado==='si') x.pendiente = 0; else if(x.cobrado==='no') x.pendiente = +x.monto||0; else if(+x.pendiente>+x.monto) x.pendiente = +x.monto; };
   window.Fin = {
+    inflTraer(){ inflFetch(false); },
+    inflEdit(ym){
+      UI.form({ title:'📈 Inflación de un mes', values:{ ym: ym || ymAdd(UI.ym(),-1), v: ym ? infl()[ym] : '' }, fields:[
+        { k:'ym', label:'Mes', type:'month', req:true, half:true }, { k:'v', label:'Inflación (%)', type:'number', req:true, half:true, placeholder:'Ej: 2.7' },
+      ], danger: ym ? { label:'Borrar', fn:()=>{ delete infl()[ym]; save(); render(); } } : null,
+      onSubmit:v=>{ infl()[v.ym] = +v.v||0; save(); render(); } });
+    },
+    inflRevisado(){ S.inflRevisadoAt = new Date().toISOString(); save(); render(); UI.toast(`Listo, te aviso de nuevo en ${INFL_CADA} meses`,'📈'); },
+    capEdit(mid){
+      const m = Store.get('team','members',mid); if(!m) return;
+      UI.form({ title:`Capacidad de ${m.name}`, values:{ cap:m.capClientes||CAP_DEF }, fields:[
+        { k:'cap', label:'¿Cuántos clientes puede llevar bien a la vez?', type:'number', req:true, hint:'Depende del tipo de trabajo: alguien de pauta o diseño puede llevar distinto que social media.' },
+      ], onSubmit:v=>{ Store.upsert('team','members',{ id:mid, capClientes:Math.max(1, +v.cap||CAP_DEF) }); render(); } });
+    },
     go(t){ tab = t; if(t==='cierre' && !ciYm) step = 0; render(); window.scrollTo(0,0); },
     move(n){ cursor = ymAdd(cursor, n); render(); },
     hoy(){ cursor = UI.ym(); render(); },
@@ -758,7 +868,12 @@
     if(window.Store) Store.loadLocal();
     try{ const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); const { v } = await r.json();
       if(v && window.ANM_VERSION && v!==window.ANM_VERSION && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); return location.reload(); } }catch(e){}
-    if(Auth.loggedIn()){ const acc = await Auth.check(); if(acc && ['owner','socio'].includes(acc.role)) await load(); }
+    if(Auth.loggedIn()){ const acc = await Auth.check(); if(acc && ['owner','socio'].includes(acc.role)){ await load();
+      // Equipo y clientes de Operaciones (para la pestaña Capacidad)
+      if(window.Store){ Store.setDocs(['ops','team']); Store.init().then(()=>{ if(tab==='capacidad') render(); }).catch(()=>{}); }
+      // Inflación: se actualiza sola una vez por semana, sin avisar
+      if(!S.inflacionAt || Date.now()-new Date(S.inflacionAt) > 7*864e5) setTimeout(()=>inflFetch(true), 1500);
+    } }
     FinGate.check();
   });
 })();
