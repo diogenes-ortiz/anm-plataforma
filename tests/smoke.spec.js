@@ -276,3 +276,29 @@ test('posponer o sacar un seguimiento desde Tu foco de hoy', async ({ page }) =>
   expect(r.nota).toContain('no saturarlo');
   expect(errores).toEqual([]);
 });
+
+test('Finanzas: inflación (revisión trimestral) y capacidad del equipo', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await page.route('**/api.argentinadatos.com/**', r => r.fulfill({ status:200, contentType:'application/json',
+    body: JSON.stringify([{ fecha:'2026-07-31', valor:2 }, { fecha:'2026-08-31', valor:2 }, { fecha:'2026-09-30', valor:3 }, { fecha:'2026-10-31', valor:2.5 }]) }));
+  await mockSupabase(page, {
+    seed: { main: { clientes: [{ id:1, nombre:'Mipileta', tipo:'mensual', retainer:100000, moneda:'ARS', estado:'activo', inicioServicio:'2026-01', retainerHistory:[{ monto:100000, desde:'2026-08' }], empleadoIds:[] }], empleados:[{ id:5, nombre:'Luli', sueldo:500000, estado:'activo', inicioLaboral:'2026-01', sueldoHistory:[{ monto:500000, desde:'2026-07' }] }], gastos:[], proyectos:[] },
+      team: { members: [{ id:'m1', name:'Prueba Socio', email:'socio@gmail.com', role:'admin', owner:true, updatedAt:'2026-01-01' }, { id:'m2', name:'Luli', role:'equipo', units:['pauta'], capClientes:2, updatedAt:'2026-01-01' }] },
+      ops: { clients: [1,2,3].map(i => ({ id:'c'+i, name:'Cliente '+i, units:['pauta'], teamIds:['m2'], updatedAt:'2026-01-01' })) } } });
+  await entrar(page);
+  await page.waitForTimeout(1000);
+  await page.goto('/finanzas.html');
+  await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
+  await page.waitForFunction(() => document.querySelector('#infl summary')?.textContent.includes('Octubre'), null, { timeout: 8000 });
+  await page.click('#infl summary');
+  // Mipileta aumentó en agosto: inflación ago+sep+oct = 1.02*1.03*1.025-1 ≈ 7,7%
+  await expect(page.locator('#infl')).toContainText('7,7%');
+  await expect(page.locator('#infl')).toContainText('$108.000');
+  await expect(page.locator('#infl')).toContainText('SUELDOS DEL EQUIPO');
+  await page.click('text=Ya lo revisé');
+  await expect(page.locator('#infl')).toContainText('Próxima revisión');
+  await page.click('text=👥 Capacidad');
+  await expect(page.locator('text=Contratar o redistribuir: Pauta')).toBeVisible();
+  await expect(page.locator('#page')).toContainText('3 de 2 clientes');
+  expect(errores).toEqual([]);
+});
