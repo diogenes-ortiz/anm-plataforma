@@ -302,3 +302,26 @@ test('Finanzas: inflación (revisión trimestral) y capacidad del equipo', async
   await expect(page.locator('#page')).toContainText('3 de 2 clientes');
   expect(errores).toEqual([]);
 });
+
+test('Finanzas: freelance que cobra por cuenta, con desglose', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  const cli = (id, nombre, monto) => ({ id, nombre, tipo:'mensual', retainer:monto, moneda:'ARS', estado:'activo', inicioServicio:'2026-01', retainerHistory:[{ monto, desde:'2026-01' }], empleadoIds:[] });
+  await mockSupabase(page, { seed: { main: { clientes: [cli(1,'Mipileta',100000), cli(2,'Froz',200000)], empleados:[{ id:7, nombre:'Belu', sueldo:300000, estado:'activo', inicioLaboral:'2026-01', sueldoHistory:[{ monto:300000, desde:'2026-01' }] }], gastos:[], proyectos:[] } } });
+  await entrar(page);
+  await page.waitForTimeout(1000);
+  await page.goto('/finanzas.html');
+  await expect(page.getByRole('heading', { name: /La cuenta del mes/ })).toBeVisible();
+  await page.evaluate(() => Fin.editGasto('eq', '7'));
+  await page.selectOption('#f_pago', 'cuenta');
+  const fila = n => page.locator(`#pc-box .li:has-text("${n}")`);
+  await fila('Mipileta').locator('.pc-on').check();
+  await fila('Mipileta').locator('.pc-val').fill('30000');
+  await fila('Froz').locator('.pc-on').check();
+  await fila('Froz').locator('.pc-tipo').selectOption('pct');
+  await fila('Froz').locator('.pc-val').fill('20');
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('text=Belu · freelance').first()).toBeVisible();
+  await expect(page.locator('text=Mipileta $30.000 + Froz $40.000 (20% de $200.000)').first()).toBeVisible();
+  await expect(page.locator('tr:has-text("Belu · freelance")').first()).toContainText('$70.000');
+  expect(errores).toEqual([]);
+});
