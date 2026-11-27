@@ -449,48 +449,74 @@
     <p class="xs faint" style="margin-top:8px">Mensual del cliente; en azul, proyectos puntuales de ese mes. ▲▼ = cambió respecto del mes anterior. ✓ = mes cerrado. Tocá un monto para editarlo.</p>`;
   }
 
-  let extraCliente = 0;
+  let extraCliente = 0, projMode = 'mes';
   function viewProjections(){
     const now = UI.ym(), past = [], fut = [];
     for(let i=5;i>=1;i--) past.push(month(ymAdd(now,-i)));
-    const fijos = S.gastos.reduce((s,g)=>s+gastoMensual(g),0);
     for(let i=0;i<12;i++){
       const ym = ymAdd(now,i);
-      const ret = S.clientes.filter(c=>vigente(c, ym) || (i>0 && !c.finServicio && c.estado!=='inactivo' && (!c.inicioServicio || c.inicioServicio<=ym))).reduce((s,c)=>s+retainerAt(c, ym),0);
+      const activos = S.clientes.filter(c=>vigente(c, ym) || (i>0 && !c.finServicio && c.estado!=='inactivo' && (!c.inicioServicio || c.inicioServicio<=ym)));
+      const ret = activos.reduce((s,c)=>s+retainerAt(c, ym),0);
       const proy = S.proyectos.filter(p=>p.fecha && p.fecha.slice(0,7)===ym && isOneShot(p)).reduce((s,p)=>s+(+p.monto||0),0);
-      const equipo = S.empleados.filter(e=>empActivo(e, ym) || (i>0 && !isSocio(e) && e.estado!=='inactivo' && !e.finLaboral)).reduce((s,e)=>s+sueldoAt(e, ym),0);
+      const emps = S.empleados.filter(e=>empActivo(e, ym) || (i>0 && !isSocio(e) && e.estado!=='inactivo' && !e.finLaboral));
+      const equipo = emps.reduce((s,e)=>s+(esFree(e, ym) ? porCuenta(e, ym).total : sueldoAt(e, ym)),0);
       const fijosMes = fjRows(ym).filter(g=>g.incluir).reduce((s,g)=>s+g.monto,0);
-      const ing = ret + proy + (i>0?extraCliente:0), gas = equipo + fijosMes;
-      fut.push({ ym, ret, proy, ing, gas, neto:ing-gas });
+      const comis = activos.reduce((s,c)=>{ const k = comOf(c, ym); return s + (k ? comMonto(k, retainerAt(c, ym)) : 0); },0);
+      const ing = ret + proy + (i>0?extraCliente:0), gas = equipo + fijosMes + comis;
+      fut.push({ ym, ret, proy, ing, equipo, fijos:fijosMes, comis, gas, neto:ing-gas });
     }
     const tot = k => fut.reduce((s,m)=>s+m[k],0);
     const avgPast = past.length ? past.reduce((s,m)=>s+m.ing,0)/past.length : 0;
-    const meta = +S.metas?.facturacion || 0;
+    const meta = +S.metas?.facturacion || 0, metaG = +S.metas?.ganancia12 || 0, metaMes = metaG/12;
     const yearNow = now.slice(0,4), ytd = [...Array(+now.slice(5)).keys()].map(i=>month(`${yearNow}-${String(i+1).padStart(2,'0')}`).ing).reduce((a,b)=>a+b,0);
     const restYear = fut.filter(m=>m.ym.startsWith(yearNow) && m.ym>now).reduce((s,m)=>s+m.ing,0);
-    const breakEven = fut[0].gas;
+    const breakEven = fut[0].gas, gan12 = tot('neto'), pctMeta = metaG ? Math.round(gan12/metaG*100) : null;
+    const falta = metaG ? Math.max(0, metaG - gan12) : 0;
+    // Acumulado: ganancia proyectada vs. la meta repartida en 12 meses
+    let acG = 0; const acum = fut.map((m,i)=>({ ym:m.ym, g:(acG += m.neto), meta:metaMes*(i+1) }));
+    const cumple = fut.filter(m=>metaG && m.neto>=metaMes).length;
+    const edit = `<a href="#" class="xs" onclick="Fin.setMeta();return false">✎ ${metaG||meta?'Editar metas':'Definir metas'}</a>`;
+    const n = v => `<td style="text-align:right;white-space:nowrap">${v?fmt(v):'—'}</td>`;
     return { html:`
       <div class="grid g4" style="margin-bottom:20px">
         <div class="card kpi"><div class="l">Ingreso mensual asegurado</div><div class="v" style="color:var(--green)">${fmt(fut[0].ret)}</div><div class="s">retainers de clientes activos</div></div>
-        <div class="card kpi"><div class="l">Costo mensual fijo</div><div class="v" style="color:var(--red)">${fmt(breakEven)}</div><div class="s">equipo + gastos fijos (punto de equilibrio)</div></div>
-        <div class="card kpi"><div class="l">Ganancia próximos 12 meses</div><div class="v" style="color:var(--blue-l)">${fmt(tot('neto'))}</div><div class="s">≈ ${fmt(tot('neto')/12)} por mes</div></div>
-        <div class="card kpi"><div class="l">Cierre de ${yearNow} estimado</div><div class="v">${fmt(ytd+restYear)}</div><div class="s">${meta?`Meta ${fmt(meta)} · ${Math.round((ytd+restYear)/meta*100)}%`:`<a href="#" onclick="Fin.setMeta();return false">Definir meta anual</a>`}</div></div>
+        <div class="card kpi"><div class="l">Costo mensual</div><div class="v" style="color:var(--red)">${fmt(breakEven)}</div><div class="s">equipo ${fmt(fut[0].equipo)} · fijos ${fmt(fut[0].fijos)}${fut[0].comis?` · comisiones ${fmt(fut[0].comis)}`:''}</div></div>
+        <div class="card kpi"><div class="l">Ganancia próximos 12 meses</div><div class="v" style="color:var(--blue-l)">${fmt(gan12)}</div>
+          <div class="s">${metaG?`Meta ${fmt(metaG)} · <b style="color:${pctMeta>=100?'var(--green)':pctMeta>=80?'var(--yellow)':'var(--red)'}">${pctMeta}%</b>${falta?` · faltan ${fmt(falta)}`:' ✓'}`:`≈ ${fmt(gan12/12)} por mes`} · ${edit}</div>
+          ${metaG?`<div class="bar" style="margin-top:8px"><div style="width:${Math.min(100,pctMeta)}%;background:${pctMeta>=100?'var(--green)':pctMeta>=80?'var(--yellow)':'var(--red)'}"></div></div>`:''}</div>
+        <div class="card kpi"><div class="l">Cierre de ${yearNow} estimado</div><div class="v">${fmt(ytd+restYear)}</div><div class="s">${meta?`Meta de facturación ${fmt(meta)} · ${Math.round((ytd+restYear)/meta*100)}%`:'Facturación del año'} · ${edit}</div></div>
       </div>
-      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Próximos 12 meses</h3><span class="grow"></span>
+      ${metaG?`<div class="alert ${pctMeta>=100?'info':'warn'}" style="margin-bottom:18px"><div class="ai">🎯</div><div class="grow"><div class="at">${pctMeta>=100?'Con lo que hay hoy, llegan a la meta de ganancia':'Con lo que hay hoy, no llegan a la meta de ganancia'}</div>
+        <div class="ad">Meta: ${fmt(metaMes)} por mes. ${cumple} de 12 meses la cumplen.${falta?` Para llegar faltan ${fmt(falta)} en el año: ≈ ${fmt(falta/12)} más de ganancia por mes (por ejemplo, un cliente nuevo de ese valor o bajar costos).`:''}</div></div></div>`:''}
+      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Próximos 12 meses</h3>
+        <div class="chips" style="margin-left:8px"><button class="chip ${projMode!=='acum'?'on':''}" onclick="Fin.projMode('mes')">Por mes</button><button class="chip ${projMode==='acum'?'on':''}" onclick="Fin.projMode('acum')">Acumulado vs. meta</button></div><span class="grow"></span>
         <span class="small muted">¿Y si sumamos un cliente de</span><input class="inp sm" type="number" style="width:130px" placeholder="$ por mes" value="${extraCliente||''}" onchange="Fin.whatIf(this.value)"><span class="small muted">?</span></div>
         <canvas id="ch-proj" height="95"></canvas>
-        <p class="xs faint" style="margin-top:10px">Barras claras: últimos 5 meses reales. Proyección = retainers vigentes + proyectos puntuales agendados − equipo − gastos fijos. Promedio de ingresos de los últimos meses: ${fmt(avgPast)}.</p></div>
-      <div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Mes</th><th style="text-align:right">Retainers</th><th style="text-align:right">Puntuales</th><th style="text-align:right">Gastos</th><th style="text-align:right">Ganancia</th></tr></thead><tbody>
-        ${fut.map(m=>`<tr><td class="b">${ymLabel(m.ym)}</td><td style="text-align:right">${fmt(m.ret)}${extraCliente&&m.ym>now?` <span class="xs" style="color:var(--green)">+${fmt(extraCliente)}</span>`:''}</td><td style="text-align:right">${m.proy?fmt(m.proy):'—'}</td><td style="text-align:right">${fmt(m.gas)}</td><td style="text-align:right;color:${m.neto>=0?'var(--blue-l)':'var(--red)'}" class="b">${fmt(m.neto)}</td></tr>`).join('')}</tbody></table></div>`,
+        <p class="xs faint" style="margin-top:10px">${projMode==='acum'
+          ? 'Línea verde: ganancia proyectada acumulada mes a mes. Línea amarilla punteada: la meta de ganancia repartida en los 12 meses. Si la verde va por debajo, no se llega.'
+          : `Barras claras: últimos 5 meses reales. Proyección = retainers vigentes + puntuales agendados − equipo − gastos fijos − comisiones. Línea amarilla: meta de ganancia por mes. Promedio de ingresos de los últimos meses: ${fmt(avgPast)}.`}</p></div>
+      <div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Mes</th><th style="text-align:right">Ingresos</th><th style="text-align:right">Equipo</th><th style="text-align:right">Fijos</th><th style="text-align:right">Comisiones</th><th style="text-align:right">Ganancia</th>${metaG?'<th style="text-align:right">Meta</th><th style="text-align:right">Diferencia</th>':''}</tr></thead><tbody>
+        ${fut.map(m=>`<tr><td class="b">${ymLabel(m.ym)}</td><td style="text-align:right;white-space:nowrap">${fmt(m.ing)}${m.proy?` <span class="xs faint">(${fmt(m.proy)} puntual)</span>`:''}${extraCliente&&m.ym>now?` <span class="xs" style="color:var(--green)">+${fmt(extraCliente)}</span>`:''}</td>${n(m.equipo)}${n(m.fijos)}${n(m.comis)}
+          <td style="text-align:right;color:${m.neto>=0?'var(--blue-l)':'var(--red)'}" class="b">${fmt(m.neto)}</td>${metaG?`${n(metaMes)}<td style="text-align:right;white-space:nowrap;color:${m.neto>=metaMes?'var(--green)':'var(--red)'}">${m.neto>=metaMes?'+':'−'} ${fmt(Math.abs(m.neto-metaMes))}</td>`:''}</tr>`).join('')}
+        <tr style="border-top:2px solid var(--border)"><td class="b">Total 12 meses</td>${n(tot('ing'))}${n(tot('equipo'))}${n(tot('fijos'))}${n(tot('comis'))}<td style="text-align:right" class="b">${fmt(gan12)}</td>${metaG?`${n(metaG)}<td style="text-align:right;white-space:nowrap;color:${gan12>=metaG?'var(--green)':'var(--red)'}" class="b">${gan12>=metaG?'+':'−'} ${fmt(Math.abs(gan12-metaG))}</td>`:''}</tr>
+      </tbody></table></div>`,
       after:()=>{ const ctx = $('#ch-proj'); if(!ctx || !window.Chart) return;
         const tk = { color:'#6b6b75', font:{ family:'Montserrat', size:10 } };
+        const opts = { responsive:true, interaction:{ mode:'index', intersect:false }, scales:{ x:{ grid:{ display:false }, ticks:tk }, y:{ grid:{ color:'rgba(128,128,128,.12)' }, ticks:{ ...tk, callback:v=>'$'+(v/1e6).toFixed(1)+'M' } } },
+          plugins:{ legend:{ labels:{ color:'#6b6b75', usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } };
+        if(projMode==='acum'){
+          charts.proj = new Chart(ctx, { type:'line', data:{ labels:acum.map(m=>ymLabel(m.ym,1)), datasets:[
+            { label:'Ganancia acumulada', data:acum.map(m=>m.g), borderColor:'#1e8e3e', backgroundColor:'rgba(30,142,62,.10)', fill:true, tension:.3, pointRadius:3, borderWidth:2.5 },
+            ...(metaG?[{ label:'Meta acumulada', data:acum.map(m=>m.meta), borderColor:'rgba(214,150,20,.95)', borderDash:[6,4], pointRadius:0, borderWidth:2 }]:[]),
+          ] }, options:opts });
+          return;
+        }
         charts.proj = new Chart(ctx, { type:'bar', data:{ labels:[...past.map(m=>ymLabel(m.ym,1)), ...fut.map(m=>ymLabel(m.ym,1))], datasets:[
           { label:'Ingresos', data:[...past.map(m=>m.ing), ...fut.map(m=>m.ing)], backgroundColor:[...past.map(()=>'rgba(26,115,232,.3)'), ...fut.map(()=>'rgba(26,115,232,.7)')], borderRadius:6, order:2 },
-          { label:'Gastos', data:[...past.map(m=>m.gas), ...fut.map(m=>m.gas)], backgroundColor:'rgba(232,72,74,.45)', borderRadius:6, order:2 },
-          { label:'Ganancia', data:[...past.map(m=>m.neto), ...fut.map(m=>m.neto)], type:'line', borderColor:'#2dca72', tension:.35, pointRadius:3, borderWidth:2.5, order:1 },
-          ...(meta?[{ label:'Meta mensual', data:[...past, ...fut].map(()=>meta/12), type:'line', borderColor:'rgba(232,184,74,.9)', borderDash:[6,4], pointRadius:0, borderWidth:2, order:0 }]:[]),
-        ] }, options:{ responsive:true, interaction:{ mode:'index', intersect:false }, scales:{ x:{ grid:{ display:false }, ticks:tk }, y:{ grid:{ color:'rgba(128,128,128,.12)' }, ticks:{ ...tk, callback:v=>'$'+(v/1e6).toFixed(1)+'M' } } },
-          plugins:{ legend:{ labels:{ color:'#6b6b75', usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } } }); } };
+          { label:'Costos', data:[...past.map(m=>m.gas), ...fut.map(m=>m.gas)], backgroundColor:'rgba(232,72,74,.45)', borderRadius:6, order:2 },
+          { label:'Ganancia', data:[...past.map(m=>m.neto), ...fut.map(m=>m.neto)], type:'line', borderColor:'#1e8e3e', tension:.35, pointRadius:3, borderWidth:2.5, order:1 },
+          ...(metaG?[{ label:'Meta de ganancia', data:[...past.map(()=>null), ...fut.map(()=>metaMes)], type:'line', borderColor:'rgba(214,150,20,.95)', borderDash:[6,4], pointRadius:0, borderWidth:2, order:0 }]:[]),
+        ] }, options:opts }); } };
   }
 
   // ── ✅ Cierre del mes (preguntas guiadas) ──────────────────────────────────
@@ -612,7 +638,13 @@
     pickClose(ym){ ciYm = ym; step = 0; render(); },
     step(n){ step = Math.max(0, Math.min(3, n)); render(); window.scrollTo(0,0); },
     whatIf(v){ extraCliente = +v||0; render(); },
-    setMeta(){ const v = prompt('Meta de facturación anual ($):', S.metas.facturacion||''); if(v!=null){ S.metas.facturacion = +v||0; save(); render(); } },
+    setMeta(){
+      UI.form({ title:'🎯 Metas', values:{ ganancia12:S.metas.ganancia12||'', facturacion:S.metas.facturacion||'' }, fields:[
+        { k:'ganancia12', label:'Meta de ganancia para los próximos 12 meses ($)', type:'number', placeholder:'Ej: 24000000', hint:'Lo que querés que quede (ingresos − costos) en un año. En Proyecciones se compara mes a mes con la ganancia proyectada.' },
+        { k:'facturacion', label:'Meta de facturación del año ($)', type:'number', placeholder:'Ej: 60000000', hint:'Lo que querés facturar en el año calendario.' },
+      ], onSubmit:v=>{ S.metas.ganancia12 = +v.ganancia12||0; S.metas.facturacion = +v.facturacion||0; save(); render(); UI.toast('Metas guardadas','🎯'); } });
+    },
+    projMode(m){ projMode = m; render(); },
     // ── Cambios (sirven igual desde Actualidad y desde el Cierre) ──
     cli(id,k,v){ const ym = ciYm, x = S.clientes.find(y=>String(y.id)===String(id)); if(!x) return; const r = cliRow(x, ym);
       if(k==='estuvo') setPaused(x.id, ym, !v);
@@ -867,7 +899,7 @@
       UI.modal(`<h2>⚙ Finanzas<button class="icon-btn x" data-close>✕</button></h2><div class="list">
         <div class="li click" onclick="Fin.backup()"><span>⇣</span><div class="grow"><div class="b">Descargar backup</div><div class="xs faint">Archivo .json con todos los datos de Finanzas</div></div></div>
         <label class="li click" style="cursor:pointer"><span>⇡</span><div class="grow"><div class="b">Restaurar backup</div><div class="xs faint">Cargá el archivo de la app anterior o de un backup</div></div><input type="file" accept=".json" style="display:none" onchange="Fin.restore(this)"></label>
-        <div class="li click" onclick="UI.close();Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
+        <div class="li click" onclick="UI.close();Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Metas (ganancia y facturación)</div></div></div>
         <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a></div>`);
     },
     backup(){ UI.download(`ANM_finanzas_${UI.today()}.json`, S); },

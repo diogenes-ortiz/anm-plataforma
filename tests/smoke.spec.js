@@ -325,3 +325,29 @@ test('Finanzas: freelance que cobra por cuenta, con desglose', async ({ page }) 
   await expect(page.locator('tr:has-text("Belu · freelance")').first()).toContainText('$70.000');
   expect(errores).toEqual([]);
 });
+
+test('Finanzas: proyecciones con costos y meta de ganancia editable', async ({ page }) => {
+  const errores = []; page.on('pageerror', e => errores.push(e.message));
+  await mockSupabase(page, { seed: { main: { clientes: [{ id:1, nombre:'Mipileta', tipo:'mensual', retainer:1000000, moneda:'ARS', estado:'activo', inicioServicio:'2026-01', retainerHistory:[{ monto:1000000, desde:'2026-01' }], empleadoIds:[] }],
+    empleados:[{ id:7, nombre:'Luli', sueldo:400000, estado:'activo', inicioLaboral:'2026-01', sueldoHistory:[{ monto:400000, desde:'2026-01' }] }], gastos:[], proyectos:[] } } });
+  await entrar(page);
+  await page.waitForTimeout(1000);
+  await page.goto('/finanzas.html');
+  await page.click('text=🔭 Proyecciones');
+  await page.click('text=Definir metas >> nth=0');
+  await page.fill('#f_ganancia12', '9600000');   // 800.000 por mes; la proyección da 600.000
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('text=no llegan a la meta de ganancia')).toBeVisible();
+  await expect(page.locator('#page')).toContainText('75%');
+  await expect(page.locator('th:has-text("Equipo")')).toBeVisible();
+  await page.click('text=Acumulado vs. meta');
+  await expect(page.locator('text=Meta acumulada').or(page.locator('text=Línea amarilla punteada'))).toBeVisible();
+  // se vuelve a editar
+  await page.click('text=Editar metas >> nth=0');
+  await expect(page.locator('#f_ganancia12')).toHaveValue('9600000');
+  await page.fill('#f_ganancia12', '7200000');
+  await page.click('#mform button[type=submit]');
+  await expect(page.locator('text=llegan a la meta de ganancia').first()).toBeVisible();
+  await expect(page.locator('#page')).toContainText('100%');
+  expect(errores).toEqual([]);
+});
