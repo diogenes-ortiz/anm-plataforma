@@ -899,11 +899,7 @@
       UI.modal(`<h2>⚙ Finanzas<button class="icon-btn x" data-close>✕</button></h2><div class="list">
         <div class="li click" onclick="Fin.backup()"><span>⇣</span><div class="grow"><div class="b">Descargar backup</div><div class="xs faint">Archivo .json con todos los datos de Finanzas</div></div></div>
         <label class="li click" style="cursor:pointer"><span>⇡</span><div class="grow"><div class="b">Restaurar backup</div><div class="xs faint">Cargá el archivo de la app anterior o de un backup</div></div><input type="file" accept=".json" style="display:none" onchange="Fin.restore(this)"></label>
-<<<<<<< HEAD
-        <div class="li click" onclick="UI.close(true);Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
-=======
-        <div class="li click" onclick="UI.close();Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Metas (ganancia y facturación)</div></div></div>
->>>>>>> diseno-claro
+        <div class="li click" onclick="UI.close(true);Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Metas (ganancia y facturación)</div></div></div>
         <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a></div>`);
     },
     backup(){ UI.download(`ANM_finanzas_${UI.today()}.json`, S); },
