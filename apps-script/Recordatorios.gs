@@ -5,6 +5,8 @@
  *   • resumenDiario()  → todos los días a la mañana: tareas vencidas, de hoy y próximas,
  *                        reuniones del día y seguimientos del CRM. A los socios, además,
  *                        un resumen del equipo (clientes sin actualizar, tareas vencidas).
+ *   • reporteCierre()  → todos los días a las 19 h, al dueño (Diogenes) y a info@: todas las tareas
+ *                        pendientes, ordenadas por empresa y por responsable.
  *   • avisosNuevos()   → cada hora: los avisos nuevos de la plataforma (tareas asignadas,
  *                        alertas mandadas con "Avisar", clientes en riesgo, nuevos clientes…).
  *
@@ -17,6 +19,7 @@
  *   4. Arriba elegí la función "instalar" y tocá ▶ Ejecutar. Aceptá los permisos que pide Google
  *      (leer datos externos y enviar mails como vos).
  *   5. Para probar: elegí "probarConmigo" y ▶ Ejecutar → te llega un resumen de ejemplo.
+ *      Para probar el reporte de las 19 h: elegí "probarReporte" y ▶ Ejecutar.
  * Cada persona necesita tener su email cargado en la plataforma (Equipo → Editar).
  */
 
@@ -24,6 +27,8 @@ const CONFIG = {
   SUPABASE_URL: 'https://pxsgqbldbdvbrfwqnvyl.supabase.co',
   PLATAFORMA: 'https://diogenes-ortiz.github.io/anm-plataforma/',
   HORA_RESUMEN: 8,              // hora del resumen diario (0-23)
+  HORA_REPORTE: 19,             // hora del reporte de cierre del día (solo al dueño)
+  REPORTE_COPIA: 'info@anmcontentstudio.com', // también recibe el reporte de cierre (vacío = nadie más)
   RESUMEN_FINDE: false,         // true = también sábados y domingos
   ZONA: 'America/Argentina/Buenos_Aires',
   REMITENTE: 'ANM Plataforma',  // nombre que aparece como remitente
@@ -33,10 +38,11 @@ const CONFIG = {
 function instalar() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('resumenDiario').timeBased().everyDays(1).atHour(CONFIG.HORA_RESUMEN).inTimezone(CONFIG.ZONA).create();
+  ScriptApp.newTrigger('reporteCierre').timeBased().everyDays(1).atHour(CONFIG.HORA_REPORTE).inTimezone(CONFIG.ZONA).create();
   ScriptApp.newTrigger('avisosNuevos').timeBased().everyHours(1).create();
   // No reenviar avisos viejos: arrancamos desde ahora
   PropertiesService.getScriptProperties().setProperty('avisos_desde', new Date().toISOString());
-  Logger.log('✅ Listo: resumen diario a las ' + CONFIG.HORA_RESUMEN + ' h y avisos cada hora.');
+  Logger.log('✅ Listo: resumen diario a las ' + CONFIG.HORA_RESUMEN + ' h, reporte de cierre a las ' + CONFIG.HORA_REPORTE + ' h y avisos cada hora.');
 }
 
 function desinstalar() {
@@ -99,7 +105,7 @@ function diasEntre(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Da
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 function fecha(ymd) { const [y, m, d] = ymd.slice(0, 10).split('-'); return Number(d) + ' ' + MESES[Number(m) - 1]; }
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const nombre = m => (m.name || '').split(' ')[0];
+const nombre = m => (m && (String(m.nick || '').trim() || (m.name || '').split(' ')[0])) || '';
 const quiereMails = m => m.email && m.emailReminders !== false;
 
 function cuerpo(titulo, contenido) {
@@ -109,14 +115,17 @@ function cuerpo(titulo, contenido) {
     '<div style="border:1px solid #e3e3e8;border-top:0;padding:22px 24px;border-radius:0 0 12px 12px;background:#fff">' +
     '<h2 style="margin:0 0 14px;font-size:19px">' + titulo + '</h2>' + contenido +
     '<p style="margin:26px 0 0"><a href="' + CONFIG.PLATAFORMA + '" style="background:#1A73E8;color:#fff;padding:11px 20px;border-radius:9px;text-decoration:none;font-weight:bold">Abrir la plataforma</a></p>' +
-    '<p style="color:#9a9aab;font-size:11px;margin-top:22px">Si no querés recibir estos mails, desactivalos en la plataforma: Ajustes → Mi perfil.</p></div></div>';
+    '<p style="color:#9a9aab;font-size:11px;margin-top:22px">Si no querés recibir estos mails, desactivalos en la plataforma: tocá tu nombre abajo a la izquierda → Editar mi perfil.</p></div></div>';
 }
 function bloque(titulo, color, items) {
   if (!items.length) return '';
   return '<h3 style="font-size:14px;margin:18px 0 6px;color:' + color + '">' + titulo + ' (' + items.length + ')</h3>' +
     '<ul style="margin:0;padding-left:18px;line-height:1.6;font-size:14px">' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
 }
+// Los caracteres especiales (acentos, emojis) se mandan como entidades HTML para que no se rompan
+const entidades = h => Array.from(String(h)).map(c => c.codePointAt(0) > 127 ? '&#' + c.codePointAt(0) + ';' : c).join('');
 function enviar(to, asunto, html) {
+  html = entidades(html);
   GmailApp.sendEmail(to, asunto, 'Abrí este mail en un cliente que muestre HTML: ' + CONFIG.PLATAFORMA, { htmlBody: html, name: CONFIG.REMITENTE });
 }
 
@@ -124,7 +133,7 @@ function enviar(to, asunto, html) {
 function armarResumen(m, d) {
   const t = hoy(), en3 = sumarDias(t, 3);
   const cliente = id => { const c = d.clients.find(x => x.id === id); return c ? c.name : 'Interna'; };
-  const abiertas = d.tasks.filter(x => x.status !== 'done' && x.assigneeId === m.id);
+  const abiertas = d.tasks.filter(x => x.status !== 'done' && (x.assigneeId === m.id || (x.alsoIds || []).indexOf(m.id) >= 0));
   const venc = abiertas.filter(x => x.due && x.due < t).sort((a, b) => a.due.localeCompare(b.due));
   const deHoy = abiertas.filter(x => x.due === t);
   const prox = abiertas.filter(x => x.due > t && x.due <= en3).sort((a, b) => a.due.localeCompare(b.due));
@@ -164,6 +173,73 @@ function resumenDiario() {
     try { const mail = armarResumen(m, d); if (mail) enviar(m.email, mail.asunto, mail.html); }
     catch (e) { Logger.log('Error con ' + m.name + ': ' + e); }
   });
+}
+
+// ── Reporte de cierre del día (19 h, solo al dueño) ─────────────────────────
+// Todas las tareas pendientes, agrupadas por empresa (con link para entrar directo al cliente).
+// Cada tarea en grande; abajo, más chico, el responsable y los involucrados. Sin emojis.
+function armarReporte(d) {
+  const t = hoy(), byId = {}; d.members.forEach(m => byId[m.id] = m);
+  const quien = id => byId[id] ? nombre(byId[id]) : 'Sin responsable';
+  const SIN = 'Interno / sin cliente';
+  const cli = id => d.clients.find(c => c.id === id);
+  const ST = { todo: 'Pendiente', doing: 'En curso', review: 'En revisión' };
+  const abiertas = d.tasks.filter(x => x.status !== 'done');
+  const vencidas = abiertas.filter(x => x.due && x.due < t);
+  // Resumen por persona (cuenta también a los involucrados)
+  const porPersona = {};
+  abiertas.forEach(x => { const ps = [x.assigneeId].concat(x.alsoIds || []).filter(Boolean); (ps.length ? ps : ['']).forEach(p => {
+    const k = quien(p); porPersona[k] = porPersona[k] || { n: 0, v: 0 }; porPersona[k].n++; if (x.due && x.due < t) porPersona[k].v++; }); });
+  const td = 'padding:5px 18px 5px 0;border-bottom:1px solid #f0f0f3';
+  const resumen = '<table style="border-collapse:collapse;font-size:13px;margin:4px 0 6px">' +
+    '<tr style="color:#5f5f6e"><td style="' + td + '"><b>Persona</b></td><td style="' + td + '"><b>Pendientes</b></td><td style="' + td + '"><b>Vencidas</b></td></tr>' +
+    Object.keys(porPersona).sort().map(k => '<tr><td style="' + td + '">' + esc(k) + '</td><td style="' + td + '">' + porPersona[k].n + '</td><td style="' + td + ';color:' + (porPersona[k].v ? '#d93025;font-weight:bold' : '#9a9aab') + '">' + porPersona[k].v + '</td></tr>').join('') + '</table>';
+  // Agrupar por empresa
+  const grupos = {};
+  abiertas.forEach(x => { const c = cli(x.clientId); const k = c ? c.id : ''; (grupos[k] = grupos[k] || { c: c, tareas: [] }).tareas.push(x); });
+  const orden = Object.keys(grupos).sort((a, b) => (a === '') - (b === '') || (grupos[a].c.name || '').localeCompare(grupos[b].c.name || ''));
+  const cuando = x => !x.due ? 'Sin fecha' : x.due < t ? '<b style="color:#d93025">Venció el ' + fecha(x.due) + '</b>' : x.due === t ? '<b style="color:#b06000">Vence hoy</b>' : 'Vence el ' + fecha(x.due);
+  const tarea = x => {
+    const inv = (x.alsoIds || []).filter(Boolean).map(quien);
+    return '<div style="padding:10px 0;border-bottom:1px solid #f0f0f3">' +
+      '<div style="font-size:16px;font-weight:bold;color:#18181c;line-height:1.35">' + esc(x.title) +
+      (x.priority === 'alta' ? ' <span style="background:#fde8e7;color:#d93025;font-size:11px;padding:2px 7px;border-radius:9px;vertical-align:2px">URGENTE</span>' : '') + '</div>' +
+      '<div style="font-size:12px;color:#5f5f6e;margin-top:3px">' + cuando(x) + ' &middot; ' + (ST[x.status || 'todo'] || 'Pendiente') +
+      ' &middot; Responsable: <b style="color:#3c3c46">' + esc(quien(x.assigneeId)) + '</b>' +
+      (inv.length ? ' &middot; Involucrados: ' + esc(inv.join(', ')) : '') + '</div></div>';
+  };
+  const detalle = orden.map(k => {
+    const g = grupos[k], nombreE = g.c ? g.c.name : SIN;
+    const link = g.c ? CONFIG.PLATAFORMA + '#/ops/cliente/' + g.c.id : '';
+    return '<div style="margin:26px 0 0">' +
+      '<table style="width:100%;border-collapse:collapse;border-bottom:2px solid #18181c"><tr>' +
+      '<td style="font-size:17px;font-weight:bold;padding:0 0 6px">' + esc(nombreE) + ' <span style="color:#9a9aab;font-weight:normal;font-size:14px">(' + g.tareas.length + ')</span></td>' +
+      (link ? '<td style="text-align:right;padding:0 0 6px;white-space:nowrap"><a href="' + link + '" style="color:#1A73E8;font-size:13px;font-weight:bold;text-decoration:none">Ver cliente &rarr;</a></td>' : '') +
+      '</tr></table>' +
+      g.tareas.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).map(tarea).join('') + '</div>';
+  }).join('');
+  const intro = '<p style="margin:0 0 10px;font-size:14px">Cierre del ' + fecha(t) + ': <b>' + abiertas.length + '</b> tareas pendientes' +
+    (vencidas.length ? ', <b style="color:#d93025">' + vencidas.length + ' vencidas</b>' : '') + '.</p>';
+  return { asunto: 'ANM - Tareas pendientes al cierre (' + fecha(t) + '): ' + abiertas.length + (vencidas.length ? ', ' + vencidas.length + ' vencidas' : ''),
+    html: cuerpo('Reporte de cierre del día', intro + (abiertas.length ? resumen + detalle : '<p>No quedan tareas pendientes.</p>')) };
+}
+// El dueño (👑) de la plataforma; si no está cargado, quien ejecuta el script
+function duenio(d) {
+  const o = d.members.find(m => m.owner && m.email);
+  return o ? o.email : (Session.getEffectiveUser().getEmail() || '');
+}
+function reporteCierre() {
+  const d = datos(), para = duenio(d);
+  if (!para) { Logger.log('No encontré el mail del dueño.'); return; }
+  const mail = armarReporte(d);
+  enviar(para, mail.asunto, mail.html);
+  if (CONFIG.REPORTE_COPIA && CONFIG.REPORTE_COPIA !== para) enviar(CONFIG.REPORTE_COPIA, mail.asunto, mail.html);
+}
+function probarReporte() {
+  const yo = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  const mail = armarReporte(datos());
+  enviar(yo, '[Prueba] ' + mail.asunto, mail.html);
+  Logger.log('Reporte de prueba enviado a ' + yo);
 }
 
 // ── Avisos nuevos (cada hora) ───────────────────────────────────────────────

@@ -99,26 +99,57 @@
   const enRango = (ini, fin, ym) => (!ini || ini<=ym) && (!fin || fin>=ym);
   const clearIn = (ym, g, id) => Object.keys(S.mes).filter(k=>k>=ym).forEach(k=>ovSet(k, g, id, { in:null }));
 
+  // Comisión: % del ingreso de un cliente/proyecto que va para otra persona (ej: quien lo trajo)
+  // (en clientes rige desde el mes en que se cargó, así los meses anteriores no cambian)
+  // Puede ser un % del total o un monto fijo por mes
+  const comOf = (x, ym) => { const c = x?.comision; return c && (+c.pct > 0 || +c.monto > 0) && (!c.desde || !ym || c.desde<=ym) ? { pct:+c.pct||0, fijo:+c.monto||0, para:c.para||'' } : null; };
+  const comMonto = (com, total) => com.fijo ? Math.round(com.fijo) : Math.round((+total||0)*com.pct/100);
+  const comTxt = com => com.fijo ? `${fmt(com.fijo)} fijo` : `${com.pct}%`;
+  // Campos del formulario de comisión y cómo se guardan
+  const comFields = c => [
+    { k:'comTipo', label:'Comisión', type:'select', default: c?.monto ? 'monto' : c?.pct ? 'pct' : '', half:true, options:[['','Sin comisión'],['pct','% del total'],['monto','Monto fijo ($)']], hint:'Si una parte de lo que paga va para otra persona.' },
+    { k:'comValor', label:'Cuánto (% o $)', type:'number', default: c?.monto || c?.pct || '', half:true, placeholder:'Ej: 10 o 15000' },
+    { k:'comPara', label:'¿Para quién?', default:c?.para||'', placeholder:'Ej: Juan (lo trajo)' } ];
+  const comFrom = (v, prev, ym) => { const n = +v.comValor||0; if(!v.comTipo || n<=0) return null;
+    const out = { para:(v.comPara||'').trim(), ...(v.comTipo==='monto' ? { monto:n } : { pct:n }) };
+    if(ym) out.desde = (prev && prev.desde && prev.desde<=ym) ? prev.desde : ym;
+    return out; };
   const cliCands = ym => S.clientes.filter(x=>(!(x.estado==='inactivo' && !x.finServicio) && enRango(x.inicioServicio, x.finServicio, ym)) || ovGet(ym,'cli',x.id).in);
   function cliRow(x, ym){
     const o = ovGet(ym,'cli',x.id), base = retainerAt(x, ym)+extrasOf(x.id, ym), monto = o.monto ?? base, cob = isCobrado(x.id, ym);
     const pendiente = cob ? 0 : o.pendiente!=null ? Math.min(+o.pendiente||0, monto) : monto;
-    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente };
+    return { id:x.id, nombre:x.nombre, tipo:x.tipo, moneda:x.moneda, estuvo:!paused(x.id, ym), monto, base, total:monto, cobrado: cob ? 'si' : o.pendiente!=null ? 'parcial' : 'no', pendiente, com:comOf(x, ym), rec:o.rec||null };
   }
   const proRows = ym => projectsOf(ym).filter(p=>!ovGet(ym,'pro',p.id).off).map(p=>{ const m = +p.monto||0, cob = p.estado==='cobrado', par = !cob && p.pendienteParcial!=null;
-    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m }; });
+    return { id:p.id, nombre:p.nombre, cliente:p.cliente, monto:m, costo:+p.empCosto||0, cobrado: cob ? 'si' : par ? 'parcial' : 'no', pendiente: cob ? 0 : par ? Math.min(+p.pendienteParcial||0, m) : m, com:comOf(p), rec:ovGet(ym,'pro',p.id).rec||null }; });
   const eqCands = ym => S.empleados.filter(e=>!isSocio(e) && ((!(e.estado==='inactivo' && !e.finLaboral) && enRango(e.inicioLaboral, e.finLaboral, ym)) || ovGet(ym,'eq',e.id).in));
-  const eqRow = (e, ym) => { const base = sueldoAt(e, ym), o = ovGet(ym,'eq',e.id); return { id:e.id, nombre:e.nombre, base, monto:o.monto ?? base, incluir:!S.skips.includes(ckey('skip', e.id, ym)) }; };
+  // Freelance por cuenta: cobra un $ fijo o un % del fee de cada cliente que trabaja (solo si ese cliente está ese mes)
+  // (rige desde el mes en que se configuró, así los meses anteriores no cambian)
+  const esFree = (e, ym) => e.pago==='cuenta' && (!ym || !e.pagoDesde || e.pagoDesde<=ym);
+  function porCuenta(e, ym){
+    const det = (e.porCuenta||[]).map(pc=>{
+      const c = S.clientes.find(x=>String(x.id)===String(pc.clienteId)); if(!c) return null;
+      const activo = cliCands(ym).some(x=>x.id===c.id) && !paused(c.id, ym); if(!activo) return null;
+      const fee = cliRow(c, ym).monto, monto = pc.tipo==='pct' ? Math.round(fee*(+pc.valor||0)/100) : Math.round(+pc.valor||0);
+      return { c, fee, monto, txt: pc.tipo==='pct' ? `${pc.valor}% de ${fmt(fee)}` : 'fijo' };
+    }).filter(Boolean);
+    return { det, total: det.reduce((s,x)=>s+x.monto,0) };
+  }
+  const eqRow = (e, ym) => { const pc = esFree(e, ym) ? porCuenta(e, ym) : null, base = pc ? pc.total : sueldoAt(e, ym), o = ovGet(ym,'eq',e.id);
+    return { id:e.id, nombre:e.nombre, base, monto:o.monto ?? base, incluir:!S.skips.includes(ckey('skip', e.id, ym)), free:!!pc,
+      det: pc ? pc.det.map(x=>`${x.c.nombre} ${fmt(x.monto)}${x.txt!=='fijo'?` (${x.txt})`:''}`).join(' + ') || 'Sin cuentas este mes' : '' }; };
   const fjRows = ym => S.gastos.filter(g=>gastoMensual(g) && enRango(g.desde, g.hasta, ym)).map(g=>{ const base = Math.round(gastoMensual(g)), o = ovGet(ym,'fj',g.id); return { id:g.id, concepto:g.concepto, base, monto:o.monto ?? base, incluir:!o.off }; });
 
   function month(ym){
     const c = S.cierres[ym] || null;
     const cli = cliCands(ym).map(x=>cliRow(x, ym)).filter(x=>x.estuvo);
     const pro = proRows(ym);
-    const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre, monto:x.monto, pagado:!!ovGet(ym,'eq',x.id).pagado })),
+    const gastos = [...eqCands(ym).map(e=>eqRow(e, ym)).filter(x=>x.incluir).map(x=>({ grupo:'Equipo', kind:'eq', id:x.id, concepto:x.nombre + (x.free?' · freelance':''), det:x.det, monto:x.monto, pagado:!!ovGet(ym,'eq',x.id).pagado })),
       ...fjRows(ym).filter(x=>x.incluir).map(x=>({ grupo:'Fijos', kind:'fj', id:x.id, concepto:x.concepto, monto:x.monto })),
       ...(c?.extras||[]).map((x,i)=>({ grupo:'Extras del mes', kind:'ex', id:i, concepto:x.concepto, monto:+x.monto||0 })),
-      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo }))];
+      ...pro.filter(p=>p.costo).map(p=>({ grupo:'Costo de proyectos', kind:'pc', id:p.id, concepto:`${p.nombre} (${p.cliente})`, monto:p.costo })),
+      ...cli.filter(x=>x.com).map(x=>({ grupo:'Comisiones', kind:'cm', id:x.id, concepto:`${x.com.para||'Comisión'} · ${comTxt(x.com)} de ${x.nombre}`, monto:comMonto(x.com, x.total) })),
+      ...pro.filter(p=>p.com).map(p=>({ grupo:'Comisiones', kind:'cmp', id:p.id, concepto:`${p.com.para||'Comisión'} · ${comTxt(p.com)} de ${p.cliente} (${p.nombre})`, monto:comMonto(p.com, p.monto) }))];
     return build(ym, cli, pro, gastos, !!c?.closedAt, c);
   }
 
@@ -173,12 +204,108 @@
 
   // ── Render general ──────────────────────────────────────────────────────────
   function render(){
-    if(tab!=='proyecciones') tab = 'actualidad';   // todo se carga en Actualidad (ya no hay cierre del mes aparte)
-    $('#tabs').innerHTML = [['actualidad','📊 Actualidad'],['proyecciones','🔭 Proyecciones']].map(([k,l])=>
+    if(!['proyecciones','capacidad'].includes(tab)) tab = 'actualidad';   // todo se carga en Actualidad (ya no hay cierre del mes aparte)
+    $('#tabs').innerHTML = [['actualidad','📊 Actualidad'],['proyecciones','🔭 Proyecciones'],['capacidad','👥 Capacidad']].map(([k,l])=>
       `<a href="#" class="${tab===k?'active':''}" onclick="Fin.go('${k}');return false">${l}</a>`).join('');
     Object.values(charts).forEach(c=>c.destroy?.()); charts = {};
-    const v = tab==='proyecciones' ? viewProjections() : viewNow();
+    const v = tab==='proyecciones' ? viewProjections() : tab==='capacidad' ? viewCapacity() : viewNow();
     $('#page').innerHTML = v.html; v.after?.();
+  }
+
+
+  // ── 📈 Inflación vs. precios y sueldos (se revisa cada 3 meses) ─────────────
+  // Datos del INDEC (IPC mensual) desde una API pública y gratuita; si no responde, se cargan a mano.
+  const INFL_CADA = 3;   // meses entre revisiones
+  const infl = () => S.inflacion || (S.inflacion = {});
+  async function inflFetch(silencio){
+    try{
+      const r = await fetch('https://api.argentinadatos.com/v1/finanzas/indices/inflacion', { cache:'no-store' });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const rows = await r.json(); let n = 0;
+      rows.forEach(x=>{ const ym = String(x.fecha||'').slice(0,7), v = +x.valor; if(/^\d{4}-\d{2}$/.test(ym) && isFinite(v) && infl()[ym]!==v){ infl()[ym] = v; n++; } });
+      S.inflacionAt = new Date().toISOString(); if(n) save();
+      if(!silencio) UI.toast(n ? `Inflación actualizada (${n} mes${n!==1?'es':''})` : 'La inflación ya estaba al día','📈');
+      render();
+    }catch(e){ if(!silencio) UI.toast('No pude traer la inflación automáticamente: cargala a mano','⚠️'); }
+  }
+  const inflUlt = () => Object.keys(infl()).sort().pop() || '';
+  // Inflación acumulada desde el mes "desde" (incluido) hasta el último dato
+  function inflDesde(desde){
+    const ks = Object.keys(infl()).filter(k=>k>=desde).sort(); if(!ks.length) return { pct:0, meses:0 };
+    return { pct: (ks.reduce((f,k)=>f*(1+(+infl()[k]||0)/100), 1) - 1) * 100, meses:ks.length };
+  }
+  const ultCambio = (hist, ini) => { const h = (hist||[]).filter(x=>x.desde<=UI.ym()).sort((a,b)=>b.desde.localeCompare(a.desde))[0]; return h ? h.desde : (ini || UI.ym()); };
+  const tocaRevisar = () => { const r = S.inflRevisadoAt; return !r || ymAdd(r.slice(0,7), INFL_CADA) <= UI.ym(); };
+  function inflAviso(){
+    if(!tocaRevisar() || cursor!==UI.ym()) return '';
+    return `<div class="small muted" style="margin:-4px 0 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">📈 Toca la revisión trimestral de precios y sueldos contra la inflación.
+      <a href="#infl" onclick="document.getElementById('infl').open=true">Ver recomendación</a></div>`;
+  }
+  function inflCard(){
+    const ult = inflUlt(), last6 = Object.keys(infl()).sort().slice(-6), tri = last6.slice(-INFL_CADA);
+    const acTri = tri.length ? (tri.reduce((f,k)=>f*(1+(+infl()[k]||0)/100),1)-1)*100 : 0;
+    const p1 = v => (Math.round(v*10)/10).toLocaleString('es-AR')+'%';
+    const fila = (nombre, actual, desde) => { const a = inflDesde(desde), sug = Math.round(actual*(1+a.pct/100)/1000)*1000;
+      return `<tr><td>${esc(nombre)}</td><td style="text-align:right">${fmt(actual)}</td><td class="xs faint">${ymLabel(desde,1)}</td><td style="text-align:right;color:${a.pct>=10?'var(--red)':a.pct>=5?'var(--yellow)':'inherit'}">${a.meses?p1(a.pct):'—'}</td><td style="text-align:right" class="b">${a.pct>0.5?fmt(sug):'—'}</td></tr>`; };
+    const clientes = S.clientes.filter(c=>c.estado!=='inactivo' && !(c.finServicio && c.finServicio<UI.ym())).map(c=>({ n:c.nombre, a:retainerAt(c, UI.ym()), d:ultCambio(c.retainerHistory, c.inicioServicio) })).filter(x=>x.a>0);
+    const sueldos = S.empleados.filter(e=>e.estado!=='inactivo' && !isSocio(e) && !esFree(e, UI.ym())).map(e=>({ n:e.nombre, a:sueldoAt(e, UI.ym()), d:ultCambio(e.sueldoHistory, e.inicioLaboral) })).filter(x=>x.a>0);
+    const tabla = (titulo, rows, col) => rows.length ? `<div class="xs faint b" style="letter-spacing:1px;margin:14px 0 6px">${titulo}</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${col}</th><th style="text-align:right">Hoy</th><th>Último aumento</th><th style="text-align:right">Inflación desde entonces</th><th style="text-align:right">Recomendado</th></tr></thead>
+      <tbody>${rows.sort((a,b)=>inflDesde(b.d).pct-inflDesde(a.d).pct).map(x=>fila(x.n, x.a, x.d)).join('')}</tbody></table></div>` : '';
+    return `<details id="infl" class="card" style="margin-top:20px"><summary style="cursor:pointer;list-style:none" class="row"><span class="b">📈 Inflación y precios</span><span class="grow"></span>
+        <span class="xs faint">${ult?`último dato: ${ymLabel(ult)} ${p1(+infl()[ult])} · últimos ${INFL_CADA} meses ${p1(acTri)}`:'sin datos'}${tocaRevisar()?' · <b style="color:var(--blue)">toca revisar</b>':''}</span></summary>
+      <div style="margin-top:12px">
+        <div class="row wrap" style="gap:6px;margin-bottom:6px">${last6.map(k=>`<span class="tag" title="Tocá para corregir" style="cursor:pointer" onclick="Fin.inflEdit('${k}')">${ymLabel(k,1)}: ${p1(+infl()[k])}</span>`).join('') || '<span class="small faint">Todavía no hay datos de inflación.</span>'}</div>
+        <div class="row wrap" style="gap:8px;margin:8px 0"><button class="btn xs g" onclick="Fin.inflTraer()">⟳ Traer del INDEC</button><button class="btn xs g" onclick="Fin.inflEdit()">＋ Cargar un mes a mano</button>
+          ${tocaRevisar()?`<button class="btn xs p" onclick="Fin.inflRevisado()">✓ Ya lo revisé (avisame en ${INFL_CADA} meses)</button>`:`<span class="xs faint">Próxima revisión: ${ymLabel(ymAdd(S.inflRevisadoAt.slice(0,7), INFL_CADA))}</span>`}</div>
+        <p class="xs faint">“Recomendado” = el precio de hoy actualizado por la inflación acumulada desde el último aumento (redondeado a miles). Es una guía: vos decidís cuánto y cuándo aumentar.</p>
+        ${tabla('💰 FEES DE CLIENTES', clientes, 'Cliente')}
+        ${tabla('👥 SUELDOS DEL EQUIPO', sueldos, 'Persona')}
+      </div></details>`;
+  }
+
+  // ── 👥 Capacidad del equipo: ¿quién está saturado y cuándo hay que contratar? ──
+  // Se calcula con los datos de Operaciones: clientes que trabaja cada persona y sus tareas abiertas.
+  const UNIT_LBL = { social:'Social Media', pauta:'Pauta', branding:'Branding', web:'Web', contenido:'Producción de contenido', otros:'Otros' };
+  const CAP_DEF = 6;   // clientes que una persona puede llevar bien, por defecto
+  function capData(){
+    if(!window.Store) return null;
+    const ms = Store.all('team','members'), cs = Store.all('ops','clients').filter(c=>c.active!==false), ts = Store.all('ops','tasks').filter(t=>t.status!=='done');
+    if(!ms.length) return null;
+    const t = UI.today(), en7 = UI.addDays(t, 7);
+    const units = (Store.get('team','settings','units')?.value || []).reduce((o,u)=>(o[u.id]=u.label, o), { ...UNIT_LBL });
+    const gente = ms.map(m=>{
+      const cl = cs.filter(c=>c.ownerId===m.id || (c.teamIds||[]).includes(m.id));
+      const mine = ts.filter(x=>x.assigneeId===m.id || (x.alsoIds||[]).includes(m.id));
+      const cap = +m.capClientes || CAP_DEF, carga = Math.round(cl.length/cap*100);
+      const venc = mine.filter(x=>x.due && x.due<t).length, semana = mine.filter(x=>x.due && x.due>=t && x.due<=en7).length;
+      const presion = carga + Math.min(40, venc*8);   // las vencidas suman presión
+      return { m, cl, cap, carga, abiertas:mine.length, venc, semana, presion };
+    }).sort((a,b)=>b.presion-a.presion);
+    const porUnidad = Object.keys(units).map(u=>{
+      const cli = cs.filter(c=>(c.units||[]).includes(u)), quien = gente.filter(g=>(g.m.units||[]).includes(u));
+      const cap = quien.reduce((s,g)=>s+g.cap,0);
+      return { u, label:units[u], cli:cli.length, quien, cap, carga: cap ? Math.round(cli.length/cap*100) : (cli.length ? 999 : 0) };
+    }).filter(x=>x.cli || x.quien.length).sort((a,b)=>b.carga-a.carga);
+    return { gente, porUnidad };
+  }
+  const semaforo = p => p>=100 ? ['var(--red)','🔴','Saturado: hay que sumar a alguien'] : p>=80 ? ['var(--yellow)','🟡','Al límite'] : ['var(--green)','🟢','Con espacio'];
+  function viewCapacity(){
+    const D = capData();
+    if(!D) return { html:`<div class="empty">Para ver la capacidad, entrá primero a la plataforma (así se cargan el equipo y los clientes de Operaciones) y volvé a Finanzas.</div>` };
+    const bar = (p, color) => `<div class="bar" style="height:8px;margin-top:6px"><div style="width:${Math.min(100,p)}%;background:${color}"></div></div>`;
+    const urg = D.porUnidad.filter(x=>x.carga>=100);
+    return { html:`
+      <p class="small muted" style="margin-bottom:16px">Cuántos clientes lleva cada persona contra lo que puede llevar bien (su <b>capacidad</b>, editable con ✎), más la presión de las tareas vencidas. Sirve para ver si alguien está saturado y cuándo conviene contratar.</p>
+      ${urg.length?`<div class="alert danger" style="margin-bottom:18px"><div class="ai">🚨</div><div class="grow"><div class="at">Contratar o redistribuir: ${urg.map(x=>esc(x.label)).join(', ')}</div><div class="ad">${urg.map(x=>`${esc(x.label)}: ${x.cli} clientes para ${x.quien.length?`${x.quien.length} persona${x.quien.length>1?'s':''} (capacidad ${x.cap})`:'nadie asignado'}`).join(' · ')}</div></div></div>`:''}
+      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Por área</h3><span class="sub">clientes ÷ capacidad de quienes trabajan esa área</span></div>
+        <div class="list">${D.porUnidad.map(x=>{ const [c,ic,txt] = semaforo(x.carga); return `<div class="li"><div class="grow"><div class="row"><span class="b">${esc(x.label)}</span><span class="grow"></span><span class="small b" style="color:${c}">${ic} ${x.carga>=999?'sin nadie':x.carga+'%'}</span></div>
+          <div class="xs faint">${x.cli} cliente${x.cli!==1?'s':''} · ${x.quien.length?x.quien.map(g=>esc(g.m.nick||g.m.name.split(' ')[0])).join(', ')+` (capacidad ${x.cap})`:'nadie tiene esta área en su perfil'} · ${txt}</div>${bar(x.carga>=999?100:x.carga, c)}</div></div>`; }).join('') || '<div class="small faint">Cargá las unidades de cada cliente y de cada persona en la plataforma.</div>'}</div></div>
+      <div class="grid g-auto">${D.gente.map(g=>{ const [c,ic,txt] = semaforo(g.presion);
+        return `<div class="card"><div class="row" style="margin-bottom:8px"><span class="b grow">${esc(g.m.name)}</span><span class="b" style="color:${c}">${ic} ${g.carga}%</span></div>
+          <div class="small">${g.cl.length} de ${g.cap} clientes <a href="#" class="xs" title="Editar capacidad" onclick="Fin.capEdit('${g.m.id}');return false">✎</a></div>${bar(g.carga, c)}
+          <div class="grid g3 small" style="gap:6px;margin-top:10px"><div><div class="b">${g.abiertas}</div><div class="xs faint">tareas abiertas</div></div><div><div class="b">${g.semana}</div><div class="xs faint">vencen en 7 días</div></div><div><div class="b" style="color:${g.venc?'var(--red)':'inherit'}">${g.venc}</div><div class="xs faint">vencidas</div></div></div>
+          <div class="xs faint" style="margin-top:8px">${txt}${g.cl.length?' · '+g.cl.map(x=>esc(x.name)).join(', '):''}</div></div>`; }).join('')}</div>` };
   }
 
   // ── 📊 Actualidad ───────────────────────────────────────────────────────────
@@ -191,7 +318,7 @@
       .map(r=>({ ...r, suma:r.total+r.proyMonto, queda:(+r.pendiente||0)+r.proyPend })).sort((a,b)=>b.suma-a.suma);
     const groups = {}; M.gastos.forEach(g=>{ (groups[g.grupo] = groups[g.grupo]||[]).push(g); });
     const cobroTag = r => r.queda ? `<span class="tag t-yellow">Falta ${fmt(r.queda)}</span>` : '<span class="tag t-green">Cobrado ✓</span>';
-    return { html:`
+    return { html:`${inflAviso()}
       <div class="toolbar"><button class="btn g sm" onclick="Fin.move(-1)">‹</button><div class="b" style="font-size:18px;min-width:170px;text-align:center">${ymLabel(cursor)}</div><button class="btn g sm" onclick="Fin.move(1)">›</button>
         <span class="grow"></span>${cursor!==UI.ym()?`<button class="btn g sm" onclick="Fin.hoy()">Ir a este mes</button>`:''}<button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button></div>
       ${(()=>{ const prev = S.proyectos.filter(p=>p.estado!=='cobrado' && p.fecha && p.fecha.slice(0,7)<cursor && isOneShot(p)); return prev.length ? `<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>⏳ Pendientes de cobro de meses anteriores</h3><span class="sub">${fmt(prev.reduce((s,p)=>s+(+(p.pendienteParcial ?? p.monto) || 0),0))}</span></div><div class="list">
@@ -214,19 +341,19 @@
           ${cliView==='mes'?'<p class="xs faint" style="margin-top:8px">Tocá el monto ✎ para cambiarlo (solo este mes o desde este mes en adelante).</p>':''}</div>
         <div class="card"><div class="card-h"><h3>💸 Gastos del mes</h3><span class="sub">${fmt(M.gas)}</span></div>
           ${Object.keys(groups).length?Object.entries(groups).map(([k,v])=>`<div class="xs faint b" style="margin:12px 0 4px">${esc(k.toUpperCase())} · ${fmt(v.reduce((s,g)=>s+g.monto,0))}</div>
-            ${v.map(g=>`<div class="row small" style="padding:5px 0;border-bottom:1px solid var(--border)"><span class="grow">${esc(g.concepto)}</span><b>${fmt(g.monto)}</b></div>`).join('')}`).join(''):'<div class="empty small">Sin gastos cargados</div>'}
+            ${v.map(g=>`<div class="row small" style="padding:5px 0;border-bottom:1px solid var(--border)"><span class="grow">${esc(g.concepto)}${g.det?`<div class="xs faint">${esc(g.det)}</div>`:''}</span><b>${fmt(g.monto)}</b></div>`).join('')}`).join(''):'<div class="empty small">Sin gastos cargados</div>'}
           <div class="xs faint b" style="margin:18px 0 6px">📝 NOTAS DEL MES</div>
           <div class="fld"><label>Saldo real en cuentas (opcional)</label><input class="inp sm" type="number" step="any" value="${M.cierre?.answers?.saldo??''}" onchange="Fin.nota('saldo',this.value)"></div>
           <div class="fld"><label>¿Algo importante? (bajas, aumentos, imprevistos)</label><textarea class="inp" rows="3" onchange="Fin.nota('notas',this.value)">${esc(M.cierre?.answers?.notas||'')}</textarea></div></div>
-      </div>`, after:()=>{ const w = document.getElementById('mpm'); if(w) w.scrollLeft = w.scrollWidth; } };
+      </div>${inflCard()}`, after:()=>{ const w = document.getElementById('mpm'); if(w) w.scrollLeft = w.scrollWidth; } };
   }
 
   // ── 🧮 La cuenta del mes: ingresos − sueldos − gastos = queda → agencia → socios ──
   // Reparto: primero se separa el % de la agencia y lo que queda se divide entre los socios.
   const reparto = () => { const r = S.reparto || {}; return { agencia: r.agencia ?? 20, socios: (r.socios && r.socios.length) ? r.socios : [{ nombre:'Dio', pct:50 }, { nombre:'Santi', pct:50 }] }; };
   function cuentaDe(M){
-    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado })),
-      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado }))];
+    const ing = [...M.cli.map(x=>({ kind:'c', id:x.id, nombre:x.nombre, det:TIPO[x.tipo]||'Mensual', monto:+x.total||0, entro:(+x.total||0)-(+x.pendiente||0), cob:x.cobrado, com:x.com, rec:x.rec })),
+      ...M.pro.map(p=>({ kind:'p', id:p.id, nombre:p.cliente||p.nombre, det:'Puntual · '+(p.nombre||''), monto:+p.monto||0, entro:(+p.monto||0)-(+p.pendiente||0), cob:p.cobrado, com:p.com, rec:p.rec }))];
     const R = reparto(), sum = (a,k) => a.reduce((s,x)=>s+x[k],0);
     const tot = { debe:sum(ing,'monto'), entro:sum(ing,'entro') }, gas = M.gas;
     const calc = base => { const queda = base - gas, ag = Math.max(0, queda) * R.agencia/100, soc = Math.max(0, queda) - ag;
@@ -240,15 +367,18 @@
     const sg = v => v<0 ? '− '+fmt(-v) : fmt(v);
     const sec = t => `<tr><td colspan="4" class="xs faint b" style="letter-spacing:1px;padding-top:16px">${t}</td></tr>`;
     const tot2 = (l, a, b, color, big) => `<tr style="border-top:2px solid var(--border)${big?';font-size:15px':''}"><td class="b"${color?` style="color:${color}"`:''}>${l}</td><td></td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(a)}</td><td style="text-align:right;white-space:nowrap${color?';color:'+color:''}" class="b">${sg(b)}</td></tr>`;
-    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`;
+    const tag = x => `<button class="tag ${x.cob==='si'?'t-green':x.cob==='parcial'?'t-yellow':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.cobro('${x.kind}','${x.id}')">${x.cob==='si'?'✓ Pagó':x.cob==='parcial'?'Pagó una parte':'✗ No pagó'}</button>`
+      + (x.cob==='si' ? '' : `<div style="margin-top:4px">${x.rec
+          ? `<button class="tag t-blue" style="border:0;cursor:pointer" title="Recordatorio enviado el ${UI.fdate(x.rec.slice(0,10),{abs:true})}. Tocá para desmarcar." onclick="Fin.recordar('${x.kind}','${x.id}')">🔔 Recordado ${UI.fdate(x.rec.slice(0,10),{abs:true})}</button>`
+          : `<button class="tag" style="border:1px dashed var(--border);cursor:pointer;background:none" title="Copia un mensaje de recordatorio de pago y lo marca como enviado" onclick="Fin.recordar('${x.kind}','${x.id}')">🔕 Sin recordar · Recordar</button>`}</div>`);
     return `<div class="card" style="margin-bottom:20px"><div class="card-h"><h3>🧮 La cuenta del mes</h3><span class="sub">${ymLabel(M.ym)}</span><span class="grow"></span>
         <button class="btn g sm" onclick="Fin.addFijo2()">＋ Ingreso fijo</button><button class="btn g sm" onclick="Fin.addPuntual()">＋ Proyecto / puntual</button><button class="btn ok sm" onclick="Fin.wpp()">💬 Exportar a WhatsApp</button><button class="btn g sm" onclick="Fin.editReparto()">⚙ Reparto</button></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Concepto</th><th>¿Pagó?</th><th style="text-align:right">Si cobramos todo</th><th style="text-align:right">Con lo cobrado</th></tr></thead><tbody>
         ${sec('💰 LO QUE ENTRA DE CLIENTES')}
-        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
+        ${ing.length ? ing.map(x=>`<tr><td><div class="b">${esc(x.nombre)} <a href="#" class="xs" style="text-decoration:none" title="Editar monto" onclick="Fin.editIngreso('${x.kind}','${x.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="${x.kind==='c'?'Sacar de este mes':'Eliminar'}" onclick="Fin.quitar('${x.kind}','${x.id}');return false">🗑</a></div><div class="xs faint">${esc(x.det)}${x.com?` · <span class="tag t-purple" style="font-size:11px" title="Se descuenta abajo, en Comisiones">💸 Comisión ${comTxt(x.com)}${x.com.para?' → '+esc(x.com.para):''}: ${fmt(comMonto(x.com, x.monto))}</span>`:''}</div></td><td>${tag(x)}</td>${n(x.monto)}${n(x.entro)}</tr>`).join('') : '<tr><td colspan="4" class="small faint">Sin ingresos cargados este mes. Usá “＋ Ingreso fijo” o “＋ Proyecto / puntual”.</td></tr>'}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind==='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('c','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         ${tot2('Total ingresos', tot.debe, tot.entro, 'var(--green)')}
-        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a></td><td>${g.kind==='eq'?`<button class="tag ${g.pagado?'t-green':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.pagoEq('${g.id}')">${g.pagado?'✓ Pagado':'✗ No pagado'}</button>`:''}</td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
+        ${Object.entries(groups).map(([k,v])=>`${sec((k==='Equipo'?'👥 SUELDOS':'💸 '+k.toUpperCase()))}${v.map(g=>`<tr><td>${esc(g.concepto)} <a href="#" class="xs" style="text-decoration:none" title="Editar" onclick="Fin.editGasto('${g.kind}','${g.id}');return false">✎</a> <a href="#" class="xs" style="text-decoration:none" title="Sacar / eliminar" onclick="Fin.quitar('${g.kind}','${g.id}');return false">🗑</a>${g.det?`<div class="xs faint">${esc(g.det)}</div>`:''}</td><td>${g.kind==='eq'?`<button class="tag ${g.pagado?'t-green':'t-red'}" style="border:0;cursor:pointer" title="Tocá para cambiar" onclick="Fin.pagoEq('${g.id}')">${g.pagado?'✓ Pagado':'✗ No pagado'}</button>`:''}</td>${n(g.monto,1)}${n(g.monto,1)}</tr>`).join('')}`).join('')}
         ${(()=>{ const q = quitados(M.ym).filter(x=>x.kind!=='c'); return q.length ? `<tr><td colspan="4" class="xs faint">Sacados de este mes: ${q.map(c=>`${esc(c.nombre)} <a href="#" onclick="Fin.volver('${c.kind}','${c.id}');return false">volver a sumar</a>`).join(' · ')}</td></tr>` : ''; })()}
         <tr><td colspan="4"><button class="btn g xs" onclick="Fin.addGasto()">＋ Gasto / sueldo</button></td></tr>
         ${(()=>{ const f = M.gastos.filter(g=>g.kind==='eq' && !g.pagado); return f.length ? `<tr><td colspan="4" class="xs" style="color:var(--yellow)">Falta pagar sueldos: ${f.map(g=>`${esc(g.concepto)} ${fmt(g.monto)}`).join(' · ')} — total ${fmt(f.reduce((s,g)=>s+g.monto,0))}</td></tr>` : ''; })()}
@@ -257,7 +387,8 @@
         ${sec('🏢 REPARTO')}
         <tr><td>Para la agencia (${R.agencia}%)</td><td></td>${n(A.ag)}${n(B.ag)}</tr>
         <tr><td class="b">Para los socios</td><td></td>${n(A.soc)}${n(B.soc)}</tr>
-        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td></td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
+        ${A.socios.map((x,i)=>`<tr style="font-size:15px"><td class="b">👤 ${esc(x.nombre)} <span class="xs faint">(${x.pct}% de los socios)</span></td><td>${(()=>{ const pg = ovGet(M.ym,'soc',x.nombre).pagado;
+          return `<button class="tag ${pg?'t-green':'t-red'}" style="border:0;cursor:pointer" title="${pg?'Tocá para desmarcar':'Tocá para marcar que se le pagó'}" onclick="Fin.pagoSocio(${esc(JSON.stringify(x.nombre))})">${pg?`✓ Pagado ${UI.fdate(pg,{abs:true})}`:'✗ No pagado'}</button>`; })()}</td><td style="text-align:right" class="b">${fmt(x.monto)}</td><td style="text-align:right;color:var(--green)" class="b">${fmt(B.socios[i].monto)}</td></tr>`).join('')}
       </tbody></table></div>
       ${A.queda<0?`<div class="alert warn" style="margin-top:12px"><div class="ai">⚠️</div><div class="ad">Este mes los sueldos y gastos superan lo que entra: no queda para repartir.</div></div>`:''}
       ${tot.debe>tot.entro?`<p class="xs faint" style="margin-top:10px">Falta cobrar ${fmt(tot.debe-tot.entro)}. “Con lo cobrado” es lo que se puede repartir hoy; “Si cobramos todo”, lo que queda cuando paguen todos. Tocá ✓/✗ para marcar quién pagó.</p>`:''}
@@ -280,7 +411,7 @@
     L.push(`💰 Ingresos: *${fmt(tot.debe)}*`, `💸 Sueldos y gastos: *${fmt(M.gas)}*`, `🟰 Queda: *${fmt(A.queda)}*`);
     if(tot.debe>tot.entro) L.push(`   _(con lo cobrado hasta hoy: ${fmt(B.queda)})_`);
     L.push('', '*Reparto*', `🏢 Agencia (${R.agencia}%): ${fmt(A.ag)}`);
-    A.socios.forEach((x,i)=>L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''}`));
+    A.socios.forEach((x,i)=>{ const pg = ovGet(M.ym,'soc',x.nombre).pagado; L.push(`👤 ${x.nombre}: *${fmt(x.monto)}*${tot.debe>tot.entro?` _(hoy ${fmt(B.socios[i].monto)})_`:''} ${pg?`✅ pagado ${UI.fdate(pg,{abs:true})}`:'⏳ sin pagar'}`); });
     if(modo==='completo'){
       L.push('', `*Clientes* (${fmt(tot.entro)} cobrado de ${fmt(tot.debe)})`);
       ing.forEach(x=>L.push(`${ic(x.cob)} ${x.nombre}${x.kind==='p'?' _(puntual)_':''}: ${fmt(x.monto)}${x.cob==='parcial'?` _(falta ${fmt(x.monto-x.entro)})_`:''}`));
@@ -289,7 +420,7 @@
     }
     if(debeCli.length || debeEq.length){
       L.push('', '*Pendientes*');
-      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre).join(', ')}`);
+      if(debeCli.length) L.push(`⏳ Falta cobrar ${fmt(debeCli.reduce((s,x)=>s+x.monto-x.entro,0))}: ${debeCli.map(x=>x.nombre+(x.rec?' (🔔 ya recordado)':'')).join(', ')}`);
       if(debeEq.length) L.push(`⏳ Falta pagar ${fmt(debeEq.reduce((s,g)=>s+g.monto,0))}: ${debeEq.map(g=>g.concepto).join(', ')}`);
     } else L.push('', '🎉 Todo cobrado y todo pagado.');
     const notas = M.cierre?.answers?.notas; if(notas) L.push('', `📝 ${notas}`);
@@ -318,48 +449,74 @@
     <p class="xs faint" style="margin-top:8px">Mensual del cliente; en azul, proyectos puntuales de ese mes. ▲▼ = cambió respecto del mes anterior. ✓ = mes cerrado. Tocá un monto para editarlo.</p>`;
   }
 
-  let extraCliente = 0;
+  let extraCliente = 0, projMode = 'mes';
   function viewProjections(){
     const now = UI.ym(), past = [], fut = [];
     for(let i=5;i>=1;i--) past.push(month(ymAdd(now,-i)));
-    const fijos = S.gastos.reduce((s,g)=>s+gastoMensual(g),0);
     for(let i=0;i<12;i++){
       const ym = ymAdd(now,i);
-      const ret = S.clientes.filter(c=>vigente(c, ym) || (i>0 && !c.finServicio && c.estado!=='inactivo' && (!c.inicioServicio || c.inicioServicio<=ym))).reduce((s,c)=>s+retainerAt(c, ym),0);
+      const activos = S.clientes.filter(c=>vigente(c, ym) || (i>0 && !c.finServicio && c.estado!=='inactivo' && (!c.inicioServicio || c.inicioServicio<=ym)));
+      const ret = activos.reduce((s,c)=>s+retainerAt(c, ym),0);
       const proy = S.proyectos.filter(p=>p.fecha && p.fecha.slice(0,7)===ym && isOneShot(p)).reduce((s,p)=>s+(+p.monto||0),0);
-      const equipo = S.empleados.filter(e=>empActivo(e, ym) || (i>0 && !isSocio(e) && e.estado!=='inactivo' && !e.finLaboral)).reduce((s,e)=>s+sueldoAt(e, ym),0);
+      const emps = S.empleados.filter(e=>empActivo(e, ym) || (i>0 && !isSocio(e) && e.estado!=='inactivo' && !e.finLaboral));
+      const equipo = emps.reduce((s,e)=>s+(esFree(e, ym) ? porCuenta(e, ym).total : sueldoAt(e, ym)),0);
       const fijosMes = fjRows(ym).filter(g=>g.incluir).reduce((s,g)=>s+g.monto,0);
-      const ing = ret + proy + (i>0?extraCliente:0), gas = equipo + fijosMes;
-      fut.push({ ym, ret, proy, ing, gas, neto:ing-gas });
+      const comis = activos.reduce((s,c)=>{ const k = comOf(c, ym); return s + (k ? comMonto(k, retainerAt(c, ym)) : 0); },0);
+      const ing = ret + proy + (i>0?extraCliente:0), gas = equipo + fijosMes + comis;
+      fut.push({ ym, ret, proy, ing, equipo, fijos:fijosMes, comis, gas, neto:ing-gas });
     }
     const tot = k => fut.reduce((s,m)=>s+m[k],0);
     const avgPast = past.length ? past.reduce((s,m)=>s+m.ing,0)/past.length : 0;
-    const meta = +S.metas?.facturacion || 0;
+    const meta = +S.metas?.facturacion || 0, metaG = +S.metas?.ganancia12 || 0, metaMes = metaG/12;
     const yearNow = now.slice(0,4), ytd = [...Array(+now.slice(5)).keys()].map(i=>month(`${yearNow}-${String(i+1).padStart(2,'0')}`).ing).reduce((a,b)=>a+b,0);
     const restYear = fut.filter(m=>m.ym.startsWith(yearNow) && m.ym>now).reduce((s,m)=>s+m.ing,0);
-    const breakEven = fut[0].gas;
+    const breakEven = fut[0].gas, gan12 = tot('neto'), pctMeta = metaG ? Math.round(gan12/metaG*100) : null;
+    const falta = metaG ? Math.max(0, metaG - gan12) : 0;
+    // Acumulado: ganancia proyectada vs. la meta repartida en 12 meses
+    let acG = 0; const acum = fut.map((m,i)=>({ ym:m.ym, g:(acG += m.neto), meta:metaMes*(i+1) }));
+    const cumple = fut.filter(m=>metaG && m.neto>=metaMes).length;
+    const edit = `<a href="#" class="xs" onclick="Fin.setMeta();return false">✎ ${metaG||meta?'Editar metas':'Definir metas'}</a>`;
+    const n = v => `<td style="text-align:right;white-space:nowrap">${v?fmt(v):'—'}</td>`;
     return { html:`
       <div class="grid g4" style="margin-bottom:20px">
         <div class="card kpi"><div class="l">Ingreso mensual asegurado</div><div class="v" style="color:var(--green)">${fmt(fut[0].ret)}</div><div class="s">retainers de clientes activos</div></div>
-        <div class="card kpi"><div class="l">Costo mensual fijo</div><div class="v" style="color:var(--red)">${fmt(breakEven)}</div><div class="s">equipo + gastos fijos (punto de equilibrio)</div></div>
-        <div class="card kpi"><div class="l">Ganancia próximos 12 meses</div><div class="v" style="color:var(--blue-l)">${fmt(tot('neto'))}</div><div class="s">≈ ${fmt(tot('neto')/12)} por mes</div></div>
-        <div class="card kpi"><div class="l">Cierre de ${yearNow} estimado</div><div class="v">${fmt(ytd+restYear)}</div><div class="s">${meta?`Meta ${fmt(meta)} · ${Math.round((ytd+restYear)/meta*100)}%`:`<a href="#" onclick="Fin.setMeta();return false">Definir meta anual</a>`}</div></div>
+        <div class="card kpi"><div class="l">Costo mensual</div><div class="v" style="color:var(--red)">${fmt(breakEven)}</div><div class="s">equipo ${fmt(fut[0].equipo)} · fijos ${fmt(fut[0].fijos)}${fut[0].comis?` · comisiones ${fmt(fut[0].comis)}`:''}</div></div>
+        <div class="card kpi"><div class="l">Ganancia próximos 12 meses</div><div class="v" style="color:var(--blue-l)">${fmt(gan12)}</div>
+          <div class="s">${metaG?`Meta ${fmt(metaG)} · <b style="color:${pctMeta>=100?'var(--green)':pctMeta>=80?'var(--yellow)':'var(--red)'}">${pctMeta}%</b>${falta?` · faltan ${fmt(falta)}`:' ✓'}`:`≈ ${fmt(gan12/12)} por mes`} · ${edit}</div>
+          ${metaG?`<div class="bar" style="margin-top:8px"><div style="width:${Math.min(100,pctMeta)}%;background:${pctMeta>=100?'var(--green)':pctMeta>=80?'var(--yellow)':'var(--red)'}"></div></div>`:''}</div>
+        <div class="card kpi"><div class="l">Cierre de ${yearNow} estimado</div><div class="v">${fmt(ytd+restYear)}</div><div class="s">${meta?`Meta de facturación ${fmt(meta)} · ${Math.round((ytd+restYear)/meta*100)}%`:'Facturación del año'} · ${edit}</div></div>
       </div>
-      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Próximos 12 meses</h3><span class="grow"></span>
+      ${metaG?`<div class="alert ${pctMeta>=100?'info':'warn'}" style="margin-bottom:18px"><div class="ai">🎯</div><div class="grow"><div class="at">${pctMeta>=100?'Con lo que hay hoy, llegan a la meta de ganancia':'Con lo que hay hoy, no llegan a la meta de ganancia'}</div>
+        <div class="ad">Meta: ${fmt(metaMes)} por mes. ${cumple} de 12 meses la cumplen.${falta?` Para llegar faltan ${fmt(falta)} en el año: ≈ ${fmt(falta/12)} más de ganancia por mes (por ejemplo, un cliente nuevo de ese valor o bajar costos).`:''}</div></div></div>`:''}
+      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Próximos 12 meses</h3>
+        <div class="chips" style="margin-left:8px"><button class="chip ${projMode!=='acum'?'on':''}" onclick="Fin.projMode('mes')">Por mes</button><button class="chip ${projMode==='acum'?'on':''}" onclick="Fin.projMode('acum')">Acumulado vs. meta</button></div><span class="grow"></span>
         <span class="small muted">¿Y si sumamos un cliente de</span><input class="inp sm" type="number" style="width:130px" placeholder="$ por mes" value="${extraCliente||''}" onchange="Fin.whatIf(this.value)"><span class="small muted">?</span></div>
         <canvas id="ch-proj" height="95"></canvas>
-        <p class="xs faint" style="margin-top:10px">Barras claras: últimos 5 meses reales. Proyección = retainers vigentes + proyectos puntuales agendados − equipo − gastos fijos. Promedio de ingresos de los últimos meses: ${fmt(avgPast)}.</p></div>
-      <div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Mes</th><th style="text-align:right">Retainers</th><th style="text-align:right">Puntuales</th><th style="text-align:right">Gastos</th><th style="text-align:right">Ganancia</th></tr></thead><tbody>
-        ${fut.map(m=>`<tr><td class="b">${ymLabel(m.ym)}</td><td style="text-align:right">${fmt(m.ret)}${extraCliente&&m.ym>now?` <span class="xs" style="color:var(--green)">+${fmt(extraCliente)}</span>`:''}</td><td style="text-align:right">${m.proy?fmt(m.proy):'—'}</td><td style="text-align:right">${fmt(m.gas)}</td><td style="text-align:right;color:${m.neto>=0?'var(--blue-l)':'var(--red)'}" class="b">${fmt(m.neto)}</td></tr>`).join('')}</tbody></table></div>`,
+        <p class="xs faint" style="margin-top:10px">${projMode==='acum'
+          ? 'Línea verde: ganancia proyectada acumulada mes a mes. Línea amarilla punteada: la meta de ganancia repartida en los 12 meses. Si la verde va por debajo, no se llega.'
+          : `Barras claras: últimos 5 meses reales. Proyección = retainers vigentes + puntuales agendados − equipo − gastos fijos − comisiones. Línea amarilla: meta de ganancia por mes. Promedio de ingresos de los últimos meses: ${fmt(avgPast)}.`}</p></div>
+      <div class="card tbl-wrap"><table class="tbl"><thead><tr><th>Mes</th><th style="text-align:right">Ingresos</th><th style="text-align:right">Equipo</th><th style="text-align:right">Fijos</th><th style="text-align:right">Comisiones</th><th style="text-align:right">Ganancia</th>${metaG?'<th style="text-align:right">Meta</th><th style="text-align:right">Diferencia</th>':''}</tr></thead><tbody>
+        ${fut.map(m=>`<tr><td class="b">${ymLabel(m.ym)}</td><td style="text-align:right;white-space:nowrap">${fmt(m.ing)}${m.proy?` <span class="xs faint">(${fmt(m.proy)} puntual)</span>`:''}${extraCliente&&m.ym>now?` <span class="xs" style="color:var(--green)">+${fmt(extraCliente)}</span>`:''}</td>${n(m.equipo)}${n(m.fijos)}${n(m.comis)}
+          <td style="text-align:right;color:${m.neto>=0?'var(--blue-l)':'var(--red)'}" class="b">${fmt(m.neto)}</td>${metaG?`${n(metaMes)}<td style="text-align:right;white-space:nowrap;color:${m.neto>=metaMes?'var(--green)':'var(--red)'}">${m.neto>=metaMes?'+':'−'} ${fmt(Math.abs(m.neto-metaMes))}</td>`:''}</tr>`).join('')}
+        <tr style="border-top:2px solid var(--border)"><td class="b">Total 12 meses</td>${n(tot('ing'))}${n(tot('equipo'))}${n(tot('fijos'))}${n(tot('comis'))}<td style="text-align:right" class="b">${fmt(gan12)}</td>${metaG?`${n(metaG)}<td style="text-align:right;white-space:nowrap;color:${gan12>=metaG?'var(--green)':'var(--red)'}" class="b">${gan12>=metaG?'+':'−'} ${fmt(Math.abs(gan12-metaG))}</td>`:''}</tr>
+      </tbody></table></div>`,
       after:()=>{ const ctx = $('#ch-proj'); if(!ctx || !window.Chart) return;
         const tk = { color:'#6b6b75', font:{ family:'Montserrat', size:10 } };
+        const opts = { responsive:true, interaction:{ mode:'index', intersect:false }, scales:{ x:{ grid:{ display:false }, ticks:tk }, y:{ grid:{ color:'rgba(128,128,128,.12)' }, ticks:{ ...tk, callback:v=>'$'+(v/1e6).toFixed(1)+'M' } } },
+          plugins:{ legend:{ labels:{ color:'#6b6b75', usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } };
+        if(projMode==='acum'){
+          charts.proj = new Chart(ctx, { type:'line', data:{ labels:acum.map(m=>ymLabel(m.ym,1)), datasets:[
+            { label:'Ganancia acumulada', data:acum.map(m=>m.g), borderColor:'#1e8e3e', backgroundColor:'rgba(30,142,62,.10)', fill:true, tension:.3, pointRadius:3, borderWidth:2.5 },
+            ...(metaG?[{ label:'Meta acumulada', data:acum.map(m=>m.meta), borderColor:'rgba(214,150,20,.95)', borderDash:[6,4], pointRadius:0, borderWidth:2 }]:[]),
+          ] }, options:opts });
+          return;
+        }
         charts.proj = new Chart(ctx, { type:'bar', data:{ labels:[...past.map(m=>ymLabel(m.ym,1)), ...fut.map(m=>ymLabel(m.ym,1))], datasets:[
           { label:'Ingresos', data:[...past.map(m=>m.ing), ...fut.map(m=>m.ing)], backgroundColor:[...past.map(()=>'rgba(26,115,232,.3)'), ...fut.map(()=>'rgba(26,115,232,.7)')], borderRadius:6, order:2 },
-          { label:'Gastos', data:[...past.map(m=>m.gas), ...fut.map(m=>m.gas)], backgroundColor:'rgba(232,72,74,.45)', borderRadius:6, order:2 },
-          { label:'Ganancia', data:[...past.map(m=>m.neto), ...fut.map(m=>m.neto)], type:'line', borderColor:'#2dca72', tension:.35, pointRadius:3, borderWidth:2.5, order:1 },
-          ...(meta?[{ label:'Meta mensual', data:[...past, ...fut].map(()=>meta/12), type:'line', borderColor:'rgba(232,184,74,.9)', borderDash:[6,4], pointRadius:0, borderWidth:2, order:0 }]:[]),
-        ] }, options:{ responsive:true, interaction:{ mode:'index', intersect:false }, scales:{ x:{ grid:{ display:false }, ticks:tk }, y:{ grid:{ color:'rgba(128,128,128,.12)' }, ticks:{ ...tk, callback:v=>'$'+(v/1e6).toFixed(1)+'M' } } },
-          plugins:{ legend:{ labels:{ color:'#6b6b75', usePointStyle:true } }, tooltip:{ callbacks:{ label:c=>' '+c.dataset.label+': '+fmt(c.raw) } } } } }); } };
+          { label:'Costos', data:[...past.map(m=>m.gas), ...fut.map(m=>m.gas)], backgroundColor:'rgba(232,72,74,.45)', borderRadius:6, order:2 },
+          { label:'Ganancia', data:[...past.map(m=>m.neto), ...fut.map(m=>m.neto)], type:'line', borderColor:'#1e8e3e', tension:.35, pointRadius:3, borderWidth:2.5, order:1 },
+          ...(metaG?[{ label:'Meta de ganancia', data:[...past.map(()=>null), ...fut.map(()=>metaMes)], type:'line', borderColor:'rgba(214,150,20,.95)', borderDash:[6,4], pointRadius:0, borderWidth:2, order:0 }]:[]),
+        ] }, options:opts }); } };
   }
 
   // ── ✅ Cierre del mes (preguntas guiadas) ──────────────────────────────────
@@ -449,17 +606,45 @@
   // ── Acciones ────────────────────────────────────────────────────────────────
   const syncPend = x => { if(x.cobrado==='si') x.pendiente = 0; else if(x.cobrado==='no') x.pendiente = +x.monto||0; else if(+x.pendiente>+x.monto) x.pendiente = +x.monto; };
   window.Fin = {
+    inflTraer(){ inflFetch(false); },
+    inflEdit(ym){
+      UI.form({ title:'📈 Inflación de un mes', values:{ ym: ym || ymAdd(UI.ym(),-1), v: ym ? infl()[ym] : '' }, fields:[
+        { k:'ym', label:'Mes', type:'month', req:true, half:true }, { k:'v', label:'Inflación (%)', type:'number', req:true, half:true, placeholder:'Ej: 2.7' },
+      ], danger: ym ? { label:'Borrar', fn:()=>{ delete infl()[ym]; save(); render(); } } : null,
+      onSubmit:v=>{ infl()[v.ym] = +v.v||0; save(); render(); } });
+    },
+    inflRevisado(){ S.inflRevisadoAt = new Date().toISOString(); save(); render(); UI.toast(`Listo, te aviso de nuevo en ${INFL_CADA} meses`,'📈'); },
+    capEdit(mid){
+      const m = Store.get('team','members',mid); if(!m) return;
+      UI.form({ title:`Capacidad de ${m.name}`, values:{ cap:m.capClientes||CAP_DEF }, fields:[
+        { k:'cap', label:'¿Cuántos clientes puede llevar bien a la vez?', type:'number', req:true, hint:'Depende del tipo de trabajo: alguien de pauta o diseño puede llevar distinto que social media.' },
+      ], onSubmit:v=>{ Store.upsert('team','members',{ id:mid, capClientes:Math.max(1, +v.cap||CAP_DEF) }); render(); } });
+    },
     go(t){ tab = t; if(t==='cierre' && !ciYm) step = 0; render(); window.scrollTo(0,0); },
     move(n){ cursor = ymAdd(cursor, n); render(); },
     hoy(){ cursor = UI.ym(); render(); },
     // Sueldo pagado / no pagado en el mes que se está viendo
+    // Si ya se les pagó a los socios ese mes y cuándo
+    pagoSocio(nombre){
+      const ym = cursor, cur = ovGet(ym,'soc',nombre).pagado;
+      if(cur){ if(confirm(`¿Desmarcar el pago a ${nombre} de ${ymLabel(ym)}?`)){ ovSet(ym,'soc',nombre,{ pagado:null }); touch(ym); render(); } return; }
+      UI.form({ title:`💸 Pago a ${nombre} · ${ymLabel(ym)}`, submit:'Marcar como pagado', values:{ fecha:UI.today() }, fields:[
+        { k:'fecha', label:'¿Cuándo se le pagó?', type:'date', req:true },
+      ], onSubmit:v=>{ ovSet(ym,'soc',nombre,{ pagado:v.fecha }); touch(ym); render(); UI.toast(`Pago a ${nombre} marcado (${UI.fdate(v.fecha,{abs:true})})`,'💸'); } });
+    },
     pagoEq(id){ const ym = cursor; ovSet(ym,'eq',id,{ pagado: ovGet(ym,'eq',id).pagado ? null : true }); touch(ym); render(); },
     nota(k,v){ const c = draft(cursor); c.answers[k] = k==='saldo' ? (v===''?'':+v) : v; touch(cursor); },
     startClose(ym){ ciYm = ym; step = 0; tab = 'cierre'; render(); window.scrollTo(0,0); },
     pickClose(ym){ ciYm = ym; step = 0; render(); },
     step(n){ step = Math.max(0, Math.min(3, n)); render(); window.scrollTo(0,0); },
     whatIf(v){ extraCliente = +v||0; render(); },
-    setMeta(){ const v = prompt('Meta de facturación anual ($):', S.metas.facturacion||''); if(v!=null){ S.metas.facturacion = +v||0; save(); render(); } },
+    setMeta(){
+      UI.form({ title:'🎯 Metas', values:{ ganancia12:S.metas.ganancia12||'', facturacion:S.metas.facturacion||'' }, fields:[
+        { k:'ganancia12', label:'Meta de ganancia para los próximos 12 meses ($)', type:'number', placeholder:'Ej: 24000000', hint:'Lo que querés que quede (ingresos − costos) en un año. En Proyecciones se compara mes a mes con la ganancia proyectada.' },
+        { k:'facturacion', label:'Meta de facturación del año ($)', type:'number', placeholder:'Ej: 60000000', hint:'Lo que querés facturar en el año calendario.' },
+      ], onSubmit:v=>{ S.metas.ganancia12 = +v.ganancia12||0; S.metas.facturacion = +v.facturacion||0; save(); render(); UI.toast('Metas guardadas','🎯'); } });
+    },
+    projMode(m){ projMode = m; render(); },
     // ── Cambios (sirven igual desde Actualidad y desde el Cierre) ──
     cli(id,k,v){ const ym = ciYm, x = S.clientes.find(y=>String(y.id)===String(id)); if(!x) return; const r = cliRow(x, ym);
       if(k==='estuvo') setPaused(x.id, ym, !v);
@@ -492,6 +677,17 @@
       UI.form({ title:`＋ Gasto · ${ymLabel(ym)}`, submit:'Siguiente', fields:[ { k:'t', label:'¿Qué tipo de gasto?', type:'select', options:[['ex',`Gasto extra (solo ${ymLabel(ym)})`],['fj',`Gasto fijo (todos los meses desde ${ymLabel(ym)})`],['eq','Sueldo de una persona nueva']] } ],
         onSubmit:v=>{ setTimeout(()=>Fin[{ ex:'addEx', fj:'addFijo', eq:'addEq' }[v.t]](ym), 60); } }); },
     // Marca si un cliente/proyecto pagó (en el mes que se está viendo)
+    // Recordatorio de pago: copia un mensaje listo para WhatsApp/mail y lo marca como enviado (por mes)
+    recordar(kind, id){
+      const ym = cursor, g = kind==='c' ? 'cli' : 'pro', cur = ovGet(ym, g, id).rec;
+      if(cur){ if(confirm('¿Desmarcar el recordatorio de este mes?')){ ovSet(ym, g, id, { rec:null }); touch(ym); render(); } return; }
+      const M = month(ym), x = kind==='c' ? M.cli.find(y=>String(y.id)===String(id)) : M.pro.find(y=>String(y.id)===String(id)); if(!x) return;
+      const debe = +x.pendiente || (kind==='c' ? x.total : x.monto);
+      const quien = kind==='c' ? x.nombre : (x.cliente||x.nombre);
+      UI.copy(`¡Hola! ¿Cómo va? Te escribimos de ANM para recordarte el pago de ${kind==='c' ? ymLabel(ym) : `“${x.nombre}”`}: ${fmt(debe)}. Cualquier cosa nos avisás. ¡Gracias! 🙌`);
+      ovSet(ym, g, id, { rec:new Date().toISOString() }); touch(ym); render();
+      UI.toast(`Mensaje copiado y marcado: ya le recordaste a ${quien}`,'🔔');
+    },
     cobro(kind, id){
       const ym = cursor;
       if(kind==='c'){ setCobro(id, ym, !isCobrado(id, ym)); ovSet(ym,'cli',id,{ pendiente:null }); }
@@ -534,6 +730,8 @@
     // 🗑 Sacar algo de un mes, darlo de baja o eliminarlo (mismo efecto en Actualidad y en el Cierre)
     quitar(kind, id, ymArg){
       const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
+      if(kind==='cm' || kind==='cmp'){ const x = (kind==='cm' ? S.clientes : S.proyectos).find(sid); if(!x) return;
+        if(confirm(`¿Sacar la comisión de ${x.nombre||x.cliente}? (deja de descontarse en todos los meses)`)){ x.comision = null; touch(ym); render(); UI.toast('Comisión sacada','🗑'); } return; }
       const nm = kind==='c' ? S.clientes.find(sid)?.nombre : kind==='eq' ? S.empleados.find(sid)?.nombre : kind==='fj' ? S.gastos.find(sid)?.concepto
         : kind==='ex' ? S.cierres[ym]?.extras?.[+id]?.concepto : (()=>{ const p = S.proyectos.find(sid); return p ? `${p.cliente} · ${p.nombre}` : ''; })();
       const opts = {
@@ -550,7 +748,7 @@
         if(kind==='fj'){ const g = S.gastos.find(sid); if(k==='mes') ovSet(ym,'fj',id,{ off:true }); else if(g){ if(g.desde && g.desde>=ym) S.gastos = S.gastos.filter(x=>!sid(x)); else g.hasta = ymAdd(ym,-1); } }
         if(kind==='p' || kind==='pc') S.proyectos = S.proyectos.filter(x=>!sid(x));
         if(kind==='ex') S.cierres[ym]?.extras?.splice(+id, 1);
-        UI.close(); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
+        UI.close(true); touch(ym); render(); UI.toast(k==='mes' ? `Sacado de ${L}` : k==='baja' ? `De baja desde ${L}` : 'Eliminado','🗑'); });
     },
     quitarMes(id, ymArg){ Fin.quitar('c', id, ymArg); },
     volver(kind, id, ymArg){ const ym = ymArg || cursor;
@@ -564,9 +762,11 @@
         UI.form({ title:`✎ ${c.nombre} · ${ymLabel(ym)}`, submit:'Guardar', fields:[
           { k:'monto', label:`Monto de ${ymLabel(ym)}`, type:'number', default:r.monto, req:true },
           { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${ymLabel(ym)} en adelante (nuevo precio)`],['solo',`Solo ${ymLabel(ym)} (los demás meses quedan igual)`]] },
+          ...comFields(c.comision),
           ...((c.retainerHistory||[]).length ? [{ k:'h', type:'html', html:`<div class="xs faint" style="margin-top:4px"><b>Historial de precios:</b> ${[...c.retainerHistory].sort((a,b)=>a.desde.localeCompare(b.desde)).map(h=>`${ymLabel(h.desde,1)} ${fmt(h.monto)}`).join(' → ')}</div>` }] : []),
         ], danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('c', id, ym), 60) },
         onSubmit:v=>{ const monto = +v.monto||0;
+          c.comision = comFrom(v, c.comision, ym);
           if(v.alcance==='solo') ovSet(ym,'cli',c.id,{ monto: monto===r.base ? null : monto });
           else {
             const base = monto - extrasOf(c.id, ym);
@@ -583,22 +783,50 @@
           { k:'cliente', label:'Cliente', default:p.cliente, half:true, req:true }, { k:'nombre', label:'Proyecto', default:p.nombre, half:true, req:true },
           { k:'monto', label:'Monto', type:'number', default:p.monto, req:true, half:true }, { k:'costo', label:'Costo (freelance)', type:'number', default:p.empCosto, half:true },
           { k:'fecha', label:'Fecha (define el mes)', type:'date', default:p.fecha },
+          ...comFields(p.comision),
         ], danger:{ label:'🗑 Eliminar', confirm:'¿Eliminar este ingreso puntual?', fn:()=>{ S.proyectos = S.proyectos.filter(x=>!sid(x)); touch(ym); render(); } },
-        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha }); touch(ym); render(); } });
+        onSubmit:v=>{ Object.assign(p, { cliente:v.cliente, nombre:v.nombre, monto:+v.monto||0, empCosto:+v.costo||0, fecha:v.fecha||p.fecha, comision: comFrom(v, p.comision) }); touch(ym); render(); } });
       }
     },
     editGasto(kind, id, ymArg){
       const ym = ymArg || cursor, L = ymLabel(ym), sid = x => String(x.id)===String(id);
       const alc = { k:'alcance', label:'¿Desde cuándo?', type:'select', options:[['adelante',`Desde ${L} en adelante`],['solo',`Solo ${L} (los demás meses quedan igual)`]] };
-      if(kind==='pc') return Fin.editIngreso('p', id, ym);
+      if(kind==='pc' || kind==='cmp') return Fin.editIngreso('p', id, ym);
+      if(kind==='cm') return Fin.editIngreso('c', id, ym);
       if(kind==='eq'){ const e = S.empleados.find(sid); if(!e) return; const r = eqRow(e, ym);
-        return UI.form({ title:`✎ ${e.nombre} · ${L}`, submit:'Guardar', fields:[ { k:'monto', label:`Sueldo de ${L}`, type:'number', default:r.monto, req:true }, alc ],
+        // Tabla de cuentas (freelance): una fila por cliente activo, con $ fijo o % del fee
+        const activos = cliCands(ym).filter(c=>!paused(c.id, ym));
+        const pcOf = cid => (e.porCuenta||[]).find(x=>String(x.clienteId)===String(cid));
+        const tablaCuentas = `<div id="pc-box" style="${esFree(e)?'':'display:none'}"><div class="xs faint b" style="letter-spacing:1px;margin:6px 0">¿CUÁNTO COBRA DE CADA CUENTA?</div>
+          <div class="list">${activos.map(c=>{ const pc = pcOf(c.id) || {}; return `<div class="li" data-cid="${esc(String(c.id))}" style="gap:8px;flex-wrap:wrap">
+            <label class="check grow"><input type="checkbox" class="pc-on" ${pc.clienteId!=null?'checked':''}> <b class="small">${esc(c.nombre)}</b> <span class="xs faint">fee ${fmt(cliRow(c, ym).monto)}</span></label>
+            <select class="inp sm pc-tipo" style="width:auto"><option value="monto" ${pc.tipo!=='pct'?'selected':''}>$ fijo</option><option value="pct" ${pc.tipo==='pct'?'selected':''}>% del fee</option></select>
+            <input class="inp sm pc-val" type="number" step="any" style="width:110px" value="${esc(pc.valor ?? '')}" placeholder="Ej: 50000 o 20"></div>`; }).join('') || '<div class="small faint">No hay clientes activos este mes.</div>'}</div>
+          <p class="xs faint" style="margin-top:6px">Se calcula solo cada mes: si un cliente no está ese mes, no se le paga esa cuenta.</p></div>`;
+        const box = UI.form({ title:`✎ ${e.nombre} · ${L}`, submit:'Guardar', fields:[
+          { k:'pago', label:'¿Cómo cobra?', type:'select', default:e.pago||'fijo', options:[['fijo','Sueldo fijo por mes'],['cuenta','Freelance: cobra por cada cuenta']] },
+          { k:'monto', label:`Sueldo de ${L}`, type:'number', default:r.monto, req:!esFree(e) }, alc,
+          { k:'pc', type:'html', html:tablaCuentas } ],
           danger:{ label:'🗑 Sacar / dar de baja', fn:()=>setTimeout(()=>Fin.quitar('eq', id, ym), 60) },
-          onSubmit:v=>{ const n = +v.monto||0;
+          onSubmit:(v, bx)=>{
+            if(v.pago==='cuenta'){
+              if(e.pago!=='cuenta' || !e.pagoDesde || e.pagoDesde>ym) e.pagoDesde = ym;
+              e.pago = 'cuenta';
+              e.porCuenta = [...bx.querySelectorAll('[data-cid]')].filter(row=>row.querySelector('.pc-on').checked && +row.querySelector('.pc-val').value>0)
+                .map(row=>({ clienteId: (S.clientes.find(c=>String(c.id)===row.dataset.cid)||{}).id, tipo:row.querySelector('.pc-tipo').value, valor:+row.querySelector('.pc-val').value }));
+              // Las cuentas de clientes que no están este mes se conservan
+              Object.keys(S.mes).filter(k=>k>=ym && !closed(k)).forEach(k=>ovSet(k,'eq',e.id,{ monto:null }));
+              touch(ym); render(); return;
+            }
+            if(e.pago==='cuenta'){ e.pago = 'fijo'; }
+            const n = +v.monto||0;
             if(v.alcance==='solo') ovSet(ym,'eq',e.id,{ monto: n===r.base ? null : n });
             else { e.sueldoHistory = (e.sueldoHistory||[]).filter(h=>h.desde<ym); e.sueldoHistory.push({ monto:n, desde:ym, nota:'Editado' }); e.sueldo = n;
               Object.keys(S.mes).filter(k=>k>=ym && !closed(k)).forEach(k=>ovSet(k,'eq',e.id,{ monto:null })); }
-            touch(ym); render(); } }); }
+            touch(ym); render(); } });
+        const sel = box.querySelector('#f_pago'), mo = box.querySelector('#f_monto')?.closest('.fld'), al = box.querySelector('#f_alcance')?.closest('.fld');
+        const sync = ()=>{ const f = sel.value==='cuenta'; box.querySelector('#pc-box').style.display = f ? '' : 'none'; if(mo) mo.style.display = f ? 'none' : ''; if(al) al.style.display = f ? 'none' : ''; };
+        sel.onchange = sync; sync(); return box; }
       if(kind==='fj'){ const g = S.gastos.find(sid); if(!g) return; const r = fjRows(ym).find(x=>sid(x)) || { monto:0, base:0 };
         return UI.form({ title:`✎ ${g.concepto} · ${L}`, submit:'Guardar', fields:[ { k:'concepto', label:'Concepto', default:g.concepto, req:true }, { k:'monto', label:`Monto de ${L}`, type:'number', default:r.monto, req:true }, alc ],
           danger:{ label:'🗑 Sacar / dejar de pagar', fn:()=>setTimeout(()=>Fin.quitar('fj', id, ym), 60) },
@@ -671,18 +899,16 @@
       UI.modal(`<h2>⚙ Finanzas<button class="icon-btn x" data-close>✕</button></h2><div class="list">
         <div class="li click" onclick="Fin.backup()"><span>⇣</span><div class="grow"><div class="b">Descargar backup</div><div class="xs faint">Archivo .json con todos los datos de Finanzas</div></div></div>
         <label class="li click" style="cursor:pointer"><span>⇡</span><div class="grow"><div class="b">Restaurar backup</div><div class="xs faint">Cargá el archivo de la app anterior o de un backup</div></div><input type="file" accept=".json" style="display:none" onchange="Fin.restore(this)"></label>
-        <div class="li click" onclick="UI.close();Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Meta de facturación anual</div></div></div>
-        <div class="li click" onclick="UI.close();FinGate.changePassword()"><span>🔑</span><div class="grow"><div class="b">Cambiar contraseña de Finanzas</div></div></div>
-        <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a>
-        <div class="li click" onclick="FinGate.lock()"><span>🔒</span><div class="grow"><div class="b">Bloquear</div></div></div></div>`);
+        <div class="li click" onclick="UI.close(true);Fin.setMeta()"><span>🎯</span><div class="grow"><div class="b">Metas (ganancia y facturación)</div></div></div>
+        <a class="li click" href="finanzas-completa.html" style="text-decoration:none;color:inherit"><span>🗂️</span><div class="grow"><div class="b">Vista completa (anterior)</div><div class="xs faint">Para editar clientes, equipo y gastos con todo el detalle</div></div></a></div>`);
     },
     backup(){ UI.download(`ANM_finanzas_${UI.today()}.json`, S); },
     restore(input){
       const f = input.files[0]; if(!f) return;
       const r = new FileReader();
       r.onload = ()=>{ try{ const d = JSON.parse(r.result); if(!d.clientes) throw 0;
-        if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas (la contraseña se mantiene).`)) return;
-        const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(); UI.toast('Backup restaurado','⇡'); render();
+        if(!confirm(`¿Restaurar este backup?\n\n${d.clientes.length} clientes · ${(d.proyectos||[]).length} proyectos · ${(d.empleados||[]).length} personas.\n\nReemplaza los datos actuales de Finanzas.`)) return;
+        const seg = S.seguridad; S = { ...d, seguridad:seg||d.seguridad }; ensure(); save(); UI.close(true); UI.toast('Backup restaurado','⇡'); render();
       }catch(e){ UI.toast('Archivo inválido','⚠️'); } };
       r.readAsText(f);
     },
@@ -695,11 +921,6 @@
 
   // ── Contraseña de Finanzas (misma que la app anterior: S.seguridad) ─────────
   const OK_KEY = 'anm_fin_ok', IDLE_MIN = 20;
-  async function hash(txt){
-    if(window.crypto?.subtle){ const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
-    let h = 5381; for(const c of txt) h = (h*33) ^ c.charCodeAt(0); return 'djb'+(h>>>0).toString(16);
-  }
-  const rnd = n => [...crypto.getRandomValues(new Uint8Array(n))].map(x=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[x%32]).join('');
   function gate(html){ $('#app').style.display = 'none'; const g = $('#gate'); g.style.display = ''; g.innerHTML = `<div class="mbox"><div class="row" style="margin-bottom:18px"><img src="logo.jpg" alt="" style="width:46px;height:46px;border-radius:12px"><div><div class="brand-t">ANM</div><div class="brand-s">Finanzas · acceso restringido</div></div></div>${html}<p class="xs" style="margin-top:16px"><a href="index.html">← Volver a la plataforma</a></p></div>`; setTimeout(()=>g.querySelector('input')?.focus(), 30); return g; }
   function open(){ $('#gate').style.display = 'none'; $('#app').style.display = ''; sessionStorage.setItem(OK_KEY, String(Date.now()));
     tab = 'actualidad'; render(); }
@@ -708,44 +929,23 @@
       if(!Auth.loggedIn()) return gate('<h2>Ingresá primero a la plataforma</h2><p class="muted">Finanzas se abre desde la plataforma, con tu cuenta de Google de socio.</p><a class="btn p" href="index.html" style="margin-top:14px">Ir a la plataforma</a>');
       const acc = Auth.access || await Auth.check();
       if(!acc || !['owner','socio'].includes(acc.role)) return gate('<h2>Sin acceso</h2><p class="muted">Finanzas es solo para los socios.</p>');
-      const last = +sessionStorage.getItem(OK_KEY)||0;
-      if(last && Date.now()-last < IDLE_MIN*6e4) return open();
-      const sec = S.seguridad;
-      if(!sec){
-        if(status!=='synced') return gate('<h2>Sin conexión</h2><p class="muted">No puedo verificar la contraseña sin conexión a la base de datos.</p><button class="btn p" onclick="location.reload()" style="margin-top:12px">Reintentar</button>');
-        const g = gate(`<h2>Creá la contraseña de Finanzas</h2><p class="muted small" style="margin-bottom:14px">Se va a pedir cada vez que entren. Compartila solo entre socios.</p>
-          <div class="frow"><div class="fld"><label>Contraseña</label><input class="inp" id="fp1" type="password"></div><div class="fld"><label>Repetila</label><input class="inp" id="fp2" type="password"></div></div>
-          <button class="btn p" style="width:100%;justify-content:center" id="fgo">Crear y entrar</button>`);
-        g.querySelector('#fgo').onclick = async ()=>{ const a = g.querySelector('#fp1').value, b = g.querySelector('#fp2').value;
-          if(a.length<6) return UI.toast('Mínimo 6 caracteres','⚠️'); if(a!==b) return UI.toast('No coinciden','⚠️');
-          const salt = rnd(12), rec = rnd(10); S.seguridad = { salt, hash:await hash(salt+a), recovery:await hash(salt+rec), creada:new Date().toISOString() }; await push();
-          alert(`Contraseña creada ✅\n\nGuardá este CÓDIGO DE RECUPERACIÓN en un lugar seguro:\n\n${rec}`); open(); };
-        return;
-      }
-      const g = gate(`<h2>🔒 Contraseña de Finanzas</h2><div class="fld"><input class="inp" id="fp" type="password" placeholder="Contraseña"></div>
-        <button class="btn p" style="width:100%;justify-content:center" id="fgo">Entrar</button><p class="xs" style="margin-top:10px"><a href="#" id="fforgot">Olvidé la contraseña</a></p>`);
-      const go = async ()=>{ const i = g.querySelector('#fp'); if(await hash(sec.salt+i.value)===sec.hash) open(); else { i.value = ''; i.style.borderColor = 'var(--red)'; UI.toast('Contraseña incorrecta','⛔'); } };
-      g.querySelector('#fgo').onclick = go; g.querySelector('#fp').onkeydown = e=>{ if(e.key==='Enter') go(); };
-      g.querySelector('#fforgot').onclick = async e=>{ e.preventDefault(); const code = prompt('Código de recuperación:'); if(!code) return;
-        if(await hash(sec.salt+code.trim().toUpperCase())!==sec.recovery) return UI.toast('Código incorrecto','⛔');
-        S.seguridad = null; await push(); FinGate.check(); };
+      // Sin contraseña aparte: alcanza con entrar con el Gmail de un socio (lo autoriza el dueño en Equipo → Accesos)
+      return open();
     },
-    lock(){ sessionStorage.removeItem(OK_KEY); UI.close(); FinGate.check(); },
-    async changePassword(){ const sec = S.seguridad; if(!sec) return;
-      const cur = prompt('Contraseña actual:'); if(cur==null) return; if(await hash(sec.salt+cur)!==sec.hash) return UI.toast('Contraseña incorrecta','⛔');
-      const nw = prompt('Nueva contraseña (mínimo 6):'); if(!nw || nw.length<6) return UI.toast('Mínimo 6 caracteres','⚠️');
-      S.seguridad = { ...sec, hash:await hash(sec.salt+nw) }; save(); UI.toast('Contraseña actualizada','🔑'); },
   };
   window.FinGate = FinGate;
-  ['click','keydown'].forEach(ev=>document.addEventListener(ev, ()=>{ if(sessionStorage.getItem(OK_KEY)) sessionStorage.setItem(OK_KEY, String(Date.now())); }, { passive:true }));
-  setInterval(()=>{ const l = +sessionStorage.getItem(OK_KEY)||0; if(l && Date.now()-l > IDLE_MIN*6e4) FinGate.lock(); }, 30000);
 
   document.addEventListener('DOMContentLoaded', async ()=>{
     try{ localStorage.removeItem('anm_theme'); }catch(e){}
     if(window.Store) Store.loadLocal();
     try{ const r = await fetch('version.json?t='+Date.now(), { cache:'no-store' }); const { v } = await r.json();
       if(v && window.ANM_VERSION && v!==window.ANM_VERSION && sessionStorage.getItem('anm_reloaded')!==v){ sessionStorage.setItem('anm_reloaded', v); return location.reload(); } }catch(e){}
-    if(Auth.loggedIn()){ const acc = await Auth.check(); if(acc && ['owner','socio'].includes(acc.role)) await load(); }
+    if(Auth.loggedIn()){ const acc = await Auth.check(); if(acc && ['owner','socio'].includes(acc.role)){ await load();
+      // Equipo y clientes de Operaciones (para la pestaña Capacidad)
+      if(window.Store){ Store.setDocs(['ops','team']); Store.init().then(()=>{ if(tab==='capacidad') render(); }).catch(()=>{}); }
+      // Inflación: se actualiza sola una vez por semana, sin avisar
+      if(!S.inflacionAt || Date.now()-new Date(S.inflacionAt) > 7*864e5) setTimeout(()=>inflFetch(true), 1500);
+    } }
     FinGate.check();
   });
 })();

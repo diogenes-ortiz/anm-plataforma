@@ -19,18 +19,18 @@
     return { n:i+1, name:LEVELS[i][1], done, xp:done, cur, next, pct: next ? Math.round((done-cur)/(next-cur)*100) : 100, toNext: next ? next-done : 0 };
   }
   // Tareas realizadas por una persona (desde una fecha, opcional)
-  const doneTasks = (memberId, since) => Store.all('ops','tasks').filter(t=>t.status==='done' && t.assigneeId===memberId && (!since || (t.doneAt||'').slice(0,10)>=since));
+  const doneTasks = (memberId, since) => Store.all('ops','tasks').filter(t=>t.status==='done' && (t.assigneeId===memberId || (t.alsoIds||[]).includes(memberId)) && (!since || UI.day(t.doneAt)>=since));
   function onTime(memberId){
     const ts = doneTasks(memberId).filter(t=>t.due && t.doneAt);
-    return ts.length ? Math.round(ts.filter(t=>t.doneAt.slice(0,10)<=t.due).length/ts.length*100) : null;
+    return ts.length ? Math.round(ts.filter(t=>UI.day(t.doneAt)<=t.due).length/ts.length*100) : null;
   }
   // ── Cómo venís: tareas resueltas / tareas asignadas en el mes ─────────────────
   // Cuentan las tareas asignadas a la persona que vencían este mes (hasta hoy) y las que resolvió este mes.
   const monthStart = () => UI.ym()+'-01';
   const SCALE = [[90,'Excelente','var(--green)'],[75,'Muy bien','var(--teal)'],[60,'Bien','var(--blue-l)'],[40,'A mejorar','var(--yellow)'],[0,'Atrasado/a','var(--red)']];
   function perf(memberId, from=monthStart(), to=UI.today()){
-    const ts = Store.all('ops','tasks').filter(t=>t.assigneeId===memberId);
-    const rel = ts.filter(t=>(t.due && t.due>=from && t.due<=to) || (t.status==='done' && (t.doneAt||'').slice(0,10)>=from));
+    const ts = Store.all('ops','tasks').filter(t=>t.assigneeId===memberId || (t.alsoIds||[]).includes(memberId));
+    const rel = ts.filter(t=>(t.due && t.due>=from && t.due<=to) || (t.status==='done' && UI.day(t.doneAt)>=from));
     const res = rel.filter(t=>t.status==='done');
     const pct = rel.length ? Math.round(res.length/rel.length*100) : null;
     const sc = pct==null ? [null,'Sin tareas vencidas','var(--text3)'] : SCALE.find(x=>pct>=x[0]);
@@ -41,7 +41,7 @@
   function celebrate(memberId, beforePct){
     const p = perf(memberId);
     if(p.pct>=90 && (beforePct==null || beforePct<90) && p.assigned>=3){
-      const mine = memberId===App.me()?.id, who = (App.member(memberId)?.name||'alguien').split(' ')[0];
+      const mine = memberId===App.me()?.id, who = App.short(App.member(memberId));
       UI.toast(mine ? 'Llegaste a Excelente este mes' : `${who} llegó a Excelente este mes`,'📊');
     }
   }
@@ -97,7 +97,7 @@
   // Misiones semanales del equipo (se calculan del estado real)
   function missions(){
     const ws = weekStart(), t = UI.today();
-    const inWeek = iso => iso && iso.slice(0,10)>=ws;
+    const inWeek = iso => iso && UI.day(iso)>=ws;
     const clients = Ops.activeClients();
     const stale = clients.filter(c=>Ops.daysSinceUpdate(c)>7).length;
     const meetings = Store.all('ops','meetings').filter(m=>m.date && m.date.slice(0,10)>=ws && m.date.slice(0,10)<=t);
@@ -106,14 +106,14 @@
     const touches = acts().filter(a=>['interaction','lead','lead_advance'].includes(a.type) && inWeek(a.at)).length;
     const done = Store.all('ops','tasks').filter(t=>t.status==='done' && inWeek(t.doneAt)).length;
     const list = [
-      { e:'📡', t:'Seguimiento al día', d: stale ? `${stale} cliente${stale>1?'s':''} sin actualizar hace +7 días` : 'Todos los clientes actualizados esta semana', p: clients.length ? (clients.length-stale)/clients.length : 1 },
-      { e:'📝', t:'Minutas completas', d: meetings.length ? (noMin ? `${noMin} reunión${noMin>1?'es':''} sin minuta` : 'Todas las reuniones tienen minuta') : 'Sin reuniones esta semana (todavía)', p: meetings.length ? (meetings.length-noMin)/meetings.length : 1 },
+      { e:'📡', t:'Seguimiento al día', d: stale ? `${stale} cliente${stale>1?'s':''} sin actualizar hace +7 días` : 'Todos los clientes actualizados esta semana', p: clients.length ? (clients.length-stale)/clients.length : null },
+      { e:'📝', t:'Minutas completas', d: meetings.length ? (noMin ? `${noMin} reunión${noMin>1?'es':''} sin minuta` : 'Todas las reuniones tienen minuta') : 'Sin reuniones esta semana (todavía)', p: meetings.length ? (meetings.length-noMin)/meetings.length : null },
       { e:'⏰', t:'Cero vencidas', d: overdue ? `${overdue} tarea${overdue>1?'s':''} vencida${overdue>1?'s':''}` : 'No hay tareas vencidas', p: overdue ? 0 : 1 },
       { e:'✅', t:'Cerrar 10 tareas', d:`${Math.min(done,10)}/10 esta semana`, p: Math.min(done/10,1) },
       { e:'🎯', t:'Mover el pipeline', d:`${Math.min(touches,5)}/5 contactos o avances esta semana`, p: Math.min(touches/5,1) },
     ];
     const next = Ops.nextMonthCalendarPending();
-    if(new Date().getDate()>=15) list.push({ e:'🗓️', t:'Calendarios del mes próximo', d: next.total ? `${next.total-next.pending}/${next.total} aprobados` : 'No hay clientes con calendario', p: next.total ? (next.total-next.pending)/next.total : 1 });
+    if(new Date().getDate()>=15) list.push({ e:'🗓️', t:'Calendarios del mes próximo', d: next.total ? `${next.total-next.pending}/${next.total} aprobados` : 'No hay clientes con calendario', p: next.total ? (next.total-next.pending)/next.total : null });
     return list;
   }
 
